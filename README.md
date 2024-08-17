@@ -20,6 +20,8 @@ This project is a proof of concept for a game that utilizes OpenCV's pose detect
 
 ### Run the game:
 
+You may need to adjust cv2.VideoCapture(0) to 1. 
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate

@@ -70,7 +70,7 @@ def run_pose_detection(queue):
     lean = "Center"
     resting = False
 
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(0)
     with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
         while cap.isOpened():
             ret, frame = cap.read()
