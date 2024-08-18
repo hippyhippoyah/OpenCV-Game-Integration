@@ -109,8 +109,8 @@ def pygame_app(queue):
                 player_y < obstacle_y + OBSTACLE_HEIGHT and
                 player_y + PLAYER_HEIGHT > obstacle_y):
                 print("Collision! Game Over.")
-                pygame.quit()
-                return
+                # pygame.quit()
+                # return
 
         # Drawing
         screen.fill(BLACK)
