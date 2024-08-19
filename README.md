@@ -11,6 +11,7 @@ This project is a proof of concept for a game that utilizes OpenCV's pose detect
   - **Direction Changes**
   - **Attacks**
 - **Simple Game Environment**: The game runs in a basic environment created using Pygame.
+- **Socket Input**: This script pumps the data into a socket in port 5052, which can be used from a c# or c++ application or a game engine (Unity or Godot) to access the data. 
 
 ## Getting Started
 
@@ -27,6 +28,16 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python pygameExample.py
+```
+
+### Run the socket
+
+socket_pose sends the data
+server is an example of a server that receives data. 
+
+```bash
+python socket_pose.py
+python server.py
 ```
 
 ### How to play:
