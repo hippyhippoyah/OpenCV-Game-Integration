@@ -5,8 +5,7 @@ import { CampaignUI, type HandoffCheck } from './campaign/ui';
 import { Progress } from './campaign/progress';
 import { STOPS } from './campaign/chapter1';
 import { downloadRecording, Recorder } from './debug/recorder';
-import { World3D } from './explore/world3d';
-import { Look } from './explore/path';
+import { PathMap } from './explore/map2d';
 import { Game, type GameEvent } from './game/game';
 import { LESSONS, Tutorial } from './game/tutorial';
 import { CameraError, CameraTracker } from './input/camera';
@@ -50,8 +49,7 @@ const storage = (() => { try { return localStorage; } catch { return null; } })(
 const progress = Progress.load(storage);
 let campaign: CampaignRunner | null = null;
 let campUI: CampaignUI | null = null;
-let world: World3D | null = null;
-const look = new Look();
+let pathMap: PathMap | null = null;
 /** Ghost hands' fade state for the campaign's current practice lesson (see stepCampaign). */
 let ghostPractice: Tutorial | null = null;
 let ghostLessonIndex = -1;
@@ -126,10 +124,9 @@ function showModes(note = ''): void {
   campUI?.hideAll();
   show('world', false);
   renderer.ghost = null;
-  renderer.tint = null;
-  document.exitPointerLock?.();
+  renderer.scene = 'night';
   for (const id of ['calib', 'over', 'away', 'lesson', 'dodge', 'mockHelp']) show(id, false);
-  document.body.classList.remove('tutorial');
+  document.body.classList.remove('tutorial', 'exploring');
   $('campaignLabel').textContent = Object.keys(progress.data.stops).length > 0 ? 'Continue' : 'Campaign';
   $('modesNote').textContent = note;
   show('modesNote', !!note);
@@ -147,8 +144,8 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
   phase = 'play';
   for (const id of ['calib', 'over', 'modes']) show(id, false);
   if (m === 'campaign') {
-    world ??= new World3D($('world') as HTMLCanvasElement);
-    campUI ??= new CampaignUI(progress, stop => campaign?.replay(stop));
+    pathMap ??= new PathMap($('world') as HTMLCanvasElement);
+    campUI ??= new CampaignUI(progress);
     campaign = new CampaignRunner(progress, () => new Game(Math.random, renderer.viewHalfW, true));
     game = null;
     tutorial = null;
@@ -167,6 +164,8 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
   }
   // training (and the tutorial, which then takes the field over) start with dummies, not a wave
   game = new Game(Math.random, renderer.viewHalfW, m !== 'waves');
+  // the waves are fought at the night temple; practice of any kind in the training yard
+  renderer.scene = m === 'waves' ? 'night' : 'training';
   tutorial = m === 'tutorial' ? new Tutorial(game, lesson) : null;
   if (tutorial) game.label = 'Tutorial';
   show('lesson', !!tutorial);
@@ -299,13 +298,22 @@ function stepCampaign(dt: number, now: number): void {
     ghostPractice = null;
     renderer.ghost = null;
   }
-  renderer.tint = STOPS[r.stop].tint;
+  // practice always in the training yard; the real fight where it happens
+  renderer.scene = r.state === 'fight' || r.state === 'lost' || r.state === 'result' ? STOPS[r.stop].scene : 'training';
+  // on the map the fight HUD (health, bars, camera view) is put away
+  document.body.classList.toggle('exploring', exploring);
   show('world', exploring || r.state === 'handoff' || r.state === 'countdown');
   show('game', !(exploring || r.state === 'handoff' || r.state === 'countdown'));
   if (exploring || r.state === 'handoff' || r.state === 'countdown') {
-    look.relax(dt);
-    world!.setTaken(STOPS.flatMap((s, i) => (s.scroll && progress.hasScroll(s.scroll) ? [i] : [])));
-    world!.render(r.rail, look, dt, r.state === 'scroll' ? 'scroll' : r.state === 'arena' ? 'arena' : null);
+    pathMap!.render({
+      d: r.rail.d,
+      walking: r.state === 'walk' && !campUI!.overlayOpen,
+      waiting: r.state === 'scroll' || r.state === 'arena',
+      isDone: i => progress.isDone(STOPS[i].id),
+      flames: i => progress.flames(STOPS[i].id),
+      hasScroll: id => progress.hasScroll(id),
+      next: STOPS.findIndex(s => !progress.isDone(s.id)),
+    }, dt);
   }
   campUI!.update(r, check, now, campPaused);
   if (practice) lessonDemo.draw(practice.lesson.id, now / 1000);
@@ -377,42 +385,22 @@ $('campMenu').addEventListener('click', () => showModes());
 $('campResume').addEventListener('click', () => { campPaused = false; });
 $('campLeave').addEventListener('click', () => { campPaused = false; showModes(); });
 
-/** Is the campaign currently exploring the 3D path (walk/scroll/arena/end), where mouse look & keys apply? */
+/** Is the campaign currently exploring the path map (walk/scroll/arena/end), where the map clicks & keys apply? */
 function exploringCampaign(): boolean {
   return mode === 'campaign' && phase === 'play' && !!campaign
     && (campaign.state === 'walk' || campaign.state === 'scroll' || campaign.state === 'arena' || campaign.state === 'end');
 }
 
-// Mouse look while exploring the campaign path: pointer lock when available, else a plain drag.
-let dragging = false, lastMouse: { x: number; y: number } | null = null;
-$('world').addEventListener('mousedown', e => {
-  if (!exploringCampaign() || !campaign) return;
-  const r = campaign;
-  if (document.pointerLockElement === $('world')) {
-    if (r.state === 'scroll' || r.state === 'arena') r.interact();
-  } else if ($('world').requestPointerLock) {
-    try {
-      const p = $('world').requestPointerLock() as unknown;
-      if (p && typeof (p as Promise<void>).catch === 'function') (p as Promise<void>).catch(() => { /* fall back to plain drag */ });
-    } catch { /* fall back to plain drag */ }
-  }
-  dragging = true;
-  lastMouse = { x: e.clientX, y: e.clientY };
-});
-addEventListener('mouseup', () => { dragging = false; lastMouse = null; });
-addEventListener('mousemove', e => {
-  if (!exploringCampaign()) return;
-  if (document.pointerLockElement === $('world')) {
-    look.move(e.movementX, e.movementY);
-  } else if (dragging && lastMouse) {
-    look.move(e.clientX - lastMouse.x, e.clientY - lastMouse.y);
-    lastMouse = { x: e.clientX, y: e.clientY };
-  }
+// Clicking a finished stop's lantern on the map replays it.
+$('world').addEventListener('click', e => {
+  if (!exploringCampaign() || !campaign || campaign.state === 'end' || campUI?.overlayOpen) return;
+  const stop = pathMap?.stopAt(e.clientX, e.clientY);
+  if (stop !== null && stop !== undefined && progress.isDone(STOPS[stop].id)) campaign.replay(stop);
 });
 addEventListener('resize', () => {
   renderer.resize();
   debug.resize();
-  world?.resize();
+  pathMap?.resize();
   if (game) game.viewHalfW = renderer.viewHalfW;
 });
 addEventListener('keydown', e => {
@@ -442,12 +430,11 @@ addEventListener('keydown', e => {
     if (exploringCampaign()) {
       if (k === 'e') r.interact();
       if (k === ' ') { e.preventDefault(); r.skip(); }
-      if (k === 'm') campUI?.toggleMap();
       if (k === 'tab') { e.preventDefault(); campUI?.toggleScrolls(); }
     }
     if (k === 'escape') {
       if (r.state === 'handoff' || r.state === 'countdown') r.back();
-      else if (campUI?.overlayOpen) { campUI.toggleMap(false); campUI.toggleScrolls(false); }
+      else if (campUI?.overlayOpen) campUI.toggleScrolls(false);
       else if (r.state === 'practice' || r.state === 'fight') campPaused = !campPaused;
       else if (r.state === 'lost' || r.state === 'result') { /* the cards' own buttons decide */ }
       else showModes();

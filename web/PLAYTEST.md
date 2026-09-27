@@ -41,9 +41,10 @@ Run `npm run dev`, play with the camera in Chrome. Note the result of each item.
 
 Tuning knobs: `TUNING` in `src/intent/interpret.ts` (tracking feel), `TUNE` in `src/game/game.ts` (gameplay). Press `` ` `` in game for live numbers.
 
-- [ ] Campaign: the walk down the path looks good and runs smoothly; mouse look feels natural; Space skips ahead.
+- [ ] Campaign: the map looks good, your token walks the path smoothly, Space skips ahead.
+- [ ] Practice is always in the training yard; each real fight is in its own place (courtyard, stairs, bridge, garden, gate, Daro's gate).
 - [ ] Scrolls: picking one up shows the note; Tab lists it with its animation.
 - [ ] The camera handoff is clear: the checklist tells you what's missing; the countdown starts once you're ready.
 - [ ] Ghost hands make each new move obvious; they fade once you've got it.
 - [ ] Every fight is winnable with the moves you have, and the boss's attacks are readable.
-- [ ] M map shows your progress and replays finished stops.
+- [ ] Clicking a lit stop on the map replays it.

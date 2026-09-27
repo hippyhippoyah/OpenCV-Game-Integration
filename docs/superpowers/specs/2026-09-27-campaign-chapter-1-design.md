@@ -20,12 +20,13 @@ Chapter 1 stands on its own: playable start to finish in 15–20 minutes, in sho
 
 The game alternates between two ways of playing, and the switch between them is a designed moment:
 
-- **Explore — keyboard and mouse, first person, in a 3D world.** In the campaign there's one way
-  to go, so you **auto-walk** the path: the view glides along it on its own while you look around
-  with the mouse. It stops where there's something to do — a scroll (E or click to pick it up), an
-  arena (E or click to step in) — and walks on after. M for the map, Tab for scrolls, Space to skip
-  ahead to the next stop. You sit at the computer; this is the rest between fights. (Free WASD
-  walking comes with the temple, on the same 3D world code.)
+- **Explore — keyboard and mouse, on a 2D map.** The explore view is an ink-and-parchment map of
+  the mountain (temple, stairs, river and bamboo bridge, stone garden, the village), with the path
+  drawn on it and you as a flame token that **auto-walks** it, leaving the walked part in red. It
+  stops where there's something to do — a scroll (E to pick it up), an arena (E to step in) — and
+  walks on after. Tab for scrolls, Space to skip ahead, click a lit stop to replay it. You sit at the
+  computer; this is the rest between fights. (A 3D world is saved for the temple, with WASD and
+  mouse; the first 3D attempt at the path was dropped for looking poor.)
 - **Fight — webcam.** You stand back from the screen and bend. The view is the existing
   first-person fight (lean and duck to move; no WASD).
 
@@ -39,7 +40,7 @@ starts the fight. Esc backs out to explore. If the camera loses you mid-fight, t
 and hands control back to keyboard and mouse. Losing offers "Try again" (the fight only).
 
 A small **controls strip** in a corner always shows the keys for the current half (explore:
-`Mouse` look · `E` interact · `Space` skip ahead · `M` map · `Tab` scrolls · `Esc` menu; fight:
+`E` interact · `Space` skip ahead · `Tab` scrolls · `Click` a lit stop to replay it · `Esc` menu; fight:
 `Esc` pause).
 
 ## Story
@@ -97,15 +98,15 @@ animation in the card and in the Scrolls inventory).
 
 ## The stops
 
-The path is one continuous 3D place you walk down; each stop is an area with an arena circle.
+The path runs across one map; each stop is a lantern on it.
 
-**The world** (three.js, stylised and moody rather than realistic): a mountain at night under the
-rising Spirit Moon, the path lit by lanterns (warm point lights) with fog in the valleys, drifting
-embers and fireflies. The temple courtyard (red pillars, a brazier, training dummies), the long
-stone stairs down the cliff, a bamboo bridge over mist, a stone garden (raked sand, boulders), and
-the village gate (wooden palisade, torches, Daro's banners). Scrolls glow gold on stands, visible
-from a distance; arena circles are rings of flame on the ground. Fights keep the existing fight
-view, tinted to the place (its sky and light colours).
+**Two backdrops.** Practice always happens in the same **training yard** (a sandy ring at sunset
+with a fence, a dojo, weapon racks and straw targets) — the Tutorial and Training modes use it too.
+The **real fight** is fought in the place itself, each with its own backdrop: the temple courtyard
+at dawn (the great hall, red gate pillars, stone lanterns), the stairs (cliffs, pines, lantern
+posts), the bamboo bridge (bamboo walls, rope rails, mist below), the stone garden (boulders in
+raked sand, a twisted pine), the village gate (palisade, torch towers, earth-clan banners), and a
+redder, fiercer gate for Daro. Waves keep the night temple.
 
 | # | Place | Scroll | Fight |
 |---|---|---|---|
@@ -144,9 +145,9 @@ blocked with the moves you have by then.
 - **Mode menu**: Campaign (new; "Continue" if started), Waves, Training, Tutorial (unchanged).
 - **Explore view**: first person on the path; the controls strip; Ren's lines as subtitles at the
   bottom; a prompt when near something (`E` Pick up scroll · `E` Enter the arena).
-- **Map (M)**: the mountain path from above, stops as lanterns — lit when done (with their flames),
-  the next glowing, later ones dark; where you are. Selecting a finished stop's lantern offers a
-  replay; the map is also shown briefly at the start of the campaign.
+- **Map**: the explore view itself — stops as lanterns, lit when done (with their flames), the
+  next glowing, later ones dim; Daro's marked with a stone fist; scrolls not yet found glow on the
+  path. Clicking a finished stop's lantern replays it.
 - **Scrolls (Tab)**: the scrolls you have, each opening to its move's card; locked ones as dark
   silhouettes ("Found later on the path").
 - **Notifications**: slide in at the top right for a few seconds — new move learned, stop
@@ -157,11 +158,10 @@ blocked with the moves you have by then.
 
 ## How it works (code)
 
-- `src/explore/` — the keyboard-and-mouse half: the path as a curve through the world with its
-  stops (`path.ts`: position and heading at a distance along it, where it pauses), mouse look
-  (pointer lock, yaw/pitch limits), and the three.js scene (`world3d.ts`: terrain, the places,
-  lights, fog, sky, particles, scroll stands, arena rings; the camera rides the path).
-  `three` is added as a dependency.
+- `src/explore/` — the keyboard half: the path on the map with its stops (`path.ts`: map position
+  at a distance along it, where it pauses) and the map painter (`map2d.ts`: land painted once per
+  resize; path, stops, scrolls and you every frame).
+- `src/render/scenes.ts` — fight backdrops: sky, middle layer and floor for each place.
 - `src/campaign/chapter1.ts` — data: the path's areas, Ren's lines, scroll positions, each stop's
   practice and fight scripts, flame rules.
 - `src/campaign/runner.ts` — the campaign as a state machine: explore ⇄ (arena → camera check →
@@ -175,8 +175,8 @@ blocked with the moves you have by then.
   ignored. A `Boss` (an enemy with phases, a health bar, stone wall, twin pillars, boulder, winded).
 - **Render**: ghost hands (the hand renderer, translucent, driven by a per-move keyframe loop), the
   explore view, map, scrolls, notifications, result card, boss and health bar.
-- `main.ts` — a new phase for explore, the camera handoff card, and input switching (keyboard and
-  mouse listeners only while exploring; the webcam tracker only needs to run in fights, but keeps
+- `main.ts` — a new phase for explore, the camera handoff card, and input switching (keys and map
+  clicks only while exploring; the webcam tracker only needs to run in fights, but keeps
   running so the handoff check is instant).
 
 ## Testing

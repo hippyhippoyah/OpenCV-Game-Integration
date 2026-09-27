@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Look, pauses, Rail, WALK_SPEED } from './path';
+import { MAP_H, MAP_W, pauses, pointAt, Rail, ROUTE, WALK_SPEED } from './path';
 import { STOPS } from '../campaign/chapter1';
 
 describe('Rail', () => {
@@ -27,21 +27,16 @@ describe('Rail', () => {
     expect(r.d).toBeLessThan(p[1].at);
   });
 
-  it('gives a position and heading along the path', () => {
-    const a = new Rail(10).pose(), b = new Rail(11).pose();
-    expect(Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z)).toBeGreaterThan(0.5);
-    expect(Number.isFinite(a.heading)).toBe(true);
-  });
-});
-
-describe('Look', () => {
-  it('turns with the mouse within limits and drifts back ahead', () => {
-    const l = new Look();
-    l.move(10000, -10000);
-    expect(Math.abs(l.yaw)).toBeLessThanOrEqual(1.25);
-    expect(Math.abs(l.pitch)).toBeLessThanOrEqual(0.6);
-    const y = l.yaw;
-    l.relax(1);
-    expect(Math.abs(l.yaw)).toBeLessThan(Math.abs(y));
+  it('draws the path on the map through every route point, inside the map', () => {
+    for (const r of ROUTE) {
+      const p = pointAt(r.d);
+      expect(p.x).toBeCloseTo(r.x);
+      expect(p.y).toBeCloseTo(r.y);
+    }
+    for (let d = 0; d <= 300; d += 5) {
+      const p = pointAt(d);
+      expect(p.x).toBeGreaterThan(0); expect(p.x).toBeLessThan(MAP_W);
+      expect(p.y).toBeGreaterThan(0); expect(p.y).toBeLessThan(MAP_H);
+    }
   });
 });

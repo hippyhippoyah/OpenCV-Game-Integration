@@ -3,6 +3,7 @@ import type { Side } from '../input/types';
 import { TUNING } from '../intent/interpret';
 import { clamp, lerp, mulberry32, type Vec2 } from '../math';
 import { ghostPose } from './ghost';
+import { FLOORS, paintMid, paintSky, type Frame, type Glows, type Scene } from './scenes';
 
 type Pal = 'fire' | 'spirit' | 'earth' | 'blue';
 interface Particle {
@@ -63,8 +64,15 @@ export class Renderer {
   VP: Vec2 = { x: 0, y: 0 };
   /** Ghost hands to show (campaign practice), and how visible. */
   ghost: { lessonId: string; alpha: number } | null = null;
-  /** Campaign place colours for the fight view (sky wash and light), or null. */
-  tint: { sky: string; light: string } | null = null;
+  /** Which backdrop the fight is in (see scenes.ts). */
+  get scene(): Scene { return this._scene; }
+  set scene(v: Scene) {
+    if (v === this._scene) return;
+    this._scene = v;
+    this.drawSky();
+    this.drawMid();
+  }
+  private _scene: Scene = 'night';
 
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
@@ -81,7 +89,7 @@ export class Renderer {
   private vig = document.createElement('canvas');
   private handLayer = document.createElement('canvas');
   private parts: Particle[] = [];
-  private lanterns: Vec2[] = [];
+  private glows: Glows = { pts: [], color: [255, 160, 80] };
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -196,14 +204,6 @@ export class Renderer {
     }
 
     c.drawImage(this.sky, -M - this.cam.x * u * PAR_SKY, -M - this.cam.y * u * PAR_SKY, W + 2 * M, H + 2 * M);
-    if (this.tint) {
-      c.globalCompositeOperation = 'color';
-      c.fillStyle = this.tint.sky;
-      c.globalAlpha = 0.35;
-      c.fillRect(-M, -M, W + 2 * M, H + 2 * M);
-      c.globalAlpha = 1;
-      c.globalCompositeOperation = 'source-over';
-    }
     this.drawFloor();
     const mx = -M - this.cam.x * u * PAR_MID, my = -M - this.cam.y * u * PAR_MID;
     c.drawImage(this.mid, mx, my, W + 2 * M, H + 2 * M);
@@ -256,87 +256,15 @@ export class Renderer {
 
   // ---------- static layers ----------
 
-  private drawSky(): void {
-    const { W, H, M, u } = this, g = this.sky.getContext('2d')!, hz = this.VP.y, R = mulberry32(11);
-    g.setTransform(this.dpr, 0, 0, this.dpr, this.dpr * M, this.dpr * M);
-    g.clearRect(-M, -M, W + 2 * M, H + 2 * M);
-    let gr = g.createLinearGradient(0, -M, 0, hz);
-    gr.addColorStop(0, '#06061a'); gr.addColorStop(0.55, '#151131'); gr.addColorStop(1, '#3c1d33');
-    g.fillStyle = gr;
-    g.fillRect(-M, -M, W + 2 * M, hz + M + 1);
-    for (let i = 0; i < 180; i++) {
-      const x = R() * (W + 2 * M) - M, y = R() * hz * 0.8 - M, r = R() * 1.3 + 0.3;
-      g.globalAlpha = 0.25 + R() * 0.75;
-      g.fillStyle = '#fff';
-      g.fillRect(x, y, r, r);
-    }
-    g.globalAlpha = 1;
-    const mx = W * 0.8, my = H * 0.13, mr = 4.2 * u;
-    gr = g.createRadialGradient(mx, my, 0, mx, my, mr * 6);
-    gr.addColorStop(0, 'rgba(255,238,215,.28)'); gr.addColorStop(1, 'rgba(255,238,215,0)');
-    g.fillStyle = gr;
-    g.fillRect(mx - mr * 6, my - mr * 6, mr * 12, mr * 12);
-    g.fillStyle = '#f3ead8';
-    g.beginPath(); g.arc(mx, my, mr, 0, 7); g.fill();
-    g.fillStyle = 'rgba(120,100,90,.12)';
-    for (const [a, b, r] of [[-0.3, -0.2, 0.28], [0.25, 0.2, 0.22], [0.1, -0.4, 0.12]]) {
-      g.beginPath(); g.arc(mx + a * mr, my + b * mr, r * mr, 0, 7); g.fill();
-    }
-    const ridge = (base: number, amp: number, col: string, seed: number, f1: number, f2: number) => {
-      g.fillStyle = col;
-      g.beginPath();
-      g.moveTo(-M, hz + 2 * u);
-      for (let x = -M; x <= W + M + 8; x += 6) {
-        g.lineTo(x, base - amp * (0.55 + 0.3 * Math.sin(x * f1 + seed) + 0.15 * Math.sin(x * f2 + seed * 3)));
-      }
-      g.lineTo(W + M, hz + 2 * u);
-      g.closePath();
-      g.fill();
-    };
-    ridge(hz - 2 * u, 14 * u, '#231838', 1.3, 0.006, 0.021);
-    ridge(hz, 9 * u, '#170f27', 4.1, 0.009, 0.03);
-    gr = g.createLinearGradient(0, hz - 8 * u, 0, hz + 3 * u);
-    gr.addColorStop(0, 'rgba(255,110,80,0)'); gr.addColorStop(0.7, 'rgba(255,110,80,.12)'); gr.addColorStop(1, 'rgba(255,110,80,0)');
-    g.fillStyle = gr;
-    g.fillRect(-M, hz - 8 * u, W + 2 * M, 11 * u);
+  private frame(g: CanvasRenderingContext2D): Frame {
+    g.setTransform(this.dpr, 0, 0, this.dpr, this.dpr * this.M, this.dpr * this.M);
+    g.clearRect(-this.M, -this.M, this.W + 2 * this.M, this.H + 2 * this.M);
+    return { g, W: this.W, H: this.H, M: this.M, u: this.u, hz: this.VP.y };
   }
 
-  private drawMid(): void {
-    const { W, M, u } = this, g = this.mid.getContext('2d')!, hz = this.VP.y, k = u * 0.8;
-    g.setTransform(this.dpr, 0, 0, this.dpr, this.dpr * M, this.dpr * M);
-    g.clearRect(-M, -M, W + 2 * M, this.H + 2 * M);
-    g.fillStyle = '#110c19';
-    g.fillRect(-M, hz - 2.2 * u, W + 2 * M, 2.6 * u);
-    for (let x = -M; x < W + M; x += 9 * u) g.fillRect(x, hz - 3.4 * u, 1.6 * u, 1.4 * u);
-    this.lanterns = [];
-    const roof = (l: number, r: number, y: number, h: number) => {
-      const w = r - l;
-      g.beginPath();
-      g.moveTo(l - 1.5 * k, y - 2 * k);
-      g.quadraticCurveTo(l + w * 0.06, y + 0.6 * k, l + w * 0.16, y + 0.6 * k);
-      g.lineTo(r - w * 0.16, y + 0.6 * k);
-      g.quadraticCurveTo(r - w * 0.06, y + 0.6 * k, r + 1.5 * k, y - 2 * k);
-      g.lineTo(r - w * 0.24, y - h);
-      g.lineTo(l + w * 0.24, y - h);
-      g.closePath();
-      g.fill();
-    };
-    const temple = (x: number, w: number) => {
-      const base = hz - u, bodyH = 12 * k, b1 = base - 3 * k - bodyH, b2 = b1 - 12 * k;
-      g.fillStyle = '#0e0a16';
-      g.fillRect(x - w * 0.04, base - 3 * k, w * 1.08, 3 * k);
-      g.fillRect(x + w * 0.1, b1, w * 0.8, bodyH);
-      roof(x - w * 0.02, x + w * 1.02, b1, 5 * k);
-      g.fillRect(x + w * 0.3, b2, w * 0.4, 7 * k);
-      roof(x + w * 0.18, x + w * 0.82, b2, 4.5 * k);
-      g.fillStyle = 'rgba(255,165,90,.22)';
-      for (let i = 0; i < 3; i++) g.fillRect(x + w * (0.22 + i * 0.22), b1 + bodyH * 0.35, w * 0.1, bodyH * 0.4);
-      g.fillRect(x + w * 0.44, b2 + 2 * k, w * 0.12, 3.5 * k);
-      this.lanterns.push({ x: x + w * 0.12, y: b1 + 2.4 * k }, { x: x + w * 0.88, y: b1 + 2.4 * k });
-    };
-    temple(W * 0.02, W * 0.22);
-    temple(W * 0.76, W * 0.22);
-  }
+  private drawSky(): void { paintSky(this.frame(this.sky.getContext('2d')!), this._scene); }
+
+  private drawMid(): void { this.glows = paintMid(this.frame(this.mid.getContext('2d')!), this._scene); }
 
   private drawVignette(): void {
     const g = this.vig.getContext('2d')!, { W, H } = this;
@@ -352,35 +280,79 @@ export class Renderer {
 
   /** The floor is drawn every frame so its perspective follows your head. */
   private drawFloor(): void {
-    const c = this.ctx, hz = this.VP.y;
+    const c = this.ctx, hz = this.VP.y, st = FLOORS[this._scene];
     const gr = c.createLinearGradient(0, hz, 0, this.H);
-    gr.addColorStop(0, '#24182b'); gr.addColorStop(1, '#0a080f');
+    gr.addColorStop(0, st.top); gr.addColorStop(1, st.bottom);
     c.fillStyle = gr;
     c.fillRect(0, hz, this.W, this.H - hz);
-    c.strokeStyle = 'rgba(255,200,160,.06)';
+    c.strokeStyle = st.line;
     c.lineWidth = 1;
-    const step = (this.W * 0.09) / this.u;
-    for (let i = -18; i <= 18; i++) {
-      const a = this.project(i * step, FLOOR_Y, 16), b = this.project(i * step, FLOOR_Y, -0.4);
-      c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
-    }
-    for (const z of [0, 0.5, 1.1, 1.9, 2.9, 4.2, 5.9, 8.1, 11, 15]) {
-      const y = this.project(0, FLOOR_Y, z).y;
-      c.beginPath(); c.moveTo(0, y); c.lineTo(this.W, y); c.stroke();
+    const across = (zs: number[]) => {
+      for (const z of zs) {
+        const y = this.project(0, FLOOR_Y, z).y;
+        c.beginPath(); c.moveTo(0, y); c.lineTo(this.W, y); c.stroke();
+      }
+    };
+    const along = (step: number, from = -18, to = 18) => {
+      for (let i = from; i <= to; i++) {
+        const a = this.project(i * step, FLOOR_Y, 16), b = this.project(i * step, FLOOR_Y, -0.4);
+        c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+      }
+    };
+    const depths = (n: number, far: number) => Array.from({ length: n }, (_, i) => far * (i / n) ** 1.6 - 0.3);
+    switch (st.kind) {
+      case 'grid':
+        along((this.W * 0.09) / this.u);
+        across([0, 0.5, 1.1, 1.9, 2.9, 4.2, 5.9, 8.1, 11, 15]);
+        break;
+      case 'tiles':
+        along(14);
+        across(depths(16, 16));
+        break;
+      case 'steps':
+        c.lineWidth = 2;
+        across(depths(12, 16));
+        break;
+      case 'planks':
+        // boards run across the bridge; its edges are the rope rails' posts
+        c.lineWidth = 1.5;
+        across(depths(34, 16));
+        c.strokeStyle = 'rgba(0,0,0,.35)';
+        along(60, -1, 1);
+        break;
+      case 'sand': {
+        // raked lines in long arcs round the arena
+        for (let i = 1; i < 26; i++) {
+          const z = 16 * (i / 26) ** 1.5 - 0.3, a = this.project(-200, FLOOR_Y, z), b = this.project(200, FLOOR_Y, z);
+          const mid = this.project(0, FLOOR_Y, z * 0.92 - 0.1);
+          c.beginPath(); c.moveTo(a.x, a.y); c.quadraticCurveTo(mid.x, mid.y, b.x, b.y); c.stroke();
+        }
+        break;
+      }
+      case 'dirt': {
+        const R = mulberry32(5);
+        c.fillStyle = st.line;
+        for (let i = 0; i < 90; i++) {
+          const p = this.project((R() - 0.5) * 260, FLOOR_Y, R() ** 1.7 * 15), r = (1 + R() * 3) * this.u * p.s;
+          c.beginPath(); c.ellipse(p.x, p.y, r, r * 0.35, 0, 0, 7); c.fill();
+        }
+        // the trampled road up to the gate
+        c.strokeStyle = 'rgba(0,0,0,.25)'; c.lineWidth = 2;
+        along(40, -1, 1);
+        break;
+      }
     }
   }
 
   private drawLanterns(ox: number, oy: number): void {
-    const c = this.ctx, u = this.u;
+    const c = this.ctx, u = this.u, [r0, g0, b0] = this.glows.color;
     c.globalCompositeOperation = 'lighter';
-    this.lanterns.forEach((l, i) => {
+    this.glows.pts.forEach((l, i) => {
       const x = l.x + ox, y = l.y + oy, r = 7 * u * (0.75 + 0.25 * Math.sin(this.t * 9 + i * 2) * Math.sin(this.t * 5.3 + i));
       const gr = c.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, 'rgba(255,170,80,.55)'); gr.addColorStop(1, 'rgba(255,120,40,0)');
+      gr.addColorStop(0, `rgba(${r0},${g0},${b0},.5)`); gr.addColorStop(1, `rgba(${r0},${g0},${b0},0)`);
       c.fillStyle = gr;
       c.fillRect(x - r, y - r, r * 2, r * 2);
-      c.fillStyle = '#ffb45e';
-      c.fillRect(x - 0.6 * u, y - 0.9 * u, 1.2 * u, 1.8 * u);
     });
     c.globalCompositeOperation = 'source-over';
   }
@@ -391,68 +363,118 @@ export class Renderer {
       return;
     }
     if (e.earth) {
+      if (e.boss?.wall) this.drawStoneWall(e, true);
       this.drawEarthbender(e);
-      if (e.boss?.wall) {
-        const c = this.ctx;
-        const a = this.project(e.x - 16, FLOOR_Y, e.z - 0.8), b = this.project(e.x + 16, FLOOR_Y - 45, e.z - 0.8);
-        c.fillStyle = '#6f5a44'; c.strokeStyle = '#2d2014'; c.lineWidth = 2;
-        c.fillRect(a.x, b.y, b.x - a.x, a.y - b.y); c.strokeRect(a.x, b.y, b.x - a.x, a.y - b.y);
-      }
+      if (e.boss?.wall) this.drawStoneWall(e, false);
       return;
     }
-    const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), s = p.s, sx = p.x;
-    const bob = Math.sin(e.t * 2 + e.phase) * 1.5 * u * s;
-    const cy = p.y + bob, hgt = 52 * u * s, feet = this.project(e.x, FLOOR_Y, e.z).y;
+    this.drawSpirit(e);
+  }
+
+  /**
+   * A water spirit: a hooded, flowing shape with a white mask and glowing eyes, trailing off into a
+   * wisp instead of legs. Its sleeve reaches out to the orb it's gathering, or both lift the wave.
+   */
+  private drawSpirit(e: Enemy): void {
+    const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), s = p.s, x = p.x, k = u * s;
     const alpha = e.appear * (1 - Math.min(1, e.dying));
     if (alpha <= 0) return;
-    c.globalAlpha = alpha * 0.5;
+    const bob = Math.sin(e.t * 2 + e.phase) * 1.5 * k, cy = p.y + bob, feet = this.project(e.x, FLOOR_Y, e.z).y;
+    const hit = e.flash > 0, sway = Math.sin(e.t * 1.7 + e.phase) * 2 * k;
+    c.globalAlpha = alpha * 0.35;
     c.fillStyle = '#000';
-    c.beginPath(); c.ellipse(sx, feet, 9 * u * s, 2 * u * s, 0, 0, 7); c.fill();
+    c.beginPath(); c.ellipse(x, feet, 7 * k, 1.6 * k, 0, 0, 7); c.fill();
+    // aura
     c.globalCompositeOperation = 'lighter';
     c.globalAlpha = alpha;
-    let gr = c.createRadialGradient(sx, cy, 0, sx, cy, hgt * 0.75);
-    gr.addColorStop(0, `rgba(80,190,255,${0.22 + e.flash * 0.4})`); gr.addColorStop(1, 'rgba(80,190,255,0)');
+    let gr = c.createRadialGradient(x, cy - 6 * k, 0, x, cy - 6 * k, 34 * k);
+    gr.addColorStop(0, `rgba(80,190,255,${0.24 + e.flash * 0.4})`); gr.addColorStop(1, 'rgba(80,190,255,0)');
     c.fillStyle = gr;
-    c.fillRect(sx - hgt, cy - hgt, hgt * 2, hgt * 2);
+    c.fillRect(x - 34 * k, cy - 40 * k, 68 * k, 68 * k);
     c.globalCompositeOperation = 'source-over';
-    // robe
-    const top = cy - hgt * 0.42, hem = cy + hgt * 0.45, w = 11 * u * s;
-    gr = c.createLinearGradient(0, top, 0, hem);
-    gr.addColorStop(0, e.flash > 0 ? 'rgba(255,230,200,.95)' : 'rgba(175,235,255,.88)');
-    gr.addColorStop(0.6, 'rgba(70,130,210,.55)'); gr.addColorStop(1, 'rgba(40,70,160,0)');
+    // the cloak: wide at the shoulders, falling to a wisp that trails and sways
+    const sh = cy - 15 * k, tail = cy + 24 * k;
+    gr = c.createLinearGradient(0, sh - 6 * k, 0, tail);
+    gr.addColorStop(0, hit ? 'rgba(255,236,210,.95)' : 'rgba(40,110,170,.95)');
+    gr.addColorStop(0.45, hit ? 'rgba(255,200,160,.7)' : 'rgba(60,150,220,.7)');
+    gr.addColorStop(1, 'rgba(90,190,255,0)');
     c.fillStyle = gr;
     c.beginPath();
-    c.moveTo(sx - w * 0.45, top + hgt * 0.12);
-    c.quadraticCurveTo(sx, top - hgt * 0.08, sx + w * 0.45, top + hgt * 0.12);
-    c.lineTo(sx + w * 0.8, top + hgt * 0.28);
-    c.lineTo(sx + w * 0.55, top + hgt * 0.4);
-    for (let i = 0; i <= 8; i++) {
-      const k = i / 8;
-      c.lineTo(sx + w * (0.6 - 1.2 * k), hem + Math.sin(k * 12 + e.t * 5) * 1.6 * u * s);
-    }
-    c.lineTo(sx - w * 0.55, top + hgt * 0.4);
-    c.lineTo(sx - w * 0.8, top + hgt * 0.28);
+    c.moveTo(x - 4 * k, sh - 7 * k);
+    c.quadraticCurveTo(x - 9 * k, sh - 3 * k, x - 9.5 * k, sh + 2 * k);
+    c.bezierCurveTo(x - 10 * k, sh + 16 * k, x - 6 * k + sway, tail - 10 * k, x + sway * 2.2, tail);
+    c.bezierCurveTo(x + 5 * k + sway, tail - 10 * k, x + 10 * k, sh + 16 * k, x + 9.5 * k, sh + 2 * k);
+    c.quadraticCurveTo(x + 9 * k, sh - 3 * k, x + 4 * k, sh - 7 * k);
     c.closePath();
     c.fill();
-    // mask
-    const hy = top + hgt * 0.03, hr = 4.6 * u * s;
-    c.fillStyle = '#eaf4f6';
-    c.beginPath(); c.ellipse(sx, hy, hr * 0.85, hr, 0, 0, 7); c.fill();
-    c.fillStyle = '#0a1a28';
-    c.beginPath(); c.ellipse(sx - hr * 0.35, hy - hr * 0.1, hr * 0.22, hr * 0.1, 0.35, 0, 7); c.fill();
-    c.beginPath(); c.ellipse(sx + hr * 0.35, hy - hr * 0.1, hr * 0.22, hr * 0.1, -0.35, 0, 7); c.fill();
-    c.fillStyle = '#c0392b';
-    c.fillRect(sx - hr * 0.08, hy + hr * 0.3, hr * 0.16, hr * 0.35);
+    // flowing light down the cloak
+    c.globalCompositeOperation = 'lighter';
+    c.strokeStyle = 'rgba(150,230,255,.35)';
+    c.lineWidth = Math.max(1, 0.5 * k);
+    for (const dx of [-4, 0, 4]) {
+      c.beginPath();
+      c.moveTo(x + dx * k, sh + 2 * k);
+      c.bezierCurveTo(x + dx * 1.2 * k, sh + 12 * k, x + dx * 0.4 * k + sway, tail - 12 * k, x + sway * 1.6 + dx * 0.2 * k, tail - 4 * k);
+      c.stroke();
+    }
+    c.globalCompositeOperation = 'source-over';
+    // sleeves: drifting at rest; one reaches to the orb it gathers; both rise for a wave
+    for (const side of [-1, 1] as const) {
+      const root = { x: x + side * 8 * k, y: sh + 1 * k };
+      let hand = { x: x + side * 10 * k, y: sh + 11 * k + Math.sin(e.t * 2.4 + side) * 1.2 * k };
+      if (e.winding && e.attack === 'slab') hand = { x: x + side * 9 * k, y: this.project(e.x, e.y - 28, e.z).y + bob };
+      else if (e.winding && side === e.side) {
+        const o = this.project(e.x + e.side * 11, e.y - 14, e.z);
+        hand = { x: lerp(hand.x, o.x - side * 1.5 * k, e.wind), y: lerp(hand.y, o.y + bob, e.wind) };
+      }
+      c.fillStyle = hit ? 'rgba(255,230,200,.9)' : 'rgba(70,160,225,.85)';
+      c.beginPath();
+      c.moveTo(root.x - side * 1 * k, root.y - 2 * k);
+      c.quadraticCurveTo((root.x + hand.x) / 2 + side * 3 * k, (root.y + hand.y) / 2 - 1 * k, hand.x + side * 2 * k, hand.y - 1.5 * k);
+      c.lineTo(hand.x - side * 1 * k, hand.y + 2 * k);
+      c.quadraticCurveTo((root.x + hand.x) / 2, (root.y + hand.y) / 2 + 2 * k, root.x - side * 2 * k, root.y + 4 * k);
+      c.closePath();
+      c.fill();
+      c.fillStyle = hit ? '#fff4e4' : '#cfeeff';
+      c.beginPath(); c.arc(hand.x, hand.y, 1.3 * k, 0, 7); c.fill();
+    }
+    // the hood
+    const hy = sh - 6 * k;
+    c.fillStyle = hit ? '#f0c8a0' : '#15365a';
+    c.beginPath();
+    c.moveTo(x, hy - 7.5 * k);
+    c.bezierCurveTo(x + 6.5 * k, hy - 7 * k, x + 7.5 * k, hy + 1 * k, x + 6 * k, hy + 6 * k);
+    c.lineTo(x - 6 * k, hy + 6 * k);
+    c.bezierCurveTo(x - 7.5 * k, hy + 1 * k, x - 6.5 * k, hy - 7 * k, x, hy - 7.5 * k);
+    c.fill();
+    // the mask: pale, with glowing slit eyes and a water mark
+    c.fillStyle = '#eef6f8';
+    c.beginPath(); c.ellipse(x, hy + 0.4 * k, 3.9 * k, 4.8 * k, 0, 0, 7); c.fill();
+    c.fillStyle = 'rgba(0,30,60,.25)';
+    c.beginPath(); c.ellipse(x + 1.2 * k, hy + 1 * k, 2.6 * k, 4 * k, 0, -1.2, 1.2); c.fill();
+    c.globalCompositeOperation = 'lighter';
+    const glow = 0.7 + 0.3 * Math.sin(e.t * 4 + e.phase) + (e.winding ? 0.4 : 0);
+    for (const side of [-1, 1]) {
+      const ex = x + side * 1.5 * k, ey = hy - 0.2 * k;
+      c.drawImage(SPR.spirit[0], ex - 2 * k * glow, ey - 2 * k * glow, 4 * k * glow, 4 * k * glow);
+      c.fillStyle = '#e8fbff';
+      c.beginPath(); c.ellipse(ex, ey, 1 * k, 0.35 * k, side * 0.3, 0, 7); c.fill();
+    }
+    c.globalCompositeOperation = 'source-over';
+    c.strokeStyle = '#2a7ab8';
+    c.lineWidth = Math.max(1, 0.45 * k);
+    c.beginPath(); c.arc(x, hy - 3.2 * k, 0.9 * k, Math.PI * 0.1, Math.PI * 1.6); c.stroke();
+    c.beginPath(); c.arc(x, hy + 2.8 * k, 1.1 * k, 0.2, Math.PI - 0.2); c.stroke();
     // wind-up telegraph: an orb in the hand, or a disc spinning up (sweep)
     if (e.winding && e.attack === 'slab') {
-      const o = this.project(e.x, e.y - 30, e.z), rx = (4 + e.wind * 12) * u * s;
+      const o = this.project(e.x, e.y - 30, e.z), rx = (4 + e.wind * 12) * k;
       c.globalCompositeOperation = 'lighter';
       c.strokeStyle = `rgba(140,230,255,${0.4 + 0.5 * e.wind})`;
       c.lineWidth = 3;
       c.beginPath(); c.ellipse(o.x, o.y + bob, rx, rx * 0.22, 0, e.t * 9, e.t * 9 + 5); c.stroke();
       c.globalCompositeOperation = 'source-over';
     } else if (e.winding) {
-      const o = this.project(e.x + e.side * 11, e.y - 14, e.z), r = (1.2 + e.wind * 3.5) * u * s;
+      const o = this.project(e.x + e.side * 11, e.y - 14, e.z), r = (1.2 + e.wind * 3.5) * k;
       const ox = o.x, oy = o.y + bob;
       c.globalCompositeOperation = 'lighter';
       c.drawImage(SPR.spirit[1], ox - r * 2.2, oy - r * 2.2, r * 4.4, r * 4.4);
@@ -465,19 +487,51 @@ export class Renderer {
     c.globalAlpha = 1;
   }
 
+  /** Daro's stone wall: dressed blocks raised in front of him (the back half, then the front edge). */
+  private drawStoneWall(e: Enemy, back: boolean): void {
+    const c = this.ctx, z = e.z - 0.8, a = this.project(e.x - 16, FLOOR_Y, z), b = this.project(e.x + 16, FLOOR_Y - 45, z);
+    if (back) {
+      c.fillStyle = 'rgba(0,0,0,.4)';
+      c.beginPath(); c.ellipse((a.x + b.x) / 2, a.y, (b.x - a.x) * 0.6, (b.x - a.x) * 0.06, 0, 0, 7); c.fill();
+      return;
+    }
+    const w = b.x - a.x, h = a.y - b.y, rows = 5, R = mulberry32(e.id);
+    c.fillStyle = '#6f5a44';
+    c.fillRect(a.x, b.y, w, h);
+    for (let r = 0; r < rows; r++) {
+      const y0 = b.y + (h * r) / rows, rh = h / rows, off = r % 2 ? 0.5 : 0;
+      for (let i = -1; i < 3; i++) {
+        const x0 = a.x + w * ((i + off) / 3), x1 = x0 + w / 3, l = Math.max(a.x, x0), rr = Math.min(a.x + w, x1);
+        if (rr <= l) continue;
+        c.fillStyle = `hsl(28, ${18 + R() * 8}%, ${30 + R() * 10}%)`;
+        c.fillRect(l + 1.5, y0 + 1.5, rr - l - 3, rh - 3);
+        c.fillStyle = 'rgba(255,230,190,.12)';
+        c.fillRect(l + 1.5, y0 + 1.5, rr - l - 3, rh * 0.18);
+      }
+    }
+    c.strokeStyle = '#2d2014'; c.lineWidth = 2;
+    c.strokeRect(a.x, b.y, w, h);
+    c.strokeStyle = 'rgba(30,20,10,.7)'; c.lineWidth = 1.5;
+    c.beginPath(); c.moveTo(a.x + w * 0.62, b.y); c.lineTo(a.x + w * 0.55, b.y + h * 0.3); c.lineTo(a.x + w * 0.66, b.y + h * 0.5); c.stroke();
+  }
+
   /**
-   * An earthbender in green and brown. Raising a pillar he stomps and lifts both arms (first 60% of
-   * the wind-up), then drives both palms forward.
+   * An earthbender: green tunic with a gold sash, brown trousers, boots, bare forearms wrapped in
+   * cloth, topknot. Raising a pillar he stomps and lifts both arms (first 60% of the wind-up), then
+   * drives both palms forward. Daro is bigger, with stone pauldrons, a beard and a cape.
    */
   private drawEarthbender(e: Enemy): void {
-    const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), k = u * p.s * (e.boss ? 1.6 : 1), x = p.x;
+    const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), boss = !!e.boss, k = u * p.s * (boss ? 1.6 : 1), x = p.x;
     const feet = this.project(e.x, FLOOR_Y, e.z).y;
     const alpha = e.appear * (1 - Math.min(1, e.dying));
     if (alpha <= 0) return;
     const hit = e.flash > 0, w = e.winding ? e.wind : 0;
     const lift = e.attack === 'pillar' ? Math.min(1, w / 0.6) : 0, shove = e.attack === 'pillar' ? clamp((w - 0.6) / 0.4, 0, 1) : 0;
-    const crouch = (lift - shove) * 3 * k;
-    if (e.boss && e.boss.winded > 0) {
+    const winded = boss && e.boss!.winded > 0, sag = winded ? 2.5 * k : 0;
+    const crouch = (lift - shove) * 3 * k + sag;
+    const col = (normal: string) => (hit ? '#fff0c8' : normal);
+    const OUT = '#1a120a', skin = col('#c98f62'), tunic = col(boss ? '#3f5a2e' : '#4e6b3a'), tunicDark = col(boss ? '#2e4422' : '#3a5230');
+    if (winded) {
       c.globalAlpha = alpha;
       c.globalCompositeOperation = 'lighter';
       const gr = c.createRadialGradient(x, p.y, 0, x, p.y, 24 * k);
@@ -488,41 +542,115 @@ export class Renderer {
       c.globalCompositeOperation = 'source-over';
     }
     c.globalAlpha = alpha;
+    c.lineJoin = 'round'; c.lineCap = 'round';
     c.fillStyle = 'rgba(0,0,0,.5)';
-    c.beginPath(); c.ellipse(x, feet, 9 * k, 2 * k, 0, 0, 7); c.fill();
-    // legs in a wide stance
-    c.strokeStyle = hit ? '#ffe0b0' : '#4a3a26';
-    c.lineWidth = 3.2 * k;
-    const hip = { x, y: p.y + 8 * k + crouch };
-    c.beginPath(); c.moveTo(hip.x - 2 * k, hip.y); c.lineTo(x - 7 * k, feet); c.moveTo(hip.x + 2 * k, hip.y); c.lineTo(x + 7 * k, feet); c.stroke();
-    // robe
-    const top = p.y - 14 * k + crouch;
-    c.fillStyle = hit ? '#fff0c8' : '#4e6b3a';
-    c.beginPath();
-    c.moveTo(x - 6 * k, top); c.lineTo(x + 6 * k, top); c.lineTo(x + 8 * k, hip.y + 3 * k); c.lineTo(x - 8 * k, hip.y + 3 * k); c.closePath(); c.fill();
-    c.fillStyle = hit ? '#ffe0b0' : '#b58a3c';
-    c.fillRect(x - 7 * k, hip.y - 3 * k, 14 * k, 2.4 * k);
-    // arms: rest → raised (lifting the stone) → driven forward (shoving it)
-    c.strokeStyle = hit ? '#ffe0b0' : '#4e6b3a';
-    c.lineWidth = 3 * k;
+    c.beginPath(); c.ellipse(x, feet, 11 * k, 2.2 * k, 0, 0, 7); c.fill();
+    const hipY = p.y + 8 * k + crouch, top = p.y - 14 * k + crouch;
+    // Daro's cape, behind everything
+    if (boss) {
+      c.fillStyle = col('#2a3a1e');
+      c.beginPath();
+      c.moveTo(x - 7 * k, top + 1 * k); c.lineTo(x + 7 * k, top + 1 * k);
+      c.quadraticCurveTo(x + 12 * k, hipY + 6 * k, x + 10 * k + Math.sin(e.t * 2) * k, hipY + 12 * k);
+      c.lineTo(x - 10 * k + Math.sin(e.t * 2 + 1) * k, hipY + 12 * k);
+      c.quadraticCurveTo(x - 12 * k, hipY + 6 * k, x - 7 * k, top + 1 * k);
+      c.fill();
+    }
+    // legs: trousers bent at the knee in a wide, rooted stance, then boots
+    c.strokeStyle = OUT;
     for (const side of [-1, 1]) {
-      const sh = { x: x + side * 6 * k, y: top + 2 * k };
-      let hand = { x: sh.x + side * 4 * k, y: sh.y + 10 * k };
+      const hip = { x: x + side * 3 * k, y: hipY }, foot = { x: x + side * 8 * k, y: feet - 1.2 * k };
+      const knee = { x: x + side * (7.5 * k + crouch * 0.4), y: (hip.y + foot.y) / 2 };
+      c.fillStyle = col('#6b5234');
+      c.beginPath();
+      c.moveTo(hip.x - 2.6 * k, hip.y); c.lineTo(hip.x + 2.6 * k, hip.y);
+      c.lineTo(knee.x + 2 * k, knee.y); c.lineTo(foot.x + 1.6 * k, foot.y - 2.5 * k);
+      c.lineTo(foot.x - 1.6 * k, foot.y - 2.5 * k); c.lineTo(knee.x - 2 * k, knee.y);
+      c.closePath(); c.fill();
+      c.lineWidth = Math.max(1, 0.35 * k); c.stroke();
+      c.fillStyle = col('#2a1e14');
+      c.beginPath(); c.ellipse(foot.x + side * 0.8 * k, foot.y - 0.6 * k, 2.6 * k, 1.5 * k, 0, 0, 7); c.fill();
+      c.fillRect(foot.x - 1.7 * k, foot.y - 3.6 * k, 3.4 * k, 3 * k);
+    }
+    // tunic: broad shoulders, cinched at the sash, flaring below it
+    c.fillStyle = tunic;
+    c.beginPath();
+    c.moveTo(x - 7.5 * k, top + 1 * k);
+    c.quadraticCurveTo(x, top - 1 * k, x + 7.5 * k, top + 1 * k);
+    c.lineTo(x + 5.2 * k, hipY - 3 * k);
+    c.lineTo(x + 7.5 * k, hipY + 4 * k);
+    c.lineTo(x - 7.5 * k, hipY + 4 * k);
+    c.lineTo(x - 5.2 * k, hipY - 3 * k);
+    c.closePath(); c.fill();
+    c.lineWidth = Math.max(1, 0.35 * k); c.strokeStyle = OUT; c.stroke();
+    c.fillStyle = tunicDark;
+    c.beginPath(); c.moveTo(x + 7.5 * k, top + 1 * k); c.lineTo(x + 5.2 * k, hipY - 3 * k); c.lineTo(x + 7.5 * k, hipY + 4 * k); c.lineTo(x + 3.5 * k, hipY + 4 * k); c.lineTo(x + 3 * k, top + 0.5 * k); c.closePath(); c.fill();
+    // crossed collar and the gold sash with its knot
+    c.strokeStyle = col('#c8a860'); c.lineWidth = Math.max(1, 0.7 * k);
+    c.beginPath(); c.moveTo(x - 3 * k, top); c.lineTo(x + 1.5 * k, top + 6 * k); c.moveTo(x + 3 * k, top); c.lineTo(x - 0.5 * k, top + 4 * k); c.stroke();
+    c.fillStyle = col(boss ? '#8a6a3a' : '#b58a3c');
+    c.fillRect(x - 5.6 * k, hipY - 4 * k, 11.2 * k, 2.6 * k);
+    c.beginPath(); c.moveTo(x + 2 * k, hipY - 1.4 * k); c.lineTo(x + 3.4 * k, hipY + 4 * k); c.lineTo(x + 1.2 * k, hipY + 3.6 * k); c.closePath(); c.fill();
+    if (boss) {
+      c.fillStyle = col('#7a746a');
+      c.beginPath(); c.arc(x, hipY - 2.7 * k, 1.5 * k, 0, 7); c.fill();
+    }
+    // arms: rest → raised (lifting the stone) → driven forward (shoving it)
+    for (const side of [-1, 1]) {
+      const sh = { x: x + side * 6.8 * k, y: top + 2 * k };
+      let hand = { x: sh.x + side * 3.5 * k, y: sh.y + 12 * k };
       if (e.attack === 'pillar' && e.winding) {
-        const up = { x: sh.x + side * 5 * k, y: sh.y - 10 * k }, fwd = { x: sh.x + side * 2 * k, y: sh.y + 2 * k };
+        const up = { x: sh.x + side * 5 * k, y: sh.y - 10 * k }, fwd = { x: sh.x + side * 1.5 * k, y: sh.y + 3 * k };
         hand = { x: lerp(lerp(hand.x, up.x, lift), fwd.x, shove), y: lerp(lerp(hand.y, up.y, lift), fwd.y, shove) };
       }
-      c.beginPath(); c.moveTo(sh.x, sh.y); c.lineTo(hand.x, hand.y); c.stroke();
-      c.fillStyle = hit ? '#fff0c8' : '#d9a27a';
-      c.beginPath(); c.arc(hand.x, hand.y, 1.6 * k, 0, 7); c.fill();
+      const elbow = { x: (sh.x + hand.x) / 2 + side * 2.4 * k, y: (sh.y + hand.y) / 2 + 1 * k };
+      const limb = (a: { x: number; y: number }, b: { x: number; y: number }, width: number, fill: string) => {
+        c.strokeStyle = OUT; c.lineWidth = width + Math.max(1.5, 0.7 * k);
+        c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+        c.strokeStyle = fill; c.lineWidth = width;
+        c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+      };
+      limb(sh, elbow, 3.4 * k, tunic);
+      limb(elbow, hand, 2.5 * k, skin);
+      c.strokeStyle = col('#d8c8a0'); c.lineWidth = Math.max(1, 0.5 * k);
+      for (const t of [0.35, 0.6]) {
+        const q = { x: lerp(elbow.x, hand.x, t), y: lerp(elbow.y, hand.y, t) };
+        c.beginPath(); c.moveTo(q.x - 1.2 * k, q.y - 0.4 * k); c.lineTo(q.x + 1.2 * k, q.y + 0.4 * k); c.stroke();
+      }
+      c.fillStyle = skin; c.strokeStyle = OUT; c.lineWidth = Math.max(1, 0.35 * k);
+      c.beginPath(); c.arc(hand.x, hand.y, 1.8 * k, 0, 7); c.fill(); c.stroke();
+      if (boss) {
+        // stone pauldrons
+        c.fillStyle = col('#7d6d5a');
+        c.beginPath(); c.ellipse(sh.x + side * 0.6 * k, sh.y - 0.4 * k, 3.6 * k, 2.6 * k, side * 0.3, 0, 7); c.fill(); c.stroke();
+        c.strokeStyle = 'rgba(0,0,0,.35)';
+        c.beginPath(); c.moveTo(sh.x - 2 * k, sh.y); c.lineTo(sh.x + 2 * k, sh.y + 0.5 * k); c.stroke();
+      }
     }
-    // head: skin, dark topknot
+    // head: neck, face, stern brows, topknot (Daro: a beard)
     const hy = top - 5 * k;
-    c.fillStyle = hit ? '#fff0c8' : '#d9a27a';
-    c.beginPath(); c.arc(x, hy, 4 * k, 0, 7); c.fill();
+    c.fillStyle = skin;
+    c.fillRect(x - 1.6 * k, hy + 2 * k, 3.2 * k, 3.5 * k);
+    c.strokeStyle = OUT; c.lineWidth = Math.max(1, 0.35 * k);
+    c.beginPath(); c.ellipse(x, hy, 3.6 * k, 4.2 * k, 0, 0, 7); c.fill(); c.stroke();
     c.fillStyle = '#1e1a16';
-    c.beginPath(); c.arc(x, hy - 1.5 * k, 4 * k, Math.PI, 0); c.fill();
-    c.beginPath(); c.arc(x, hy - 5 * k, 1.6 * k, 0, 7); c.fill();
+    c.beginPath(); c.ellipse(x, hy - 1.8 * k, 3.8 * k, 2.8 * k, 0, Math.PI, 0); c.fill();
+    c.beginPath(); c.arc(x, hy - 5.2 * k, 1.5 * k, 0, 7); c.fill();
+    c.fillStyle = col('#4e6b3a');
+    c.fillRect(x - 3.8 * k, hy - 2.3 * k, 7.6 * k, 0.9 * k);
+    c.fillStyle = '#1a120a';
+    for (const side of [-1, 1]) {
+      c.beginPath(); c.arc(x + side * 1.4 * k, hy + 0.2 * k, 0.45 * k, 0, 7); c.fill();
+      c.strokeStyle = '#1a120a'; c.lineWidth = Math.max(1, 0.45 * k);
+      c.beginPath(); c.moveTo(x + side * 2.3 * k, hy - 1 * k); c.lineTo(x + side * 0.6 * k, hy - 0.4 * k); c.stroke();
+    }
+    if (boss) {
+      c.fillStyle = '#2a1e16';
+      c.beginPath(); c.moveTo(x - 3.4 * k, hy + 0.8 * k); c.quadraticCurveTo(x, hy + 7 * k, x + 3.4 * k, hy + 0.8 * k); c.lineTo(x + 2 * k, hy + 2 * k); c.lineTo(x - 2 * k, hy + 2 * k); c.closePath(); c.fill();
+    } else {
+      c.strokeStyle = '#6a3a24'; c.lineWidth = Math.max(1, 0.35 * k);
+      c.beginPath(); c.moveTo(x - 1 * k, hy + 2.2 * k); c.lineTo(x + 1 * k, hy + 2.2 * k); c.stroke();
+    }
     c.globalAlpha = 1;
   }
 

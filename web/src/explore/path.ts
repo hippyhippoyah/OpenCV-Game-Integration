@@ -1,35 +1,28 @@
 import { PATH_LENGTH, STOPS } from '../campaign/chapter1';
 
-export interface V3 { x: number; y: number; z: number }
+export interface MapPt { x: number; y: number }
 /** A place on the path where the walk stops for you: a scroll to pick up, or an arena. */
 export interface Pause { at: number; kind: 'scroll' | 'arena'; stop: number }
 
 /** Walking pace along the path, metres per second. */
 export const WALK_SPEED = 3.2;
 
-/**
- * The path's centre line, from the temple courtyard (top) down the mountain to the village gate.
- * x/z across the ground, y up (metres). The places (see world3d.ts) sit along it.
- */
-export const WAYPOINTS: V3[] = [
-  { x: 0, y: 40, z: 0 }, { x: 0, y: 40, z: -30 },            // courtyard
-  { x: 12, y: 32, z: -50 }, { x: 24, y: 22, z: -70 },        // the long stairs
-  { x: 26, y: 20, z: -85 }, { x: 20, y: 18, z: -135 },       // bamboo bridge
-  { x: 5, y: 12, z: -160 }, { x: -10, y: 8, z: -190 },       // stone garden
-  { x: -12, y: 4, z: -225 }, { x: -8, y: 2, z: -262 },       // the village gate
-  { x: -6, y: 1, z: -300 },
-];
+/** The map is drawn in a MAP_W × MAP_H space (see map2d.ts). */
+export const MAP_W = 1600, MAP_H = 1000;
 
-/** Cumulative distance at each waypoint, scaled so the last is PATH_LENGTH. */
-const CUM = (() => {
-  const raw = [0];
-  for (let i = 1; i < WAYPOINTS.length; i++) {
-    const a = WAYPOINTS[i - 1], b = WAYPOINTS[i];
-    raw.push(raw[i - 1] + Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z));
-  }
-  const k = PATH_LENGTH / raw[raw.length - 1];
-  return raw.map(d => d * k);
-})();
+/**
+ * The path on the map, as points at distances along it: from the temple (top left) down past the
+ * stairs, over the river by the bamboo bridge, through the stone garden to the village gate.
+ * The stops and scrolls in chapter1.ts sit on these distances.
+ */
+export const ROUTE: { d: number; x: number; y: number }[] = [
+  { d: 0, x: 170, y: 190 }, { d: 15, x: 225, y: 228 }, { d: 30, x: 300, y: 250 },
+  { d: 50, x: 415, y: 238 }, { d: 68, x: 510, y: 290 }, { d: 80, x: 548, y: 360 },
+  { d: 100, x: 520, y: 452 }, { d: 122, x: 600, y: 522 }, { d: 135, x: 690, y: 548 },
+  { d: 155, x: 810, y: 526 }, { d: 176, x: 920, y: 560 }, { d: 190, x: 985, y: 615 },
+  { d: 210, x: 955, y: 698 }, { d: 232, x: 1025, y: 768 }, { d: 245, x: 1105, y: 795 },
+  { d: 262, x: 1195, y: 822 }, { d: PATH_LENGTH, x: 1390, y: 880 },
+];
 
 export function pauses(): Pause[] {
   return STOPS.flatMap((s, i): Pause[] => [
@@ -38,13 +31,16 @@ export function pauses(): Pause[] {
   ]).sort((a, b) => a.at - b.at);
 }
 
-/** Point on the path `d` metres along it. */
-export function pointAt(d: number): V3 {
+/** Where on the map you are `d` metres along the path (a smooth curve through ROUTE). */
+export function pointAt(d: number): MapPt {
   const t = Math.max(0, Math.min(PATH_LENGTH, d));
   let i = 1;
-  while (i < CUM.length - 1 && CUM[i] < t) i++;
-  const a = WAYPOINTS[i - 1], b = WAYPOINTS[i], k = (t - CUM[i - 1]) / (CUM[i] - CUM[i - 1] || 1);
-  return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k };
+  while (i < ROUTE.length - 1 && ROUTE[i].d < t) i++;
+  const p0 = ROUTE[Math.max(0, i - 2)], p1 = ROUTE[i - 1], p2 = ROUTE[i], p3 = ROUTE[Math.min(ROUTE.length - 1, i + 1)];
+  const k = (t - p1.d) / (p2.d - p1.d || 1), k2 = k * k, k3 = k2 * k;
+  const cr = (a: number, b: number, c: number, e: number) =>
+    0.5 * (2 * b + (-a + c) * k + (2 * a - 5 * b + 4 * c - e) * k2 + (-a + 3 * b - 3 * c + e) * k3);
+  return { x: cr(p0.x, p1.x, p2.x, p3.x), y: cr(p0.y, p1.y, p2.y, p3.y) };
 }
 
 /** Auto-walk along the path, stopping at each pause. */
@@ -66,27 +62,5 @@ export class Rail {
   skip(from: Pause[]): void {
     const next = from.find(p => p.at > this.d + 1e-6);
     if (next) this.d = Math.max(this.d, next.at - 2);
-  }
-
-  pose(): { pos: V3; heading: number } {
-    const a = pointAt(this.d), b = pointAt(this.d + 1.5);
-    return { pos: a, heading: Math.atan2(-(b.x - a.x), -(b.z - a.z)) };
-  }
-}
-
-/** Looking around with the mouse (radians, limited), drifting back to straight ahead. */
-export class Look {
-  yaw = 0;
-  pitch = 0;
-
-  move(dx: number, dy: number): void {
-    this.yaw = Math.max(-1.2, Math.min(1.2, this.yaw - dx * 0.0025));
-    this.pitch = Math.max(-0.55, Math.min(0.55, this.pitch - dy * 0.0025));
-  }
-
-  relax(dt: number): void {
-    const k = Math.exp(-dt * 0.8);
-    this.yaw *= k;
-    this.pitch *= k;
   }
 }
