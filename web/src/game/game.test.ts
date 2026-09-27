@@ -127,6 +127,41 @@ describe('Game', () => {
     expect(g.isThreat(p)).toBe(false);
   });
 
+  describe('practice mode', () => {
+    it('sets up still dummies that never attack', () => {
+      const g = new Game(mulberry32(3), 70, true);
+      expect(g.drainEvents().some(e => e.type === 'wave')).toBe(false);
+      const x0 = g.enemies.map(e => e.x);
+      run(g, 10, intent());
+      expect(g.enemies).toHaveLength(3);
+      expect(g.enemies.every(e => e.dummy)).toBe(true);
+      expect(g.enemies.map(e => e.x)).toEqual(x0);
+      expect(g.projs).toHaveLength(0);
+      expect(g.hp).toBe(TUNE.maxHp);
+    });
+
+    it('brings a knocked-down dummy back', () => {
+      const g = new Game(mulberry32(3), 70, true);
+      const d = g.enemies[0];
+      d.hp = 0;
+      run(g, 0.6, intent());
+      expect(g.enemies.find(e => e.id === d.id)).toBeUndefined();
+      run(g, 2, intent());
+      expect(g.enemies).toHaveLength(3);
+    });
+
+    it('toggles between dummies and spirit waves', () => {
+      const g = new Game(mulberry32(3));
+      g.drainEvents();
+      g.setPractice(true);
+      expect(g.practice).toBe(true);
+      expect(g.enemies.every(e => e.dummy)).toBe(true);
+      g.setPractice(false);
+      expect(g.enemies).toHaveLength(0);
+      expect(g.drainEvents()).toContainEqual({ type: 'wave', wave: 1 });
+    });
+  });
+
   it('bodyHit covers head and torso only', () => {
     expect(bodyHit({ x: 0, y: 0 }, 4)).toBe(true);
     expect(bodyHit({ x: 0, y: 30 }, 4)).toBe(true);

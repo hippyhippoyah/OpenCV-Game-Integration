@@ -293,6 +293,10 @@ export class Renderer {
   }
 
   private drawEnemy(e: Enemy): void {
+    if (e.dummy) {
+      this.drawDummy(e);
+      return;
+    }
     const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), s = p.s, sx = p.x;
     const bob = Math.sin(e.t * 2 + e.phase) * 1.5 * u * s;
     const cy = p.y + bob, hgt = 52 * u * s, feet = this.project(e.x, FLOOR_Y, e.z).y;
@@ -348,6 +352,33 @@ export class Renderer {
       c.beginPath(); c.arc(ox, oy, r * (4 - e.wind * 2.5), 0, 7); c.stroke();
       c.globalCompositeOperation = 'source-over';
     }
+    c.globalAlpha = 1;
+  }
+
+  /** Wooden training post with a straw body and a target for a head. */
+  private drawDummy(e: Enemy): void {
+    const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), k = u * p.s, x = p.x;
+    const feet = this.project(e.x, FLOOR_Y, e.z).y, top = p.y - 24 * k;
+    const alpha = e.appear * (1 - Math.min(1, e.dying));
+    if (alpha <= 0) return;
+    const hit = e.flash > 0;
+    c.globalAlpha = alpha;
+    c.fillStyle = 'rgba(0,0,0,.5)';
+    c.beginPath(); c.ellipse(x, feet, 7 * k, 1.6 * k, 0, 0, 7); c.fill();
+    c.fillStyle = hit ? '#ffcf9a' : '#6b4a33';
+    c.fillRect(x - 1.6 * k, top, 3.2 * k, feet - top);
+    c.fillRect(x - 11 * k, p.y - 12 * k, 22 * k, 2.6 * k);
+    c.fillStyle = hit ? '#fff0c8' : '#b8955a';
+    c.beginPath(); c.ellipse(x, p.y - 2 * k, 6 * k, 11 * k, 0, 0, 7); c.fill();
+    c.strokeStyle = '#5a3d25';
+    c.lineWidth = k;
+    for (const dy of [-8, 4]) { c.beginPath(); c.moveTo(x - 6 * k, p.y + dy * k); c.lineTo(x + 6 * k, p.y + dy * k); c.stroke(); }
+    c.fillStyle = hit ? '#fff0c8' : '#d8c39a';
+    c.beginPath(); c.arc(x, top, 5 * k, 0, 7); c.fill();
+    c.strokeStyle = '#c0392b';
+    c.beginPath(); c.arc(x, top, 3.4 * k, 0, 7); c.stroke();
+    c.fillStyle = '#c0392b';
+    c.beginPath(); c.arc(x, top, 1.2 * k, 0, 7); c.fill();
     c.globalAlpha = 1;
   }
 
@@ -497,7 +528,7 @@ export class Renderer {
       if (e.hp > 0) continue;
       const s = FOCAL / (FOCAL + e.z);
       for (let j = nOf(120, dt); j > 0; j--) {
-        this.emit(e.x + rnd(-8, 8), e.y + rnd(-20, 20), e.z, rnd(-10, 10) / s, rnd(-30, -5) / s, 0, rnd(0.4, 0.8), rnd(3, 6) / s, 'spirit', 0.6);
+        this.emit(e.x + rnd(-8, 8), e.y + rnd(-20, 20), e.z, rnd(-10, 10) / s, rnd(-30, -5) / s, 0, rnd(0.4, 0.8), rnd(3, 6) / s, e.dummy ? 'fire' : 'spirit', 0.6);
       }
     }
   }

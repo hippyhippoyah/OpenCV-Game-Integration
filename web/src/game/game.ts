@@ -18,6 +18,9 @@ export interface Enemy {
   id: number; x: number; y: number; z: number; hp: number;
   t: number; appear: number; dying: number; flash: number;
   cd: number; winding: boolean; wind: number; side: 1 | -1; phase: number;
+  /** Practice target: never moves or attacks, respawns in its slot. */
+  dummy?: boolean;
+  slot?: number;
 }
 
 export interface Proj {
@@ -33,6 +36,10 @@ export type GameEvent =
   | { type: 'wave'; wave: number };
 
 export type Rand = () => number;
+
+/** Where practice dummies stand (world x, depth). */
+const DUMMY_SLOTS = [{ x: -45, z: 6 }, { x: 0, z: 9 }, { x: 45, z: 6 }];
+const DUMMY_RESPAWN_S = 1.5;
 
 /** Head + torso hitbox. `v` is relative to the eyes. */
 export function bodyHit(v: Vec2, r: number): boolean {
@@ -60,15 +67,34 @@ export class Game {
   projs: Proj[] = [];
   /** Tests turn this off to control enemies by hand. */
   spawning = true;
+  /** Dummies instead of attacking spirits. */
+  practice = false;
 
   private events: GameEvent[] = [];
   private toSpawn = 0;
   private spawnT = 0;
   private waveBreak = 0;
   private nextId = 1;
+  private dummyTimers = DUMMY_SLOTS.map(() => 0);
 
-  constructor(private rand: Rand = Math.random, public viewHalfW = 70) {
-    this.startWave();
+  constructor(private rand: Rand = Math.random, public viewHalfW = 70, practice = false) {
+    if (practice) this.setPractice(true);
+    else this.startWave();
+  }
+
+  /** Switch between practice dummies and spirit waves, clearing the field. */
+  setPractice(on: boolean): void {
+    this.practice = on;
+    this.enemies = [];
+    this.projs = this.projs.filter(p => p.kind === 'player');
+    if (on) {
+      this.dummyTimers = DUMMY_SLOTS.map(() => 0);
+      this.spawnDummies(0);
+    } else {
+      this.wave = 0;
+      this.waveBreak = 0;
+      this.startWave();
+    }
   }
 
   step(dt: number, intent: Intent): void {
@@ -183,6 +209,10 @@ export class Game {
 
   private updateWaves(dt: number): void {
     if (!this.spawning) return;
+    if (this.practice) {
+      this.spawnDummies(dt);
+      return;
+    }
     const alive = this.enemies.filter(e => e.hp > 0).length;
     if (this.toSpawn > 0) {
       this.spawnT -= dt;
@@ -198,6 +228,20 @@ export class Game {
         this.startWave();
       }
     }
+  }
+
+  /** Fill empty dummy slots once their respawn timer runs out. */
+  private spawnDummies(dt: number): void {
+    DUMMY_SLOTS.forEach((slot, i) => {
+      if (this.enemies.some(e => e.slot === i)) return;
+      this.dummyTimers[i] -= dt;
+      if (this.dummyTimers[i] > 0) return;
+      this.dummyTimers[i] = DUMMY_RESPAWN_S;
+      this.enemies.push({
+        id: this.nextId++, x: slot.x, y: FLOOR_Y - 30, z: slot.z, hp: TUNE.enemyHp, t: 0, appear: 0, dying: 0, flash: 0,
+        cd: Infinity, winding: false, wind: 0, side: 1, phase: 0, dummy: true, slot: i,
+      });
+    });
   }
 
   private spawnEnemy(): void {
@@ -221,6 +265,7 @@ export class Game {
         if (e.dying >= 1) this.enemies.splice(i, 1);
         continue;
       }
+      if (e.dummy) continue;
       e.x += (Math.sin(e.t * 0.5 + e.phase) * 8 * dt) / (FOCAL / (FOCAL + e.z));
       if (e.appear < 1) continue;
       if (!e.winding) {

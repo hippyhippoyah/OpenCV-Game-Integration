@@ -7,7 +7,7 @@ export class Hud {
   update(g: Game): void {
     $('hpFill').style.width = `${g.hp}%`;
     $('score').textContent = String(g.score);
-    $('wave').textContent = `Wave ${g.wave}`;
+    $('wave').textContent = g.practice ? 'Practice dummies' : `Wave ${g.wave}`;
     const pill = $('pill');
     pill.classList.toggle('off', !g.fire.held && !g.shield.on);
     pill.classList.toggle('shield', g.shield.on);

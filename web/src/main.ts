@@ -27,6 +27,8 @@ let intent: Intent | null = null;
 let pendingThrow = false;
 let lastFrame: TrackingFrame | null = null;
 let game: Game | null = null;
+/** Dummies instead of spirits; toggled with T, or start with ?dummies. */
+let practice = new URLSearchParams(location.search).has('dummies');
 let acc = 0, last = performance.now(), fpsTime = 0, fpsFrames = 0;
 
 function startMock(): void {
@@ -74,7 +76,7 @@ function beginPlay(): void {
   intent = null;
   pendingThrow = false;
   acc = 0;
-  game = new Game(Math.random, renderer.viewHalfW);
+  game = new Game(Math.random, renderer.viewHalfW, practice);
   phase = 'play';
   show('calib', false);
   show('over', false);
@@ -159,6 +161,10 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toLowerCase();
   if (k === '`') debug.toggle();
+  if (k === 't' && game?.state === 'play') {
+    practice = !game.practice;
+    game.setPractice(practice);
+  }
   if (k === 'r' && game?.state === 'over') beginPlay();
   if (k === 'c' && camera && phase === 'play') beginCalibration();
   if ((k === '?' || k === '/') && tracker instanceof MockTracker) $('mockHelp').classList.toggle('hidden');
