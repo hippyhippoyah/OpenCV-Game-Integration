@@ -9,7 +9,7 @@ const depthScale = (z: number) => FOCAL / (FOCAL + z);
 
 export const TUNE = {
   maxHp: 100, hitDamage: 14, invulnS: 0.5,
-  punchCooldownS: 0.2, fireballSpeed: 12, fireballRadius: 4, launchZ: 0.3,
+  punchCooldownS: 0.1, fireballSpeed: 12, fireballRadius: 4, launchZ: 0.3,
   /**
    * How far the shoulder→hand direction bends a shot beyond where the hand opened. Sideways it
    * helps cross punches and hooks; vertically it mostly overshoots, so it is kept small.

@@ -28,7 +28,7 @@ describe('MockTracker', () => {
       try {
         const m = new MockTracker(identity);
         m.setMouse(5, 5);
-        const out = run(m, 40, i => { if (i === 5) m.punch('r'); });
+        const out = run(m, 80, i => { if (i === 45) m.punch('r'); }); // after the reach reading warms up
         const punches = out.flatMap(o => o.punches);
         expect(punches).toHaveLength(1);
         expect(punches[0].hand).toBe('r');
@@ -70,7 +70,7 @@ describe('MockTracker', () => {
   it('fist punches go through the same reach-from-size detection as the camera', () => {
     const m = new MockTracker(identity);
     m.setMouse(5, 5);
-    const out = run(m, 40, i => { if (i === 5) m.punch('r'); });
+    const out = run(m, 80, i => { if (i === 45) m.punch('r'); }); // after the reach reading warms up
     expect(out[3].hands.r!.reach).not.toBeNull();
     expect(out.flatMap(o => o.punches)).toHaveLength(1);
   });

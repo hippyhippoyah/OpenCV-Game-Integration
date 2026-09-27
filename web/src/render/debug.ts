@@ -109,9 +109,9 @@ export class DebugView {
   }
 
   /**
-   * Per-fist bars along the bottom: how far the fist is past its guard (0–0.4 m), with the orange
-   * tick where a fist punch fires (it rises with the measured wobble) and the green tick where it
-   * re-arms. The dot is lit while that fist is ready. Without 3D data: arm straightness instead.
+   * Per-fist bars along the bottom: how far the fist jolted forward just now (0–0.3 m), with the
+   * orange tick where a fist punch fires. The dot is lit while that fist is ready to fire again.
+   * Without 3D data: arm straightness instead.
    */
   private drawArmMeters(intent: Intent): void {
     const c = this.ctx, w = this.canvas.width, h = this.canvas.height;
@@ -127,11 +127,12 @@ export class DebugView {
       const hand = intent.hands[side], x0 = w * (0.04 + i * 0.5), bw = w * 0.42;
       c.fillStyle = 'rgba(255,255,255,.1)';
       c.fillRect(x0, y, bw, barH);
-      const byReach = hand && hand.reach !== null && hand.reachBase !== null;
-      const RANGE = 0.4, noise = hand?.reachNoise ?? 0;
-      const value = byReach ? (hand!.reach! - hand!.reachBase!) / RANGE : hand?.extension ?? null;
+      // the fist's forward jolt over the last moment, against what a punch needs
+      const byReach = hand && hand.punchRise !== null;
+      const RANGE = 0.3, noise = hand?.reachNoise ?? 0;
+      const value = byReach ? Math.max(0, hand!.punchRise!) / RANGE : hand?.extension ?? null;
       const marks = byReach
-        ? [[TUNING.reachRearm / RANGE, '#9dffcf'], [fistThresholds(noise).past / RANGE, '#ff7a3d']] as const
+        ? [[fistThresholds(noise).rise / RANGE, '#ff7a3d']] as const
         : [[TUNING.extendRearmBelow, '#9dffcf'], [TUNING.extendFireAbove, '#ff7a3d']] as const;
       if (value !== null) {
         c.fillStyle = hand!.punchReady ? '#ffb347' : '#8a6a4a';

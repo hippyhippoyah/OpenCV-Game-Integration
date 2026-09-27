@@ -26,9 +26,9 @@ function combo(distance: number, moves: [number, Side, Reach][]) {
 }
 
 /**
- * Fist punches are read from how big each fist looks, which a webcam does cleanly up to about
- * 1.8 m: there every punch must be caught and nothing may misfire. Further away the reading gets
- * shaky; at 2.5 m most punches must still land and misfires must stay rare.
+ * Fist punches are read from how big each fist looks. Tuned to catch every quick punch (sensitivity
+ * first): up to 1.8 m every punch must land. Misfires: none at 1.2 m, at most a stray one at
+ * 1.5–1.8 m. Beyond that the reading is shaky and the HUD asks the player to step closer.
  */
 const PUNCH_RANGE = [1.2, 1.5, 1.8];
 const SEEDS = [1, 2, 3];
@@ -44,6 +44,24 @@ describe('fist punches on a simulated webcam', () => {
       expect(p.map(x => x.hand), `${distance} m seed ${seed}`).toEqual(['r', 'r', 'r']);
       // fires within 0.32 s of starting the punch (the fist is out by 0.12 s; nearer 1.8 m it waits closer to full extension)
       p.forEach((x, i) => expect(x.t - at[i], `latency ${distance} m seed ${seed}`).toBeLessThan(0.32));
+    });
+  });
+
+  it('catches rapid-fire short jabs, four a second, that only go partway out', () => {
+    // quick snaps: 0.07 s out, 0.06 s hold, 0.1 s back. Short ones (13 cm) read cleanly up close; a
+    // little further back the fist looks smaller, so the snap has to be a bit longer to stand out.
+    const snapLength: Record<number, number> = { 1.2: 0.13, 1.5: 0.18, 1.8: 0.24 };
+    eachCase((distance, seed) => {
+      const snap = { ...POSES.guard, fwd: POSES.guard.fwd + snapLength[distance] };
+      const at = [1.5, 1.75, 2.0, 2.25, 2.5, 2.75];
+      const script = (t: number) => {
+        const t0 = at.filter(x => x <= t).at(-1);
+        return guardState(distance, { r: { reach: t0 === undefined ? POSES.guard : punchReach(t, t0, snap, 0.07, 0.06, 0.1) } });
+      };
+      const p = punchesIn(perform(script, 3.4, { seed }));
+      // every snap lands; tuned for sensitivity, so a burst may throw one extra
+      expect(p.length, `${distance} m seed ${seed}`).toBeGreaterThanOrEqual(at.length);
+      expect(p.length, `${distance} m seed ${seed}`).toBeLessThanOrEqual(at.length + 1);
     });
   });
 
@@ -84,16 +102,17 @@ describe('fist punches on a simulated webcam', () => {
   describe('does not fire on', () => {
     const quiet = (name: string, script: (distance: number) => (t: number) => BodyState, seconds = 5) =>
       it(name, () => {
-        eachCase((distance, seed) => {
-          expect(punchesIn(perform(script(distance), seconds, { seed })), `${distance} m seed ${seed}`).toHaveLength(0);
-        });
-        const far = SEEDS.reduce((n, seed) => n + punchesIn(perform(script(2.5), seconds, { seed })).length, 0);
-        expect(far, `2.5 m: at most one stray punch over ${SEEDS.length} runs`).toBeLessThanOrEqual(1);
+        for (const seed of SEEDS) expect(punchesIn(perform(script(1.2), seconds, { seed })), `1.2 m seed ${seed}`).toHaveLength(0);
+        for (const distance of [1.5, 1.8]) {
+          const strays = SEEDS.reduce((n, seed) => n + punchesIn(perform(script(distance), seconds, { seed })).length, 0);
+          expect(strays, `${distance} m: at most one stray punch over ${SEEDS.length} runs`).toBeLessThanOrEqual(1);
+        }
       });
 
     quiet('standing in guard', d => () => guardState(d));
+    // bobbing about in guard (a quick 8 cm dart toward the camera would count as a punch, by design)
     quiet('weaving in guard', d => t => {
-      const w = (k: number) => ({ out: POSES.guard.out + 0.06 * Math.sin(t * 9 + k), up: POSES.guard.up + 0.05 * Math.sin(t * 7 + k), fwd: POSES.guard.fwd + 0.04 * Math.sin(t * 8 + k) });
+      const w = (k: number) => ({ out: POSES.guard.out + 0.06 * Math.sin(t * 9 + k), up: POSES.guard.up + 0.05 * Math.sin(t * 7 + k), fwd: POSES.guard.fwd + 0.025 * Math.sin(t * 8 + k) });
       return guardState(d, { l: { reach: w(0) }, r: { reach: w(2) } });
     });
     quiet('leaning in and back', d => t => ({ ...guardState(d), distance: d - 0.35 * Math.max(0, Math.sin(Math.max(0, t - 1) * 2)) }));

@@ -181,3 +181,16 @@ forward movement within 0.5 s (only so drift doesn't count); noise scaling is ca
 0.16 m), a fist only blocks a punch once it is clearly open (openness ≥ 0.8), and `[` / `]` change
 sensitivity live. Simulated: 100% of punches caught at 1.2–1.8 m with no misfires there (was
 80–98%); ~90% at 2.5 m with rare misfires (was 27%). A deliberate slow reach now counts.
+
+## Revision 2026-09-27: fist punches are a quick jolt (rapid fire, partial punches)
+
+A punch is now any quick movement of a fist toward the camera, not reaching a set distance: the
+fist came ≥ max(0.065 m, 8 × wobble) closer within 0.2 s (capped at 0.2 m), more than the other
+fist did by ≥ max(0.05 m, 4 × wobble). It re-arms once it comes back ≥ max(0.05 m, 4 × wobble)
+from the punch's peak (no need to return to guard), at most one punch per 0.12 s per fist; the
+game cooldown is 0.1 s. A fist's reach reading warms up 0.6 s before it can punch. The hand-depth
+filter releases faster (One Euro 2 Hz, β 4) so rapid snaps aren't averaged away.
+
+Simulated, tuned sensitivity-first: rapid snaps (4/s, 13–24 cm) and jabs 100% caught at 1.2–1.8 m;
+misfires from standing/weaving/leaning/two-handed pushes: none at 1.2 m, ~1 per 50 s at 1.5–1.8 m;
+trigger-happy at 2.5 m (HUD: step closer). `[` / `]` trade sensitivity for strictness live.
