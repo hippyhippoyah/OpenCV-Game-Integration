@@ -379,3 +379,8 @@ and uppercuts keep the elbow at or below the shoulder). Both fists at the hips c
 full charge lasts 1.5 s. Charged shots no longer follow where the fist points (it's near the
 chest, where aim reads worst): they go for the enemy aimed at, else the nearest, else straight
 ahead. Shield burst is removed. Mock: G holds the right fist at the hip.
+
+**Ear pose (revised):** the elbow reading was too wobbly on camera; the ear pose is now just the
+fist raised ≥ 32 view units (1 shoulder width) above its shoulder — about eye or temple height,
+above a guard at the chin — and held still. (The hip pose still uses the elbow's flare or arm bend,
+either being enough.)

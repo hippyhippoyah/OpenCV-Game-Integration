@@ -160,9 +160,9 @@ describe('X block on a simulated webcam', () => {
 });
 
 describe('charged punches on a simulated webcam', () => {
-  /** A fist down at the hip (elbow flared back), and cocked up by the ear (elbow raised). */
+  /** A fist down at the hip (elbow flared back), and raised up by the ear. */
   const HIP: Reach = { out: 0.04, up: -0.36, fwd: -0.04 };
-  const EAR: Reach = { out: -0.06, up: 0.26, fwd: 0.04 };
+  const EAR: Reach = { out: -0.06, up: 0.32, fwd: 0.04 };
   /** Right fist: guard, into `pose` at 1.5 s (over 0.2 s), held for `hold`, then a jab. */
   const chargeThenJab = (distance: number, pose: Reach, hold: number) => (t: number) => {
     const into = 1.5, out = into + 0.2 + hold;

@@ -145,12 +145,13 @@ export const TUNING = {
    * - at the hip: the fist hipBelow…hipBelowMax below the shoulder, with the elbow flared out
    *   elbowFlare past it or the arm bent (extension under hipMaxExtension) — unlike a relaxed arm
    *   hanging straight down;
-   * - cocked by the ear: the fist earAbove above the shoulder and the elbow raised elbowUp above
-   *   it — guard, jabs and uppercuts keep the elbow at or below the shoulder.
+   * - cocked by the ear: the fist raised earAbove above the shoulder — about eye or temple height,
+   *   above a guard at the chin (jabs and uppercuts pass through up there, but aren't held).
+   *   The pose's elbow reading was too wobbly to use.
    * The fist must be held nearly still (screen speed under chargeMaxSpeed).
    */
   chargeHoldS: 0.5, chargeKeepS: 1.5, chargeMaxSpeed: 35,
-  hipBelow: 28, hipBelowMax: 60, elbowFlare: 8, hipMaxExtension: 0.5, earAbove: 20, elbowUp: 12,
+  hipBelow: 28, hipBelowMax: 60, elbowFlare: 8, hipMaxExtension: 0.5, earAbove: 32,
   /**
    * Live punch and push sensitivity ([ and ] in game): thresholds are divided by this. Tuned and tested
    * at 1; the default is set higher by preference (more misses caught, some more misfires).
@@ -589,13 +590,13 @@ function heldStill(o: Track, pushing: Track): boolean {
   return palmPushRise(o.hist, w, o.lastPunchT) < TUNING.palmOtherStill * palmPushRise(pushing.hist, w);
 }
 
-/** Is this fist in a charging pose: down at the hip (elbow flared or arm bent), or cocked up by the ear (elbow raised)? */
+/** Is this fist in a charging pose: down at the hip (elbow flared or arm bent), or raised up by the ear? */
 export function chargePose(tr: HandState, side: Side, shoulder: Vec2): 'hip' | 'ear' | null {
-  if (tr.openness >= TUNING.clearlyOpen || !tr.elbow) return null;
+  if (tr.openness >= TUNING.clearlyOpen) return null;
   const out = side === 'l' ? -1 : 1, below = tr.pos.y - shoulder.y;
-  const flared = (tr.elbow.x - tr.pos.x) * out >= TUNING.elbowFlare;
+  if (tr.source === 'hand' && -below >= TUNING.earAbove) return 'ear';
+  const flared = !!tr.elbow && (tr.elbow.x - tr.pos.x) * out >= TUNING.elbowFlare;
   if (below >= TUNING.hipBelow && below <= TUNING.hipBelowMax && (flared || (tr.extension ?? 1) < TUNING.hipMaxExtension)) return 'hip';
-  if (tr.source === 'hand' && -below >= TUNING.earAbove && shoulder.y - tr.elbow.y >= TUNING.elbowUp) return 'ear';
   return null;
 }
 
