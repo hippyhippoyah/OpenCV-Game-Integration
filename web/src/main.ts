@@ -60,6 +60,8 @@ let ghostSinceProgress = 0;
 let ghostAlphaNow = 1;
 /** So "NOW FOR REAL" toasts only when practice just ended (the runner's previous state). */
 let prevCampaignState: string | null = null;
+/** True while the campaign's practice/fight is paused via Esc (see stepCampaign & togglePause). */
+let campPaused = false;
 const params = new URLSearchParams(location.search);
 /** Skip the mode menu with ?mode=tutorial|waves|training|campaign (?dummies = training). */
 const startMode: Mode | null = params.has('dummies') ? 'training'
@@ -120,6 +122,7 @@ function showModes(note = ''): void {
   phase = 'modes';
   game = null;
   tutorial = null;
+  campPaused = false;
   campUI?.hideAll();
   show('world', false);
   renderer.ghost = null;
@@ -155,6 +158,7 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
     ghostLessonIndex = -1;
     ghostAlphaNow = 1;
     prevCampaignState = null;
+    campPaused = false;
     if (tracker instanceof MockTracker && !mockHelpShown) {
       mockHelpShown = true;
       show('mockHelp');
@@ -254,14 +258,21 @@ function stepCampaign(dt: number, now: number): void {
   // the fight's game is the runner's
   game = r.game;
   let events: GameEvent[] = [];
-  if (game && intent && (r.state === 'practice' || r.state === 'fight')) {
-    acc += dt;
-    while (acc >= STEP) { game.step(STEP, { ...intent, punches: pendingPunches, casts: pendingCasts, palms: pendingPalms }); pendingPunches = []; pendingCasts = []; pendingPalms = []; acc -= STEP; }
-    events = game.drainEvents();
-    for (const e of events) { renderer.onEvent(e); hud.onEvent(e); }
-    hud.update(game, intent.hands);
+  if (campPaused) {
+    // dropped so nothing fires on resume
+    pendingPunches = [];
+    pendingCasts = [];
+    pendingPalms = [];
+  } else {
+    if (game && intent && (r.state === 'practice' || r.state === 'fight')) {
+      acc += dt;
+      while (acc >= STEP) { game.step(STEP, { ...intent, punches: pendingPunches, casts: pendingCasts, palms: pendingPalms }); pendingPunches = []; pendingCasts = []; pendingPalms = []; acc -= STEP; }
+      events = game.drainEvents();
+      for (const e of events) { renderer.onEvent(e); hud.onEvent(e); }
+      hud.update(game, intent.hands);
+    }
+    if (!campUI!.overlayOpen) r.update(dt, check.seen && check.handsUp && check.distance === 'ok', events);
   }
-  if (!campUI!.overlayOpen) r.update(dt, check.seen && check.handsUp && check.distance === 'ok', events);
   if (prevCampaignState === 'practice' && r.state === 'fight') hud.toast('NOW FOR REAL');
   prevCampaignState = r.state;
   // the lesson card, shared with the tutorial's own: shown only while practising a campaign lesson
@@ -296,7 +307,7 @@ function stepCampaign(dt: number, now: number): void {
     world!.setTaken(STOPS.flatMap((s, i) => (s.scroll && progress.hasScroll(s.scroll) ? [i] : [])));
     world!.render(r.rail, look, dt, r.state === 'scroll' ? 'scroll' : r.state === 'arena' ? 'arena' : null);
   }
-  campUI!.update(r, check, now);
+  campUI!.update(r, check, now, campPaused);
   if (practice) lessonDemo.draw(practice.lesson.id, now / 1000);
 }
 
@@ -363,6 +374,8 @@ $('campAgain').addEventListener('click', () => {
 });
 $('campRetry').addEventListener('click', () => campaign?.retry());
 $('campMenu').addEventListener('click', () => showModes());
+$('campResume').addEventListener('click', () => { campPaused = false; });
+$('campLeave').addEventListener('click', () => { campPaused = false; showModes(); });
 
 /** Is the campaign currently exploring the 3D path (walk/scroll/arena/end), where mouse look & keys apply? */
 function exploringCampaign(): boolean {
@@ -435,6 +448,8 @@ addEventListener('keydown', e => {
     if (k === 'escape') {
       if (r.state === 'handoff' || r.state === 'countdown') r.back();
       else if (campUI?.overlayOpen) { campUI.toggleMap(false); campUI.toggleScrolls(false); }
+      else if (r.state === 'practice' || r.state === 'fight') campPaused = !campPaused;
+      else if (r.state === 'lost' || r.state === 'result') { /* the cards' own buttons decide */ }
       else showModes();
       return;
     }

@@ -35,15 +35,17 @@ export class CampaignUI {
   toggleMap(on = $('campMap').classList.contains('hidden')): void { show('campScrolls', false); show('campMap', on); if (on) this.drawMap(); }
   toggleScrolls(on = $('campScrolls').classList.contains('hidden')): void { show('campMap', false); show('campScrolls', on); }
 
-  hideAll(): void { show('camp', false); document.body.classList.remove('campaign'); }
+  hideAll(): void { show('camp', false); show('campPause', false); document.body.classList.remove('campaign'); }
 
-  update(r: CampaignRunner, check: HandoffCheck, now: number): void {
+  update(r: CampaignRunner, check: HandoffCheck, now: number, paused = false): void {
     show('camp');
     document.body.classList.add('campaign');
     const s = r.state, exploring = s === 'walk' || s === 'scroll' || s === 'arena';
+    const pausable = s === 'practice' || s === 'fight';
     $('campControls').innerHTML = exploring
       ? '<span><kbd>Mouse</kbd> look</span><span><kbd>E</kbd> interact</span><span><kbd>Space</kbd> skip ahead</span><span><kbd>M</kbd> map</span><span><kbd>Tab</kbd> scrolls</span><span><kbd>Esc</kbd> menu</span>'
-      : '<span><kbd>Esc</kbd> pause</span>';
+      : pausable && paused ? '<span><kbd>Esc</kbd> resume</span>' : '<span><kbd>Esc</kbd> pause</span>';
+    show('campPause', pausable && paused);
     // Ren's lines while exploring or at the start of a fight
     const ren = r.ren && (exploring || s === 'handoff');
     show('campRen', !!ren);

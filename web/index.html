@@ -71,6 +71,13 @@
       <p>Catch your breath, then try the fight again.</p>
       <div class="actions"><button id="campRetry">Try again</button></div>
     </div>
+    <div class="card hidden" id="campPause">
+      <h1>Paused</h1>
+      <p>Catch your breath.</p>
+      <p class="muted">Leaving ends this fight; your scrolls and finished stops are kept.</p>
+      <div class="actions"><button id="campResume">Resume</button><button id="campLeave" class="secondary">Leave to menu</button></div>
+      <p class="muted"><kbd>Esc</kbd> resume</p>
+    </div>
     <div class="card hidden" id="campMap"><h1>The Ember Path</h1><canvas id="campMapCanvas"></canvas><p class="muted">Click a lit lantern to replay it · <kbd>M</kbd> close</p></div>
     <div class="card hidden" id="campScrolls"><h1>Scrolls</h1><div id="campScrollList" class="scrolls"></div><p class="muted"><kbd>Tab</kbd> close</p></div>
     <div class="card hidden" id="campEnd"><h1>Chapter 1 complete</h1><p>Daro falls back down the valley. Kuzan will come himself now.</p><div class="actions"><button id="campMenu">Menu</button></div></div>
