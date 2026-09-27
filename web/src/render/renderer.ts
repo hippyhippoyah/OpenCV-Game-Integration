@@ -3,7 +3,7 @@ import type { Side } from '../input/types';
 import { TUNING } from '../intent/interpret';
 import { clamp, lerp, mulberry32, type Vec2 } from '../math';
 
-type Pal = 'fire' | 'spirit' | 'earth';
+type Pal = 'fire' | 'spirit' | 'earth' | 'blue';
 interface Particle {
   x: number; y: number; z: number; vx: number; vy: number; vz: number;
   life: number; max: number; size: number; pal: Pal; rise: number;
@@ -39,6 +39,12 @@ const SPR: Record<Pal, HTMLCanvasElement[]> = {
     sprite([[0, 'rgba(240,255,255,1)'], [0.3, 'rgba(150,235,255,.8)'], [1, 'rgba(60,160,255,0)']]),
     sprite([[0, 'rgba(120,220,255,.9)'], [0.4, 'rgba(60,140,255,.5)'], [1, 'rgba(40,40,200,0)']]),
     sprite([[0, 'rgba(120,80,255,.5)'], [0.5, 'rgba(70,40,180,.2)'], [1, 'rgba(30,0,80,0)']]),
+  ],
+  // charged fire burns blue
+  blue: [
+    sprite([[0, 'rgba(240,250,255,1)'], [0.3, 'rgba(140,190,255,.9)'], [1, 'rgba(60,110,255,0)']]),
+    sprite([[0, 'rgba(120,170,255,.95)'], [0.4, 'rgba(70,110,255,.6)'], [1, 'rgba(40,40,220,0)']]),
+    sprite([[0, 'rgba(90,90,240,.6)'], [0.5, 'rgba(50,40,180,.25)'], [1, 'rgba(20,0,90,0)']]),
   ],
   earth: [
     sprite([[0, 'rgba(230,200,150,1)'], [0.35, 'rgba(170,120,70,.8)'], [1, 'rgba(90,60,30,0)']]),
@@ -130,6 +136,13 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.35);
         this.flare[e.side] = FLARE_S * 2;
         break;
+      case 'combo':
+        // a flourish at the hand or where it happened
+        this.burst(e.x, e.y, e.z, e.name === 'charged' ? 'blue' : 'fire', e.name === 'charged' ? 40 : 30, 40);
+        this.shake = Math.max(this.shake, e.name === 'finisher' ? 0.8 : 0.3);
+        if (e.side) this.flare[e.side] = FLARE_S * 2;
+        else this.flare = { l: FLARE_S * 2, r: FLARE_S * 2 };
+        break;
       case 'wallPush':
         for (let i = 0; i < 60; i++) this.emit(e.x + rnd(-30, 30), e.y - rnd(0, 4), e.z, rnd(-8, 8), rnd(-70, -30), rnd(2, 6), rnd(0.4, 0.8), rnd(4, 8));
         this.shake = Math.max(this.shake, 0.4);
@@ -187,7 +200,7 @@ export class Renderer {
     if (g) {
       g.walls.forEach(w => this.drawWall(w));
       // far pillars first, so nearer ones glow over them
-      [...g.pillars].sort((a, b) => b.z - a.z).forEach(p => this.drawColumn(p.x, p.z, TUNE.pillarHalfW, Math.min(1, p.age / 0.1)));
+      [...g.pillars].sort((a, b) => b.z - a.z).forEach(p => this.drawColumn(p.x, p.z, p.halfW, Math.min(1, p.age / 0.1)));
       [...g.hazards].sort((a, b) => b.z - a.z).forEach(h => this.drawHazard(g, h));
     }
     this.drawParticles(true);
@@ -515,9 +528,16 @@ export class Renderer {
     c.globalCompositeOperation = 'lighter';
     for (const p of g.projs) {
       if ((p.z > 1) !== far) continue;
-      const q = this.project(p.x, p.y, p.z), r = p.r * q.s * this.u, set = p.kind === 'player' ? SPR.fire : SPR.spirit;
+      const q = this.project(p.x, p.y, p.z), r = p.r * q.s * this.u;
+      const set = p.kind === 'enemy' ? SPR.spirit : p.shot === 'charged' ? SPR.blue : SPR.fire;
       c.drawImage(set[1], q.x - r * 2.4, q.y - r * 2.4, r * 4.8, r * 4.8);
       c.drawImage(set[0], q.x - r * 1.2, q.y - r * 1.2, r * 2.4, r * 2.4);
+      if (p.shot === 'counter' || p.shot === 'flurry') {
+        // a white-hot ring marks a combo shot
+        c.strokeStyle = p.shot === 'counter' ? 'rgba(255,255,255,.8)' : 'rgba(255,220,150,.7)';
+        c.lineWidth = Math.max(1.5, r * 0.18);
+        c.beginPath(); c.arc(q.x, q.y, r * 1.5, this.t * 8, this.t * 8 + 4.5); c.stroke();
+      }
     }
     c.globalCompositeOperation = 'source-over';
   }
@@ -536,7 +556,7 @@ export class Renderer {
     }
   }
 
-  /** How strongly a hand burns right now: attacking or shielding, else not at all. */
+  /** How strongly a hand burns right now: attacking, shielding or charged, else not at all. */
   private burning(g: Game, side: Side): number {
     return Math.max(g.shield.on ? 1 : 0, Math.min(1, this.flare[side] / FLARE_S));
   }
@@ -547,6 +567,15 @@ export class Renderer {
     c.globalCompositeOperation = 'lighter';
     for (const side of ['l', 'r'] as const) {
       const h = g.hands[side], burn = this.burning(g, side);
+      if (h?.inView && h.charge > 0) {
+        // a charging fist glows blue, brighter as it fills; charged, it pulses
+        const C = this.viewToScreen(h.pos), full = h.charge >= 1, rr = (14 + 16 * h.charge) * u;
+        const pulse = full ? 0.8 + 0.2 * Math.sin(this.t * 10) : 1;
+        const gr = c.createRadialGradient(C.x, C.y, 0, C.x, C.y, rr);
+        gr.addColorStop(0, `rgba(140,190,255,${(0.2 + 0.35 * h.charge) * pulse})`); gr.addColorStop(1, 'rgba(60,110,255,0)');
+        c.fillStyle = gr;
+        c.fillRect(C.x - rr, C.y - rr, rr * 2, rr * 2);
+      }
       if (!h?.inView || burn <= 0) continue;
       const C = this.viewToScreen(h.pos), r = 32 * u;
       const gr = c.createRadialGradient(C.x, C.y, 0, C.x, C.y, r);
@@ -972,7 +1001,7 @@ export class Renderer {
     // rolling pillars of fire
     for (const col of g.pillars) {
       for (let i = nOf(420, dt); i > 0; i--) {
-        this.emit(col.x + rnd(-TUNE.pillarHalfW, TUNE.pillarHalfW), FLOOR_Y - rnd(0, TUNE.pillarHeight * 0.8), col.z + rnd(-0.3, 0.3),
+        this.emit(col.x + rnd(-col.halfW, col.halfW), FLOOR_Y - rnd(0, TUNE.pillarHeight * 0.8), col.z + rnd(-0.3, 0.3),
           rnd(-6, 6), rnd(-90, -40), rnd(-2, 0), rnd(0.25, 0.55), rnd(5, 9));
       }
     }
@@ -999,8 +1028,18 @@ export class Renderer {
           rnd(-3, 3), rnd(-34, -14) * (0.6 + e * 0.6), 0, rnd(0.25, 0.5), (3 + e * 2) * rnd(0.7, 1.1));
       }
     }
+    // a charged fist smoulders with blue flame
+    for (const side of ['l', 'r'] as const) {
+      const h = g.hands[side];
+      if (!h?.inView || h.charge <= 0) continue;
+      const w = g.handWorld(h.pos);
+      for (let i = nOf(200 * h.charge * h.charge, dt); i > 0; i--) {
+        const a = Math.random() * 6.283, d = Math.sqrt(Math.random()) * 2;
+        this.emit(w.x + Math.cos(a) * d, w.y - 2 + Math.sin(a) * d, 0, rnd(-4, 4), rnd(-16, -5), 0, rnd(0.25, 0.5), rnd(2, 3.4), 'blue');
+      }
+    }
     for (const p of g.projs) {
-      const pal: Pal = p.kind === 'player' ? 'fire' : 'spirit';
+      const pal: Pal = p.kind === 'enemy' ? 'spirit' : p.shot === 'charged' ? 'blue' : 'fire';
       for (let j = nOf(p.kind === 'player' ? 120 : 90, dt); j > 0; j--) {
         this.emit(p.x + rnd(-0.4, 0.4) * p.r, p.y + rnd(-0.4, 0.4) * p.r, p.z, rnd(-3, 3), rnd(-6, 2), p.vz * 0.25, rnd(0.2, 0.45), p.r * rnd(0.6, 1), pal, 0.6);
       }

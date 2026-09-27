@@ -1,4 +1,4 @@
-import type { AttackKind, Game, GameEvent } from './game';
+import type { AttackKind, ComboName, Game, GameEvent } from './game';
 
 /** Where a lesson's enemies stand, and what they do. Missing ones (knocked down) come back. */
 interface Cast { tag: string; kind: 'dummy' | 'spirit' | 'earth'; x: number; z: number; only?: AttackKind; cd?: number; pace?: number }
@@ -24,6 +24,7 @@ export interface Lesson {
 }
 
 const count = (events: GameEvent[], ok: (e: GameEvent) => boolean) => events.filter(ok).length;
+const combos = (events: GameEvent[], name: ComboName) => count(events, e => e.type === 'combo' && e.name === name);
 /** Tutorial enemies take a beating without falling, so the lesson never runs out of targets. */
 const STURDY = 999;
 
@@ -49,6 +50,20 @@ export const LESSONS: Lesson[] = [
     progress: (_g, events) => count(events, e => e.type === 'hitEnemy' || e.type === 'killEnemy'),
   },
   {
+    id: 'charge', title: 'Charged punch',
+    how: 'Pull a fist back toward your chest and hold it still for a moment: it glows, then burns blue. Punch, and a blue fireball flies out — bigger, faster, twice as strong.',
+    goal: 'Throw charged punches', need: 2,
+    cast: [{ tag: 'dummy', kind: 'dummy', x: 0, z: 7 }],
+    progress: (_g, events) => combos(events, 'charged'),
+  },
+  {
+    id: 'flurry', title: 'Flurry',
+    how: 'Throw three quick punches in a row (within a second). The third bursts out as a big fireball that also burns whoever stands nearby.',
+    goal: 'Land a flurry', need: 2,
+    cast: [{ tag: 'a', kind: 'dummy', x: -12, z: 7 }, { tag: 'b', kind: 'dummy', x: 12, z: 7 }],
+    progress: (_g, events) => combos(events, 'flurry'),
+  },
+  {
     id: 'pillar', title: 'Dodge a pillar',
     how: 'The earthbender raises a stone pillar and shoves it down one side of you — watch the furrow. Lean or step the other way until the cue turns green.',
     goal: 'Dodge pillars', need: 2,
@@ -70,6 +85,13 @@ export const LESSONS: Lesson[] = [
     progress: (g, events) => (g.shield.on ? count(events, e => e.type === 'blocked') : 0),
   },
   {
+    id: 'counter', title: 'Shield counter',
+    how: 'Block an orb with the flame shield, then punch straight away (within about half a second). The counter fireball flies fast, finds its target on its own, and hits twice as hard.',
+    goal: 'Counter after a block', need: 2,
+    cast: [{ tag: 'spirit', kind: 'spirit', x: 0, z: 8, only: 'orb', cd: 1, pace: 1.6 }],
+    progress: (_g, events) => combos(events, 'counter'),
+  },
+  {
     id: 'xblock', title: 'X block',
     how: 'Cross your forearms in front of your chest, fists up. While crossed, you block every orb that reaches you.',
     goal: 'Block orbs with the X block', need: 3,
@@ -84,6 +106,20 @@ export const LESSONS: Lesson[] = [
     progress: (_g, events) => count(events, e => e.type === 'pillar'),
   },
   {
+    id: 'onetwo', title: 'One-two push',
+    how: 'Jab, jab, then shove an open palm — all in one flow. The pillar comes out twice as wide and burns harder.',
+    goal: 'Send a one-two push', need: 2,
+    cast: [{ tag: 'a', kind: 'dummy', x: -14, z: 7 }, { tag: 'b', kind: 'dummy', x: 14, z: 8 }],
+    progress: (_g, events) => combos(events, 'oneTwo'),
+  },
+  {
+    id: 'volley', title: 'Pillar volley',
+    how: 'Push a palm with one hand, then straight away with the other. The two pillars merge into one wide wave of fire.',
+    goal: 'Send a pillar volley', need: 2,
+    cast: [{ tag: 'a', kind: 'dummy', x: -24, z: 7 }, { tag: 'b', kind: 'dummy', x: 0, z: 9 }, { tag: 'c', kind: 'dummy', x: 24, z: 7 }],
+    progress: (_g, events) => combos(events, 'volley'),
+  },
+  {
     id: 'wall', title: 'Fire wall',
     how: 'Open both hands low, then sweep them up quickly. A wall of fire rises in front of you and stops attacks — even pillars.',
     goal: 'Raise fire walls', need: 2,
@@ -91,16 +127,23 @@ export const LESSONS: Lesson[] = [
     progress: (_g, events) => count(events, e => e.type === 'wall'),
   },
   {
-    id: 'wallpush', title: 'Wall push',
-    how: 'Hold both palms open at shoulder width (like the shield), then shove them both at the camera. The fire wall rolls forward over your enemies.',
-    goal: 'Push fire walls', need: 2,
+    id: 'wallbreaker', title: 'Wall breaker',
+    how: 'Raise a fire wall (sweep both open hands up), then shove both palms at the camera while it stands. The wall rolls forward as a firestorm over your enemies.',
+    goal: 'Break walls into your enemies', need: 2,
     cast: [{ tag: 'a', kind: 'dummy', x: -18, z: 7 }, { tag: 'b', kind: 'dummy', x: 18, z: 8 }],
-    progress: (_g, events) => count(events, e => e.type === 'wallPush'),
+    progress: (_g, events) => combos(events, 'wallBreaker'),
   },
   {
-    id: 'ultimate', title: 'Ultimate',
-    how: 'Bring both open hands together in front of your chest, then fling them wide apart. A spinning blade of fire cuts down the whole field. It takes a while to recharge.',
-    goal: 'Unleash the ultimate', need: 1,
+    id: 'burst', title: 'Shield burst',
+    how: 'Hold the flame shield for a second, then shove both palms forward. The shield bursts outward and clears everything coming at you.',
+    goal: 'Burst your shield', need: 2,
+    cast: [{ tag: 'spirit', kind: 'spirit', x: 0, z: 8, only: 'orb', cd: 1, pace: 1.2 }],
+    progress: (_g, events) => combos(events, 'shieldBurst'),
+  },
+  {
+    id: 'ultimate', title: 'Finisher',
+    how: 'When the ultimate bar is full: jab, jab, then bring both open hands together and fling them wide apart. A spinning blade of fire cuts down the whole field. It takes a while to recharge.',
+    goal: 'Unleash the finisher', need: 1,
     cast: [{ tag: 'a', kind: 'dummy', x: -24, z: 6 }, { tag: 'b', kind: 'dummy', x: 0, z: 9 }, { tag: 'c', kind: 'dummy', x: 24, z: 7 }],
     setup: g => { g.ultimateIn = 0; },
     progress: (_g, events) => count(events, e => e.type === 'ultimate'),

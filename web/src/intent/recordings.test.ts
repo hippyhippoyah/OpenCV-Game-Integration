@@ -51,6 +51,14 @@ describe('real-camera recordings', () => {
     expect(p.filter(x => x.headSpeed > 100)).toEqual([]);
   });
 
+  it('never charges a punch by accident (none of these pull a fist back and hold it)', () => {
+    for (const raw of [punchesCloseRaw, punches2Raw, leaningRaw, swayingRaw]) {
+      const out = replay(raw);
+      expect(out.flatMap(o => o.intent.punches).filter(p => p.charged)).toEqual([]);
+      expect(out.filter(o => (o.intent.hands.l?.charge ?? 0) >= 1 || (o.intent.hands.r?.charge ?? 0) >= 1)).toEqual([]);
+    }
+  });
+
   it('does not punch while swaying from side to side', () => {
     // no punches at all: the whole clip is swaying (it fired 9 before, at the turnarounds)
     expect(punchTimes(replay(swayingRaw))).toEqual([]);

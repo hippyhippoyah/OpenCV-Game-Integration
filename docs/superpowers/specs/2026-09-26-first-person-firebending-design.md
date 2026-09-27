@@ -345,3 +345,26 @@ turnaround), at 1.5 mm per unit/s over 70; and a sharp jolt (≥ 9 cm within 0.1
 a fist at most ~6 cm) is a punch even while moving. On the recordings: swaying 9 → 0 punches;
 steady punching 15/15; punching while moving 17 of 20 (the three lost are slow 2–3 cm drifts
 shaped like a sway).
+
+## Revision 2026-09-27: combos, charged punch, finisher
+
+Combos are sequences of moves already detected; the game (`Game`) recognises them by timing.
+
+| Combo | Input | Result |
+|---|---|---|
+| Charged punch | pull a fist back ≥ 6 cm behind its resting spot, hold 0.5 s (body steady), then punch | blue fireball: 1.3× faster, 1.6× bigger, 2 damage; the fist glows and smoulders blue while charged (kept 2.5 s) |
+| Flurry | 3 punches within 1 s | the third is a big fireball (2 damage) that also burns enemies within 25 units |
+| Shield counter | punch within 0.6 s of the flame shield blocking | homes onto the nearest enemy, 1.5× faster, 2 damage |
+| One-two push | 2 punches (within 1.2 s, the second ≤ 0.8 s before) then a palm push | pillar 2× wide, 3 damage |
+| Pillar volley | palm push with one hand, then the other within 0.6 s | the two merge into one wave 3× wide, 3 damage |
+| Wall breaker | both palms pushed while your fire wall stands | the wall rolls forward as a firestorm |
+| Shield burst | both palms pushed after holding the shield ≥ 1 s | a short blast (to depth 6) that clears every attack coming at you |
+| Finisher | ultimate bar full, 2 punches within 2 s, then gather & fling | the ultimate's blade of fire |
+
+The two-palm push alone no longer does anything (it was overpowered): it's the Wall breaker or
+Shield burst, and says "raise a fire wall first" otherwise; the ultimate without the jabs says how.
+A charged fist is detected in `interpret` (`HandState.charge`, `Punch.charged`); on the real
+recordings nothing charges by accident (swaying used to, until charging required a steady body).
+The tutorial has 16 lessons, adding Charged punch, Flurry, Shield counter, One-two push, Pillar
+volley, Wall breaker (was Wall push), Shield burst and Finisher (was Ultimate), each with an
+animated demo. Mock: hold G to charge the right fist.

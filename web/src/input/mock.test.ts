@@ -60,6 +60,17 @@ describe('MockTracker', () => {
     expect(out.flatMap(o => o.casts)).toHaveLength(0);
   });
 
+  it('holding G pulls the right fist back to charge it; the next click throws a charged punch', () => {
+    const m = new MockTracker(identity);
+    m.setMouse(5, 5);
+    const out = run(m, 150, i => {
+      if (i === 45) m.setKey('g', true);
+      if (i === 100) { m.setKey('g', false); m.punch('r'); }
+    });
+    expect(out[95].hands.r!.charge).toBe(1);
+    expect(out.flatMap(o => o.punches).map(p => p.charged)).toEqual([true]);
+  });
+
   it('holding Space opens both hands into a shield without punching', () => {
     const m = new MockTracker(identity);
     m.setMouse(0, 0);

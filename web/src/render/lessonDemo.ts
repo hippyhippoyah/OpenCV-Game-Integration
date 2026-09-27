@@ -11,6 +11,10 @@ const FIRE = '#ffb45e', SKIN = '#c98f68', SKIN_DARK = '#8a5a3c', LINE = 'rgba(25
 const swing = (k: number) => { const x = Math.min(1, Math.max(0, (Math.sin(k * Math.PI * 2 - Math.PI / 2) + 1) / 2 * 1.3 - 0.15)); return x * x * (3 - 2 * x); };
 /** 0 → 1 quickly, hold, snap back: a strike. */
 const strike = (k: number) => (k < 0.25 ? k / 0.25 : k < 0.55 ? 1 : k < 0.75 ? 1 - (k - 0.55) / 0.2 : 0);
+/** A strike lasting `dur` seconds from `start`, within a loop at time `u`. */
+const hit = (u: number, start: number, dur: number) => (u >= start && u < start + dur ? strike((u - start) / dur) : 0);
+/** 0 → 1 over `dur` seconds from `start` (held at 1 after), eased. */
+const ramp = (u: number, start: number, dur: number) => { const x = Math.min(1, Math.max(0, (u - start) / dur)); return x * x * (3 - 2 * x); };
 
 export class LessonDemo {
   private ctx: CanvasRenderingContext2D;
@@ -106,24 +110,94 @@ export class LessonDemo {
         this.arrow(cx + 50, H * 0.85, cx + 50, H * 0.3);
         break;
       }
-      case 'wallpush': {
-        // both palms at shoulder width shoved forward
-        const s = strike(k);
-        this.palm(cx - 36 + s * 6, H * 0.6 - s * 10, 1 + s * 0.35);
-        this.palm(cx + 36 - s * 6, H * 0.6 - s * 10, 1 + s * 0.35, true);
-        this.sheet(cx - 26, cx + 26, H * 0.5 - s * 10, 14 + s * 6);
-        this.arrow(cx, H * 0.95, cx, H * 0.7, 0.5);
+      case 'charge': {
+        // pull the fist back and hold (it glows, then burns blue), then punch a blue fireball
+        const u = t % 3, back = ramp(u, 0.1, 0.3) * (1 - ramp(u, 1.5, 0.08)), glow = ramp(u, 0.4, 0.9), s = hit(u, 1.5, 0.6);
+        this.fist(cx - 34, H * 0.62, 1);
+        const fx = cx + 34 - s * 20, fy = H * 0.62 + back * 14 - s * 22;
+        if (glow > 0 && s === 0 && u < 1.5) this.glow(fx, fy, 10 + glow * 16, `rgba(120,170,255,${0.3 + 0.5 * glow})`);
+        this.fist(fx, fy, (1 - back * 0.2) * (1 + s * 0.45));
+        if (s > 0.9) this.glow(cx + 8, H * 0.25, 14, 'rgba(150,200,255,1)');
+        if (u < 1.4) this.arrow(cx + 50, H * 0.55, cx + 50, H * 0.8, 0.6);
+        break;
+      }
+      case 'flurry': {
+        // three quick jabs, left-right-left; the third throws a big fireball
+        const u = t % 2.2;
+        const a = hit(u, 0, 0.35), b = hit(u, 0.35, 0.35), c3 = hit(u, 0.7, 0.45);
+        this.fist(cx - 34 + (a + c3) * 20, H * 0.62 - (a + c3) * 22, 1 + (a + c3) * 0.45);
+        this.fist(cx + 34 - b * 20, H * 0.62 - b * 22, 1 + b * 0.45);
+        if (a > 0.9 || b > 0.9) this.flame(cx, H * 0.3, 7);
+        if (c3 > 0.9) this.flame(cx - 4, H * 0.26, 16);
+        break;
+      }
+      case 'counter': {
+        // shield up, an orb bursts on it; then a quick punch fires a white-hot counter
+        const u = t % 2.6, shield = u < 1.2, s = hit(u, 1.3, 0.6);
+        if (shield) {
+          this.palm(cx - 36, H * 0.62, 1);
+          this.palm(cx + 36, H * 0.62, 1, true);
+          this.sheet(cx - 24, cx + 24, H * 0.64, 26);
+          const orb = Math.min(1, u / 0.9);
+          if (orb < 1) this.glow(cx, 10 + orb * H * 0.35, 5 + orb * 6, 'rgba(120,220,255,.9)');
+          else this.glow(cx, H * 0.45, 16, 'rgba(255,220,160,.8)');
+        } else {
+          this.fist(cx - 34, H * 0.62, 1);
+          this.fist(cx + 34 - s * 20, H * 0.62 - s * 22, 1 + s * 0.45);
+          if (s > 0.9) { this.flame(cx + 6, H * 0.28, 9); this.ring(cx + 6, H * 0.28, 13); }
+        }
+        break;
+      }
+      case 'onetwo': {
+        // jab, jab, then an open palm shoved — a wide pillar
+        const u = t % 2.6, a = hit(u, 0, 0.35), b = hit(u, 0.35, 0.35), p = hit(u, 0.8, 0.8);
+        this.fist(cx - 34 + a * 20, H * 0.62 - a * 22, 1 + a * 0.45);
+        if (u < 0.75) this.fist(cx + 34 - b * 20, H * 0.62 - b * 22, 1 + b * 0.45);
+        else this.palm(cx + 34 - p * 14, H * 0.62 - p * 12, 1 + p * 0.4, true);
+        if (p > 0.9) this.column(cx + 4, H * 0.42, 20, 30);
+        break;
+      }
+      case 'volley': {
+        // a palm push with each hand, one right after the other: one wide wave
+        const u = t % 2.2, r = hit(u, 0, 0.7), l = hit(u, 0.3, 0.7);
+        this.palm(cx - 34 + l * 14, H * 0.62 - l * 12, 1 + l * 0.4);
+        this.palm(cx + 34 - r * 14, H * 0.62 - r * 12, 1 + r * 0.4, true);
+        if (r > 0.9 && l < 0.5) this.column(cx + 12, H * 0.42, 8, 26);
+        if (l > 0.9) this.column(cx, H * 0.42, 34, 30);
+        break;
+      }
+      case 'wallbreaker': {
+        // palms sweep up (a wall rises), then shove forward: the wall rolls away
+        const u = t % 3.2, up = ramp(u, 0.1, 0.5), push = ramp(u, 1.4, 0.3), away = ramp(u, 1.6, 1.2);
+        const y = H * 0.85 - up * H * 0.45 - push * 8;
+        this.palm(cx - 32 + push * 6, y, 0.9 + push * 0.3);
+        this.palm(cx + 32 - push * 6, y, 0.9 + push * 0.3, true);
+        if (up > 0.3) this.sheet(cx - 40 * (1 - away * 0.6), cx + 40 * (1 - away * 0.6), H * (0.95 - away * 0.35), (H * 0.5) * (0.4 + 0.6 * up) * (1 - away * 0.6));
+        if (u > 1.3 && u < 2.2) this.arrow(cx, H * 0.98, cx, H * 0.72, 0.6);
+        break;
+      }
+      case 'burst': {
+        // hold the shield, then shove both palms: it blasts outward
+        const u = t % 3, push = hit(u, 1.4, 0.8), blast = ramp(u, 1.6, 0.4) * (1 - ramp(u, 2.2, 0.3));
+        this.palm(cx - 36 + push * 6, H * 0.62 - push * 10, 1 + push * 0.3);
+        this.palm(cx + 36 - push * 6, H * 0.62 - push * 10, 1 + push * 0.3, true);
+        if (u < 1.6) this.sheet(cx - 24, cx + 24, H * 0.64, 26 * (0.85 + 0.15 * Math.sin(t * 9)));
+        if (blast > 0) this.ring(cx, H * 0.5, 20 + blast * 50);
         break;
       }
       case 'ultimate': {
-        // palms gathered together, then flung wide
-        const s = strike(k);
-        const d = 14 + s * 44;
-        this.palm(cx - d, H * 0.58, 0.9);
-        this.palm(cx + d, H * 0.58, 0.9, true);
-        if (s > 0.6) this.disc(cx, H * 0.72, 30 + s * 30);
-        this.arrow(cx - 14, H * 0.3, cx - 50, H * 0.3, 0.8);
-        this.arrow(cx + 14, H * 0.3, cx + 50, H * 0.3, 0.8);
+        // jab, jab, then gather both open hands and fling them apart: the blade of fire
+        const u = t % 3.4, a = hit(u, 0, 0.35), b = hit(u, 0.35, 0.35);
+        if (u < 0.8) {
+          this.fist(cx - 34 + a * 20, H * 0.62 - a * 22, 1 + a * 0.45);
+          this.fist(cx + 34 - b * 20, H * 0.62 - b * 22, 1 + b * 0.45);
+        } else {
+          const d = 14 + 22 * (1 - ramp(u, 0.9, 0.5)) + 44 * ramp(u, 1.9, 0.25);
+          this.palm(cx - d, H * 0.58, 0.9);
+          this.palm(cx + d, H * 0.58, 0.9, true);
+          if (u > 2.0) this.disc(cx, H * 0.72, 30 + 40 * ramp(u, 2.0, 0.6));
+          if (u > 1.9) { this.arrow(cx - 14, H * 0.3, cx - 50, H * 0.3, 0.8); this.arrow(cx + 14, H * 0.3, cx + 50, H * 0.3, 0.8); }
+        }
         break;
       }
     }
@@ -175,6 +249,22 @@ export class LessonDemo {
     c.lineCap = 'round';
     c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
     this.fist(x1, y1, 0.8);
+  }
+
+  /** A soft coloured glow. */
+  private glow(x: number, y: number, r: number, color: string): void {
+    const c = this.ctx, g = c.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
+  }
+
+  /** A bright ring (a counter shot, a burst). */
+  private ring(x: number, y: number, r: number): void {
+    const c = this.ctx;
+    c.strokeStyle = 'rgba(255,240,210,.85)';
+    c.lineWidth = 2.5;
+    c.beginPath(); c.arc(x, y, r, 0, 7); c.stroke();
   }
 
   private flame(x: number, y: number, r: number): void {

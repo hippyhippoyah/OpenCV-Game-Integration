@@ -1,4 +1,9 @@
-import { TUNE, type Game, type GameEvent } from '../game/game';
+import { TUNE, type ComboName, type Game, type GameEvent } from '../game/game';
+
+const COMBO_NAMES: Record<ComboName, string> = {
+  charged: 'CHARGED', flurry: 'FLURRY', counter: 'COUNTER', oneTwo: 'ONE-TWO PUSH', volley: 'PILLAR VOLLEY',
+  wallBreaker: 'WALL BREAKER', shieldBurst: 'SHIELD BURST', finisher: 'FINISHER',
+};
 import { TUNING, type Intent } from '../intent/interpret';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -22,7 +27,7 @@ export class Hud {
       : noHands ? ['NO HANDS', 'raise your fists into view']
       : tooFar ? ['GUARD', 'step closer (about 1.5 m) so fist punches can see your fists clearly']
         : ['GUARD', TUNING.punchTrigger === 'extend'
-          ? 'fist: punch · palm push: pillar · both palms: shield · push · sweep up: wall · gather & fling: ultimate'
+          ? 'fist: punch (pull back & hold: charge) · palm push: pillar · both palms: shield · sweep up: wall, then push · jab, jab, gather & fling: ultimate'
           : 'punch & open: shoot · still open hands: shield · sweep up: wall · spread: ultimate'];
     const lost = (['l', 'r'] as const).filter(side => hands[side] && !hands[side]!.inView);
     $('modeName').textContent = name;
@@ -58,7 +63,8 @@ export class Hud {
       case 'killEnemy': this.toast('+100'); break;
       case 'wall': this.toast('FIRE WALL'); break;
       case 'pillar': this.toast('PILLAR'); break;
-      case 'wallPush': this.toast('WALL PUSH'); break;
+      case 'combo': this.toast(COMBO_NAMES[e.name], e.name === 'charged' ? 'charged' : ''); break;
+      case 'hint': this.toast(e.text, 'cool'); break;
       case 'ultimate': this.banner('ULTIMATE'); break;
       case 'wave': this.banner(`WAVE ${e.wave}`); break;
     }

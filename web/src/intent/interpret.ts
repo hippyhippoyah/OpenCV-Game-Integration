@@ -36,6 +36,8 @@ export interface HandState {
   reachNoise: number | null;
   /** Where a punch from this hand would go: sideways/vertical tangent from its 3D position; null if unknown. */
   aimDir: Vec2 | null;
+  /** Charged punch: 0 … 1 while a fist is pulled back and held; 1 = charged, the next punch is blue. */
+  charge: number;
 }
 
 export type { Side };
@@ -49,6 +51,8 @@ export interface Punch {
   shoulder: Vec2;
   /** Aim from the fist's 3D position: sideways/vertical tangent of the punch angle; null if unknown. */
   dir: Vec2 | null;
+  /** Thrown from a charged fist (pulled back and held): a blue fireball. */
+  charged?: boolean;
 }
 
 export type PalmKind = 'push';
@@ -133,6 +137,16 @@ export const TUNING = {
    * the body moves (swaying on a real camera moved a fist at most ~6 cm in 0.1 s).
    */
   sharpJolt: 0.09, sharpWindowS: 0.1,
+  /**
+   * Charged punch: a fist pulled back at least chargePull (m) behind where it usually rests, and
+   * held there for chargeHoldS, is charged; it stays charged for chargeKeepS after leaving that
+   * spot, until it punches or opens. Held = it settled (moving less than chargeStill m over
+   * chargeStillS) and hasn't moved chargeMove since. Where it usually rests follows the fist at
+   * guardRate (1/s), a quarter as fast while pulled back, not mid-punch, and fully while its
+   * reading warms up. It only builds while the body is steady (see leanFreeSpeed): swaying pulls a
+   * fist back too.
+   */
+  chargePull: 0.06, chargeStill: 0.05, chargeMove: 0.1, chargeStillS: 0.2, chargeHoldS: 0.5, chargeKeepS: 2.5, guardRate: 0.4,
   /**
    * Live punch and push sensitivity ([ and ] in game): thresholds are divided by this. Tuned and tested
    * at 1; the default is set higher by preference (more misses caught, some more misfires).
@@ -255,6 +269,13 @@ interface Track extends HandState {
   reachSince: number | null;
   /** Hand tracker palm − pose-wrist palm estimate, so switching between them doesn't jump. */
   armOffset: Vec2;
+  /**
+   * Charged punch: where the fist usually rests (a slow average, not following it while pulled
+   * back), when it was pulled back and held (chamberSince), and when it was last fully charged.
+   */
+  guardSlow: number | null;
+  chamberSince: number | null;
+  chargedAt: number | null;
   /** When the hand can push again. */
   palmReadyAt: number;
   /** The shape the hand tracker saw last frame: its size (so its distance) is measured differently open and closed. */
@@ -317,7 +338,7 @@ const snapshot = (t: Track | null): HandState | null =>
     source: t.source, inView: t.inView, elbow: t.elbow && { ...t.elbow }, extension: t.extension,
     punchReady: t.armed, punchRise: t.reach === null ? null : reachRise(t, TUNING.quickWindowS),
     reach: t.reach, reachBase: t.reachBase, reachNoise: t.reach === null ? null : t.reachNoise,
-    aimDir: t.aimDir && { ...t.aimDir },
+    aimDir: t.aimDir && { ...t.aimDir }, charge: t.charge,
   };
 const inPicture = (p: BodyPoint) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
 
@@ -453,6 +474,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     for (const side of SIDES) {
       const tr = s[side], o = s[other(side)];
       if (!tr || tr.source === 'estimate') continue;
+      updateCharge(tr, f.t, dt, recentSpeed > TUNING.leanFreeSpeed);
       let fire = false, jolt = false, shove = false;
       if (tr.reach !== null) {
         const need = fistThresholds(tr.reachNoise ?? 0, leanExtra);
@@ -481,7 +503,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY) {
         tr.armed = false;
         tr.lastPunchT = f.t;
-        s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t });
+        s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t, charged: tr.charge >= 1 });
+        tr.charge = 0;
+        tr.chargedAt = null;
         continue;
       }
       // One open palm shoved forward, the other hand a fist or an open palm held still: a pillar.
@@ -510,7 +534,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       return false;
     }
     if (f.t - p.t < confirmS) return true;
-    punches.push({ hand: p.hand, at: { ...tr.pos }, shoulder: p.shoulder, dir: tr.aimDir && { ...tr.aimDir } });
+    punches.push({ hand: p.hand, at: { ...tr.pos }, shoulder: p.shoulder, dir: tr.aimDir && { ...tr.aimDir }, charged: p.charged });
     return false;
   });
   // Palm moves wait too: a second hand opening means shield or a two-hand cast; a closing hand, never mind.
@@ -561,6 +585,39 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
 function heldStill(o: Track, pushing: Track): boolean {
   const w = TUNING.palmPushWindowS;
   return palmPushRise(o.hist, w, o.lastPunchT) < TUNING.palmOtherStill * palmPushRise(pushing.hist, w);
+}
+
+/**
+ * Charged punch: is this fist pulled back and held (charging), and for how long? Fills
+ * `charge` 0 → 1 over chargeHoldS; a full charge lasts chargeKeepS after it leaves the spot.
+ */
+function updateCharge(tr: Track, t: number, dt: number, bodyMoving: boolean): void {
+  if (tr.reach === null || tr.source !== 'hand') return;
+  const warming = tr.reachSince === null || t - tr.reachSince < TUNING.reachWarmupS;
+  tr.guardSlow = warming || tr.guardSlow === null ? tr.reach : tr.guardSlow;
+  // pulled back: chargePull to start, half that to stay (the reading wobbles)
+  const holding = tr.chamberSince !== null || tr.chargedAt !== null;
+  const pulled = tr.guardSlow - tr.reach >= TUNING.chargePull * (holding ? 0.5 : 1);
+  const then = tr.hist.find(h => h.reach !== null && t - h.t <= TUNING.chargeStillS);
+  const moved = then ? Math.abs(tr.reach - then.reach!) : Infinity;
+  // settling into the spot needs stillness; once there, only a real move breaks it
+  const still = tr.chamberSince === null ? moved < TUNING.chargeStill && Math.hypot(tr.vel.x, tr.vel.y) < 40 : moved < TUNING.chargeMove;
+  const fist = tr.openness < TUNING.clearlyOpen;
+  // where the fist usually rests: follow it (slowly while pulled back), not mid-punch
+  if (tr.armed) tr.guardSlow = lerp(tr.guardSlow, tr.reach, Math.min(1, dt * TUNING.guardRate * (pulled ? 0.25 : 1)));
+  // a charge builds only with the body steady: swaying pulls a fist back too
+  if (fist && pulled && still && !bodyMoving) {
+    tr.chamberSince ??= t;
+    // a full charge stays full; otherwise it fills while held
+    tr.charge = tr.chargedAt !== null ? 1 : Math.min(1, (t - tr.chamberSince) / TUNING.chargeHoldS);
+    if (tr.charge >= 1) tr.chargedAt = t;
+    return;
+  }
+  tr.chamberSince = null;
+  // left the spot: a full charge is kept a while (to punch with); a partial one is lost
+  const kept = tr.chargedAt !== null && t - tr.chargedAt <= TUNING.chargeKeepS && fist;
+  if (kept) tr.charge = 1;
+  else { tr.charge = 0; tr.chargedAt = null; }
 }
 
 /** Queue a palm push from this hand (it confirms after palmConfirmS). */
@@ -681,6 +738,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
       punchRise: null,
       aimDir: null, body3: b3 && { ...b3 },
       armOffset: { x: 0, y: 0 }, filters, palmReadyAt: -Infinity, shapeOpen: h ? h.open >= 0.5 : null,
+      guardSlow: null, chamberSince: null, chargedAt: null, charge: 0,
       hist: [],
     };
     track.reach = reachNow(track);

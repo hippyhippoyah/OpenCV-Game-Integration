@@ -58,6 +58,32 @@ export const TUNE = {
   pillarWindupS: 1.4, stonePillarSpeed: 3.5, stonePillarHalfW: 20, pillarHeightStone: 70, pillarOffset: 22,
   /** Enemies stay within this fraction of the screen's half-width of its centre (easier to aim at). */
   enemyBand: 0.4,
+  /**
+   * Combos and charged punches.
+   * - Charged punch (a fist pulled back and held): a blue fireball, chargedSpeed× faster and
+   *   chargedRadius× bigger, doing chargedDamage.
+   * - Flurry: flurryCount punches within flurryWindowS — the last is a big fireball
+   *   (flurryRadius×, flurryDamage) that also burns enemies within flurrySplash of the one it hits.
+   * - Counter: a punch within counterWindowS of the flame shield blocking something — it homes in
+   *   (snaps to the nearest enemy) at counterSpeed×, doing counterDamage.
+   * - One-two push: a palm push within oneTwoWindowS of two punches (the second within
+   *   oneTwoGapS) — a pillar oneTwoWidth× wide doing oneTwoDamage.
+   * - Pillar volley: a palm push with the other hand within volleyWindowS of one — the two merge into
+   *   a wave volleyWidth× a pillar's width doing volleyDamage.
+   * - Wall breaker: pushing both palms while your own fire wall stands sends it rolling forward.
+   *   (Pushing both palms does nothing otherwise, unless…)
+   * - Shield burst: pushing both palms after holding the flame shield shieldBurstHoldS — a short
+   *   blast (burstHalfW wide, out to burstReach) that clears every attack coming at you.
+   * - Finisher: the ultimate (gather & fling) needs the ultimate bar full and finisherPunches
+   *   punches within finisherWindowS before it.
+   */
+  chargedSpeed: 1.3, chargedRadius: 1.6, chargedDamage: 2,
+  flurryCount: 3, flurryWindowS: 1, flurryRadius: 1.8, flurryDamage: 2, flurrySplash: 25,
+  counterWindowS: 0.6, counterSpeed: 1.5, counterDamage: 2,
+  oneTwoWindowS: 1.2, oneTwoGapS: 0.8, oneTwoWidth: 2, oneTwoDamage: 3,
+  volleyWindowS: 0.6, volleyWidth: 3, volleyDamage: 3,
+  shieldBurstHoldS: 1, burstHalfW: 35, burstReach: 6, burstSpeed: 10,
+  finisherPunches: 2, finisherWindowS: 2,
   /** Testing: the shield never drains or breaks. */
   shieldInfinite: true,
   shieldDrainPerS: 0.33, shieldRegenPerS: 0.22, shieldBlockCost: 0.18, shieldBrokenS: 1.2, shieldReach: 8,
@@ -83,17 +109,28 @@ export interface Enemy {
   slot?: number;
 }
 
+/** What kind of fireball a player's shot is (they look and hit differently). */
+export type Shot = 'normal' | 'charged' | 'flurry' | 'counter';
+
 export interface Proj {
   id: number; kind: 'player' | 'enemy';
   x: number; y: number; z: number; vx: number; vy: number; vz: number; r: number;
   resolved: boolean;
+  /** Player shots: which kind, and how much it hurts (default normal, 1). */
+  shot?: Shot;
+  damage?: number;
 }
+
+export type ComboName = 'charged' | 'flurry' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker' | 'shieldBurst' | 'finisher';
 
 type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
   | { type: 'punch' | 'pillar'; x: number; y: number; z: number; side: Side }
   | { type: 'stonePillar'; x: number; y: number; z: number; side: 1 | -1 }
+  | { type: 'combo'; name: ComboName; x: number; y: number; z: number; side?: Side }
+  /** A move that didn't go off, and what it needs (e.g. the wall push needs a wall). */
+  | { type: 'hint'; text: string }
   | { type: 'shieldBroken' | 'gameOver' }
   | { type: 'wave'; wave: number };
 
@@ -103,7 +140,7 @@ export type Rand = () => number;
 export interface Blade { id: number; x: number; y: number; r: number }
 
 /** A palm push: a column of fire rolling forward from the floor, `hit` = enemies it already burned. */
-export interface Pillar { id: number; x: number; z: number; vx: number; age: number; hit: number[] }
+export interface Pillar { id: number; x: number; z: number; vx: number; age: number; hit: number[]; hand: Side; halfW: number; damage: number }
 
 export type AttackKind = 'orb' | 'slab' | 'pillar';
 
@@ -128,7 +165,7 @@ export interface Hazard {
 }
 
 /** A wall of fire across the courtyard: standing (vz 0), or rolling forward (a wall push) burning what it passes. */
-export interface Wall { id: number; x: number; z: number; halfW: number; life: number; vz: number; hit: number[] }
+export interface Wall { id: number; x: number; z: number; halfW: number; life: number; vz: number; hit: number[]; maxZ?: number }
 
 /** Where practice dummies stand (world x, depth). */
 const DUMMY_SLOTS = [{ x: -36, z: 6 }, { x: 0, z: 9 }, { x: 36, z: 6 }];
@@ -188,6 +225,14 @@ export class Game {
   private wallCool = 0;
   private palmCool: Record<Side, number> = { l: 0, r: 0 };
   private pushWallCool = 0;
+  /** Game time, and what just happened, for combos. */
+  private time = 0;
+  private recentPunches: { t: number; hand: Side }[] = [];
+  private lastFlurryT = -Infinity;
+  private lastShieldBlockT = -Infinity;
+  private shieldSince: number | null = null;
+  /** The last time the shield came down, and how long it had been held. */
+  private shieldDown = { at: -Infinity, held: 0 };
 
   constructor(private rand: Rand = Math.random, public viewHalfW = 70, practice = false) {
     if (practice) this.setPractice(true);
@@ -251,6 +296,7 @@ export class Game {
     this.punchCool = { l: Math.max(0, this.punchCool.l - dt), r: Math.max(0, this.punchCool.r - dt) };
     this.wallCool = Math.max(0, this.wallCool - dt);
     this.pushWallCool = Math.max(0, this.pushWallCool - dt);
+    this.time += dt;
     this.palmCool = { l: Math.max(0, this.palmCool.l - dt), r: Math.max(0, this.palmCool.r - dt) };
     this.ultimateIn = Math.max(0, this.ultimateIn - dt);
     this.updateShield(dt, intent.shield);
@@ -303,6 +349,10 @@ export class Game {
     sh.broken = Math.max(0, sh.broken - dt);
     sh.on = wanted && !!this.hands.l && !!this.hands.r && sh.energy > 0 && sh.broken <= 0;
     if (!sh.on) {
+      if (this.shieldSince !== null) this.shieldDown = { at: this.time, held: this.time - this.shieldSince };
+      this.shieldSince = null;
+    } else this.shieldSince ??= this.time;
+    if (!sh.on) {
       sh.energy = Math.min(1, sh.energy + dt * TUNE.shieldRegenPerS);
     } else if (!TUNE.shieldInfinite) {
       sh.energy = Math.max(0, sh.energy - dt * TUNE.shieldDrainPerS);
@@ -346,25 +396,67 @@ export class Game {
   private punch(p: Punch): void {
     if (this.punchCool[p.hand] > 0) return;
     this.punchCool[p.hand] = TUNE.punchCooldownS;
+    const now = this.time;
+    this.recentPunches = [...this.recentPunches.filter(x => now - x.t <= Math.max(TUNE.flurryWindowS, TUNE.oneTwoWindowS, TUNE.finisherWindowS)), { t: now, hand: p.hand }];
     const start = this.handWorld(p.at);
-    const { point: target, depth } = this.aimFor(p.at, p.shoulder, p.dir);
-    const T = (depth - TUNE.launchZ) / TUNE.fireballSpeed;
+    let { point: target, depth } = this.aimFor(p.at, p.shoulder, p.dir);
+    // what kind of shot: a charged fist, the end of a flurry, or a counter just after blocking
+    const flurry = this.recentPunches.filter(x => x.t > this.lastFlurryT && now - x.t <= TUNE.flurryWindowS).length >= TUNE.flurryCount;
+    const counter = now - this.lastShieldBlockT <= TUNE.counterWindowS;
+    const shot: Shot = p.charged ? 'charged' : counter ? 'counter' : flurry ? 'flurry' : 'normal';
+    if (flurry) this.lastFlurryT = now;
+    if (counter) this.lastShieldBlockT = -Infinity;
+    if (shot === 'counter') {
+      // homes in on the nearest enemy
+      const e = this.nearestEnemy();
+      if (e) { target = { x: e.x, y: e.y }; depth = e.z; }
+    }
+    const speed = TUNE.fireballSpeed * (shot === 'charged' ? TUNE.chargedSpeed : shot === 'counter' ? TUNE.counterSpeed : 1);
+    const r = TUNE.fireballRadius * (shot === 'charged' ? TUNE.chargedRadius : shot === 'flurry' ? TUNE.flurryRadius : 1);
+    const damage = shot === 'charged' ? TUNE.chargedDamage : shot === 'flurry' ? TUNE.flurryDamage : shot === 'counter' ? TUNE.counterDamage : 1;
+    const T = (depth - TUNE.launchZ) / speed;
     this.projs.push({
       id: this.nextId++, kind: 'player', x: start.x, y: start.y, z: TUNE.launchZ,
-      vx: (target.x - start.x) / T, vy: (target.y - start.y) / T, vz: TUNE.fireballSpeed, r: TUNE.fireballRadius, resolved: false,
+      vx: (target.x - start.x) / T, vy: (target.y - start.y) / T, vz: speed, r, resolved: false, shot, damage,
     });
     this.events.push({ type: 'punch', x: start.x, y: start.y, z: TUNE.launchZ, side: p.hand });
+    if (shot !== 'normal') this.events.push({ type: 'combo', name: shot, x: start.x, y: start.y, z: TUNE.launchZ, side: p.hand });
+  }
+
+  /** The living enemy nearest you (by depth, then sideways). */
+  private nearestEnemy(): Enemy | null {
+    let best: Enemy | null = null;
+    for (const e of this.enemies) if (e.hp > 0 && (!best || e.z + Math.abs(e.x - this.cam.x) / 30 < best.z + Math.abs(best.x - this.cam.x) / 30)) best = e;
+    return best;
   }
 
   private palm(p: Palm): void {
     if (this.palmCool[p.hand] > 0) return;
     this.palmCool[p.hand] = TUNE.palmCooldownS;
+    const now = this.time, start = this.handWorld(p.at).x, z = TUNE.launchZ;
+    this.events.push({ type: 'pillar', x: start, y: FLOOR_Y, z, side: p.hand });
+    // pillar volley: the other hand's pillar went out just now — the two merge into a wave
+    const partner = this.pillars.find(c => c.hand !== p.hand && c.age <= TUNE.volleyWindowS && c.halfW < TUNE.pillarHalfW * TUNE.volleyWidth);
+    if (partner) {
+      partner.x = (partner.x + start) / 2;
+      partner.halfW = TUNE.pillarHalfW * TUNE.volleyWidth;
+      partner.damage = TUNE.volleyDamage;
+      partner.hit = [];
+      this.events.push({ type: 'combo', name: 'volley', x: partner.x, y: FLOOR_Y, z: partner.z, side: p.hand });
+      return;
+    }
+    // one-two push: two punches just before
+    const jabs = this.recentPunches.filter(x => now - x.t <= TUNE.oneTwoWindowS);
+    const oneTwo = jabs.length >= 2 && now - jabs[jabs.length - 1].t <= TUNE.oneTwoGapS;
+    if (oneTwo) this.recentPunches = [];
     // rolls from in front of the hand toward where the palm points
     const { point, depth } = this.aimFor(p.at, p.shoulder, p.dir);
-    const start = this.handWorld(p.at).x, z = TUNE.launchZ;
     const vx = ((point.x - start) / Math.max(1, depth - z)) * TUNE.pillarSpeed;
-    this.pillars.push({ id: this.nextId++, x: start, z, vx, age: 0, hit: [] });
-    this.events.push({ type: 'pillar', x: start, y: FLOOR_Y, z, side: p.hand });
+    this.pillars.push({
+      id: this.nextId++, x: start, z, vx, age: 0, hit: [], hand: p.hand,
+      halfW: TUNE.pillarHalfW * (oneTwo ? TUNE.oneTwoWidth : 1), damage: oneTwo ? TUNE.oneTwoDamage : TUNE.palmDamage,
+    });
+    if (oneTwo) this.events.push({ type: 'combo', name: 'oneTwo', x: start, y: FLOOR_Y, z, side: p.hand });
   }
 
   /** Standing walls burn down; rolling ones move forward, burning each enemy they pass once. */
@@ -380,7 +472,7 @@ export class Game {
         this.burn(e);
       }
     }
-    this.walls = this.walls.filter(w => w.life > 0 && w.z < TUNE.pillarMaxZ);
+    this.walls = this.walls.filter(w => w.life > 0 && w.z < (w.maxZ ?? TUNE.pillarMaxZ));
   }
 
   /** A wall that something moving from z0 to z just met (both may be moving). */
@@ -462,8 +554,8 @@ export class Game {
   }
 
   /** Burn an enemy with a pillar. */
-  private burn(e: Enemy): void {
-    e.hp -= TUNE.palmDamage;
+  private burn(e: Enemy, damage = TUNE.palmDamage): void {
+    e.hp -= damage;
     e.flash = 1;
     if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', e.x, e.y, e.z); }
     else this.emit('hitEnemy', e.x, e.y, e.z);
@@ -477,12 +569,12 @@ export class Game {
       c.z += TUNE.pillarSpeed * dt;
       c.age += dt;
       for (const e of this.enemies) {
-        if (e.hp <= 0 || c.hit.includes(e.id) || e.z < z0 - 0.5 || e.z > c.z + 0.5 || Math.abs(e.x - c.x) > TUNE.pillarHalfW + 7) continue;
+        if (e.hp <= 0 || c.hit.includes(e.id) || e.z < z0 - 0.5 || e.z > c.z + 0.5 || Math.abs(e.x - c.x) > c.halfW + 7) continue;
         c.hit.push(e.id);
-        this.burn(e);
+        this.burn(e, c.damage);
       }
       this.projs = this.projs.filter(p => {
-        if (p.kind !== 'enemy' || Math.abs(p.z - c.z) > 0.8 || Math.abs(p.x - c.x) > TUNE.pillarHalfW + p.r) return true;
+        if (p.kind !== 'enemy' || Math.abs(p.z - c.z) > 0.8 || Math.abs(p.x - c.x) > c.halfW + p.r) return true;
         this.score += 25;
         this.emit('clash', p.x, p.y, p.z);
         return false;
@@ -507,19 +599,42 @@ export class Game {
       return;
     }
     if (c.kind === 'push') {
-      if (this.pushWallCool > 0) return;
-      this.pushWallCool = TUNE.pushWallCooldownS;
-      const z = TUNE.pushWallStartZ, x = this.cam.x + c.at.x / depthScale(z);
-      this.walls.push({ id: this.nextId++, x, z, halfW: TUNE.pushWallHalfW, life: Infinity, vz: TUNE.pushWallSpeed, hit: [] });
-      this.emit('wallPush', x, FLOOR_Y, z);
+      // wall breaker: your standing fire wall rolls forward
+      const wall = this.walls.find(w => w.vz === 0);
+      if (wall) {
+        wall.vz = TUNE.pushWallSpeed;
+        wall.life = Infinity;
+        wall.hit = [];
+        this.emit('wallPush', wall.x, FLOOR_Y, wall.z);
+        this.events.push({ type: 'combo', name: 'wallBreaker', x: wall.x, y: FLOOR_Y, z: wall.z });
+        return;
+      }
+      // shield burst: the held flame shield blasts outward, clearing what's coming
+      // (pushing drops the shield, so one that just came down counts)
+      const held = this.shieldSince !== null ? this.time - this.shieldSince : this.time - this.shieldDown.at <= 0.3 ? this.shieldDown.held : 0;
+      if (held >= TUNE.shieldBurstHoldS && this.pushWallCool <= 0) {
+        this.pushWallCool = TUNE.pushWallCooldownS;
+        const z = 0.5, x = this.cam.x + c.at.x / depthScale(z);
+        this.walls.push({ id: this.nextId++, x, z, halfW: TUNE.burstHalfW, life: Infinity, vz: TUNE.burstSpeed, hit: [], maxZ: TUNE.burstReach });
+        this.events.push({ type: 'combo', name: 'shieldBurst', x, y: FLOOR_Y, z });
+        return;
+      }
+      this.events.push({ type: 'hint', text: 'WALL PUSH: RAISE A FIRE WALL FIRST' });
       return;
     }
     if (this.ultimateIn > 0) return;
+    // the ultimate is a finisher: jab, jab, then gather & fling
+    if (this.recentPunches.filter(x => this.time - x.t <= TUNE.finisherWindowS).length < TUNE.finisherPunches) {
+      this.events.push({ type: 'hint', text: 'FINISHER: JAB, JAB, THEN GATHER & FLING' });
+      return;
+    }
+    this.recentPunches = [];
     this.ultimateIn = TUNE.ultimateCooldownS;
     const at = this.handWorld(c.at);
     const y = at.y + (FLOOR_Y - at.y) * TUNE.bladeDrop;
     this.blades.push({ id: this.nextId++, x: at.x, y, r: 0 });
     this.emit('ultimate', at.x, at.y, 0);
+    this.events.push({ type: 'combo', name: 'finisher', x: at.x, y: at.y, z: 0 });
   }
 
   /** Grow each blade and cut down whatever its edge has reached. */
@@ -716,11 +831,17 @@ export class Game {
         for (const e of this.enemies) {
           if (e.hp <= 0 || Math.abs(p.z - e.z) > 0.7) continue;
           if (Math.abs(p.x - e.x) < p.r + 7 && Math.abs(p.y - e.y) < p.r + 22) {
-            e.hp -= 1;
+            e.hp -= p.damage ?? 1;
             e.flash = 1;
             dead.add(p.id);
             if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', p.x, p.y, p.z); }
             else this.emit('hitEnemy', p.x, p.y, p.z);
+            // a flurry's big fireball bursts, burning those standing nearby
+            if (p.shot === 'flurry') {
+              for (const o of this.enemies) {
+                if (o !== e && o.hp > 0 && Math.abs(o.x - e.x) <= TUNE.flurrySplash && Math.abs(o.z - e.z) <= 2) this.burn(o, 1);
+              }
+            }
             break;
           }
         }
@@ -763,6 +884,7 @@ export class Game {
       return true;
     }
     if (this.shieldCovers(v, q.r)) {
+      this.lastShieldBlockT = this.time;
       this.shield.energy = Math.max(0, this.shield.energy - TUNE.shieldBlockCost);
       this.score += 15;
       this.emit('blocked', q.x, q.y, 0);

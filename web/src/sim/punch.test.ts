@@ -158,3 +158,48 @@ describe('X block on a simulated webcam', () => {
     });
   });
 });
+
+describe('charged punches on a simulated webcam', () => {
+  /** The fist pulled back toward the chest. */
+  const CHAMBER: Reach = { ...POSES.guard, fwd: POSES.guard.fwd - 0.13 };
+  /** Right fist: guard, pulled back at 1.5 s (over 0.15 s), held for `hold`, then a jab. */
+  const chargeThenJab = (distance: number, hold: number) => (t: number) => {
+    const back = 1.5, out = back + 0.15 + hold;
+    const reach = t < back ? POSES.guard
+      : t < back + 0.15 ? lerpReach(POSES.guard, CHAMBER, (t - back) / 0.15)
+      : t < out ? CHAMBER
+      : t < out + 0.14 ? lerpReach(CHAMBER, POSES.jab, (t - out) / 0.14)
+      : t < out + 0.3 ? POSES.jab : lerpReach(POSES.jab, POSES.guard, (t - out - 0.3) / 0.2);
+    return guardState(distance, { r: { reach } });
+  };
+  const charges = (out: Intent[]) => out.flatMap(o => o.punches.map(p => !!p.charged));
+
+  it('pulling a fist back and holding it charges the next punch', () => {
+    eachCase((distance, seed) => {
+      const out = perform(chargeThenJab(distance, 0.8), 3.5, { seed });
+      expect(charges(out), `${distance} m seed ${seed}`).toEqual([true]);
+      expect(out.some(o => (o.hands.r?.charge ?? 0) > 0 && (o.hands.r?.charge ?? 0) < 1), 'fills up').toBe(true);
+    });
+  });
+
+  it('a quick pull back without holding it is an ordinary punch', () => {
+    eachCase((distance, seed) => {
+      expect(charges(perform(chargeThenJab(distance, 0.1), 3.5, { seed })), `${distance} m seed ${seed}`).toEqual([false]);
+    });
+  });
+
+  it('jabs from guard are not charged', () => {
+    eachCase((distance, seed) => {
+      const out = perform(combo(distance, [[1.5, 'r', POSES.jab], [2.5, 'l', POSES.jab]]), 3.5, { seed });
+      expect(charges(out), `${distance} m seed ${seed}`).toEqual([false, false]);
+    });
+  });
+
+  it('pulling back and holding does not itself punch', () => {
+    eachCase((distance, seed) => {
+      const out = perform(t => guardState(distance, { r: { reach: t < 1.5 ? POSES.guard : lerpReach(POSES.guard, CHAMBER, (t - 1.5) / 0.15) } }), 3.5, { seed });
+      expect(out.flatMap(o => o.punches), `${distance} m seed ${seed}`).toHaveLength(0);
+      expect(out.at(-1)!.hands.r!.charge, `${distance} m seed ${seed}`).toBe(1);
+    });
+  });
+});

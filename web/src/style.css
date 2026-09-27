@@ -66,6 +66,7 @@ canvas#game { display: block; width: 100vw; height: 100vh; cursor: none; }
 .dodge.safe { background: rgba(10,30,15,.45); border-color: rgba(120,230,150,.45); }
 .dodge.safe b { color: #9ef0b4; }
 .dodge.safe i { background: #9ef0b4; }
+.toast.charged { color: #a9c8ff; text-shadow: 0 0 16px rgba(90,140,255,.8); }
 .toast.good { color: #9ef0b4; text-shadow: 0 0 16px rgba(80,230,130,.55); }
 .toast.cool { color: var(--spirit); text-shadow: 0 0 16px rgba(80,200,255,.6); }
 @keyframes pop { 0% { opacity: 0; transform: translateY(8px) scale(.9); } 15% { opacity: 1; transform: none; }

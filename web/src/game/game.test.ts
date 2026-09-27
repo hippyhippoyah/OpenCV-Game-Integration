@@ -5,7 +5,7 @@ import { mulberry32 } from '../math';
 
 const SHOULDERS = { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } };
 const hs = (x: number, y: number, open = false): HandState =>
-  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true, punchRise: null, reach: null, reachBase: null, reachNoise: null, aimDir: null });
+  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true, punchRise: null, reach: null, reachBase: null, reachNoise: null, aimDir: null, charge: 0 });
 const guard = () => ({ l: hs(-12, 22), r: hs(12, 22) });
 const intent = (o: Partial<Intent> = {}): Intent =>
   ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], palms: [], shield: false, xBlock: false, casts: [], face: null, bodyTilt: 0, ...o });
@@ -129,27 +129,36 @@ describe('Game', () => {
 
     it('each hand rests between pushes', () => {
       const g = quietGame();
-      g.step(1 / 60, intent({ palms: [palm('push'), palm('push'), palm('push', 0, 10, 'l')] }));
-      expect(g.pillars).toHaveLength(2);
+      g.step(1 / 60, intent({ palms: [palm('push'), palm('push')] }));
+      expect(g.pillars).toHaveLength(1);
       run(g, TUNE.palmCooldownS, intent());
       g.step(1 / 60, intent({ palms: [palm('push')] }));
-      expect(g.pillars.some(p => p.age < 0.05)).toBe(true);
+      expect(g.pillars).toHaveLength(2);
     });
   });
 
-  describe('wall push (both palms)', () => {
+  describe('pushing both palms', () => {
     const push = (x = 0) => intent({ casts: [{ kind: 'push', at: { x, y: 10 } }] });
+    const wall = intent({ casts: [{ kind: 'wall', at: { x: 0, y: 10 } }] });
     const foe = (id: number, x: number, z: number) =>
       ({ id, x, y: FLOOR_Y - 30, z, hp: 3, t: 0, appear: 1, dying: 0, flash: 0, cd: 99, winding: false, wind: 0, side: 1 as const, phase: 0 });
 
-    it('rolls a fire wall forward that burns enemies across its width and blocks attacks', () => {
+    it('does nothing on its own, and says why', () => {
       const g = quietGame();
-      g.enemies.push(foe(1, -20, 6), foe(2, 20, 9), foe(3, 120, 6));
+      g.step(1 / 60, push());
+      expect(g.walls).toHaveLength(0);
+      expect(g.drainEvents()).toContainEqual({ type: 'hint', text: expect.stringContaining('FIRE WALL') });
+    });
+
+    it('wall breaker: sends your standing fire wall rolling forward, burning enemies and blocking attacks', () => {
+      const g = quietGame();
+      g.enemies.push(foe(1, -20, 6), foe(2, 20, 9), foe(3, 150, 6));
+      g.step(1 / 60, wall);
       g.projs.push({ ...incoming(0, 10), z: 5, vz: -3 });
       g.step(1 / 60, push());
       expect(g.walls).toHaveLength(1);
       expect(g.walls[0].vz).toBeGreaterThan(0);
-      expect(g.drainEvents().some(e => e.type === 'wallPush')).toBe(true);
+      expect(g.drainEvents()).toContainEqual(expect.objectContaining({ type: 'combo', name: 'wallBreaker' }));
       run(g, 3, intent());
       const hp = (id: number) => g.enemies.find(e => e.id === id)?.hp ?? 0;
       expect(hp(1)).toBe(3 - TUNE.palmDamage);
@@ -160,13 +169,110 @@ describe('Game', () => {
       expect(g.walls).toHaveLength(0); // rolled off the end of the field
     });
 
-    it('has its own cooldown', () => {
+    it('shield burst: after holding the shield a moment, blasts outward and clears what is coming', () => {
       const g = quietGame();
-      g.step(1 / 60, push());
-      g.step(1 / 60, push());
-      expect(g.walls).toHaveLength(1);
-      g.step(1 / 60, intent({ casts: [{ kind: 'wall', at: { x: 0, y: 10 } }] }));
-      expect(g.walls).toHaveLength(2); // a standing wall is separate
+      g.projs.push({ ...incoming(0, 10), z: 3.5, vz: -2 });
+      run(g, TUNE.shieldBurstHoldS * 0.5, shieldUp(10));
+      g.step(1 / 60, { ...shieldUp(10), casts: [{ kind: 'push', at: { x: 0, y: 10 } }] });
+      expect(g.walls).toHaveLength(0); // not held long enough
+      run(g, TUNE.shieldBurstHoldS * 0.6, shieldUp(10));
+      g.drainEvents();
+      // pushing drops the shield on the same frame
+      g.step(1 / 60, intent({ casts: [{ kind: 'push', at: { x: 0, y: 10 } }] }));
+      expect(g.drainEvents()).toContainEqual(expect.objectContaining({ type: 'combo', name: 'shieldBurst' }));
+      run(g, 1, intent());
+      expect(g.projs.filter(p => p.kind === 'enemy')).toHaveLength(0);
+      expect(g.walls).toHaveLength(0); // short range: gone by burstReach
+    });
+  });
+
+  describe('combos', () => {
+    const foe = (id: number, x: number, z: number, hp = 5) =>
+      ({ id, x, y: FLOOR_Y - 30, z, hp, t: 0, appear: 1, dying: 0, flash: 0, cd: 99, winding: false, wind: 0, side: 1 as const, phase: 0 });
+    const combos = (g: Game) => g.drainEvents().flatMap(e => (e.type === 'combo' ? [e.name] : []));
+    const jab = (hand: Side) => intent({ punches: [punch(hand, 0, 8)] });
+
+    it('a charged punch throws a bigger, faster blue fireball that hits twice as hard', () => {
+      const g = quietGame();
+      g.enemies.push(foe(1, 0, 7));
+      g.step(1 / 60, intent({ punches: [{ ...punch('r', 0, 8), charged: true }] }));
+      expect(g.projs[0].shot).toBe('charged');
+      expect(g.projs[0].r).toBeGreaterThan(TUNE.fireballRadius);
+      expect(g.projs[0].vz).toBeGreaterThan(TUNE.fireballSpeed);
+      expect(combos(g)).toEqual(['charged']);
+      run(g, 1.5, intent());
+      expect(g.enemies[0].hp).toBe(5 - TUNE.chargedDamage);
+    });
+
+    it('flurry: the third quick punch is a big fireball that also burns those nearby', () => {
+      const g = quietGame();
+      g.enemies.push(foe(1, 0, 7), foe(2, 15, 7), foe(3, 90, 7));
+      g.step(1 / 60, jab('r'));
+      run(g, 0.2, intent());
+      g.step(1 / 60, jab('l'));
+      run(g, 0.2, intent());
+      g.step(1 / 60, jab('r'));
+      const shots = g.projs.filter(p => p.kind === 'player').map(p => p.shot);
+      expect(shots.at(-1)).toBe('flurry');
+      expect(combos(g)).toEqual(['flurry']);
+      run(g, 2, intent());
+      expect(g.enemies.find(e => e.id === 2)!.hp).toBeLessThan(5); // splashed
+      expect(g.enemies.find(e => e.id === 3)!.hp).toBe(5);
+    });
+
+    it('slow punches are no flurry', () => {
+      const g = quietGame();
+      for (let i = 0; i < 3; i++) { g.step(1 / 60, jab(i % 2 ? 'l' : 'r')); run(g, 0.6, intent()); }
+      expect(combos(g)).toEqual([]);
+    });
+
+    it('counter: a punch just after the shield blocks something homes in and hits hard', () => {
+      const g = quietGame();
+      g.enemies.push(foe(1, 60, 8));
+      g.projs.push(incoming(0, 10));
+      run(g, 0.2, shieldUp(10));
+      g.drainEvents();
+      g.step(1 / 60, intent({ punches: [punch('r', -30, 0)] })); // aimed well off to the left
+      expect(combos(g)).toEqual(['counter']);
+      run(g, 1.5, intent());
+      expect(g.enemies[0].hp).toBe(5 - TUNE.counterDamage);
+    });
+
+    it('one-two push: two jabs then a palm push make a wide pillar', () => {
+      const g = quietGame();
+      g.step(1 / 60, jab('l'));
+      run(g, 0.15, intent());
+      g.step(1 / 60, jab('r'));
+      run(g, 0.2, intent());
+      g.step(1 / 60, intent({ palms: [{ kind: 'push', hand: 'r', at: { x: 0, y: 10 }, shoulder: SHOULDERS.r, dir: null }] }));
+      expect(combos(g)).toEqual(['oneTwo']);
+      expect(g.pillars[0].halfW).toBe(TUNE.pillarHalfW * TUNE.oneTwoWidth);
+    });
+
+    it('pillar volley: a palm push from each hand, quickly, merge into one wide wave', () => {
+      const g = quietGame();
+      const push = (hand: Side) => intent({ palms: [{ kind: 'push', hand, at: { x: 0, y: 10 }, shoulder: SHOULDERS[hand], dir: null }] });
+      g.step(1 / 60, push('r'));
+      run(g, 0.3, intent());
+      g.step(1 / 60, push('l'));
+      expect(g.pillars).toHaveLength(1);
+      expect(g.pillars[0].halfW).toBe(TUNE.pillarHalfW * TUNE.volleyWidth);
+      expect(combos(g)).toEqual(['volley']);
+    });
+
+    it('the ultimate is a finisher: without two jabs first it does nothing and says how', () => {
+      const g = quietGame();
+      g.step(1 / 60, intent({ casts: [{ kind: 'ultimate', at: { x: 0, y: 10 } }] }));
+      expect(g.blades).toHaveLength(0);
+      expect(g.ultimateCharge).toBe(1);
+      expect(g.drainEvents()).toContainEqual({ type: 'hint', text: expect.stringContaining('JAB, JAB') });
+      g.step(1 / 60, jab('l'));
+      run(g, 0.3, intent());
+      g.step(1 / 60, jab('r'));
+      run(g, 0.5, intent());
+      g.step(1 / 60, intent({ casts: [{ kind: 'ultimate', at: { x: 0, y: 10 } }] }));
+      expect(g.blades).toHaveLength(1);
+      expect(combos(g)).toContain('finisher');
     });
   });
 
@@ -348,7 +454,8 @@ describe('Game', () => {
   });
 
   describe('ultimate', () => {
-    const ultimate = intent({ casts: [{ kind: 'ultimate', at: { x: 0, y: 10 } }] });
+    // a finisher: two jabs, then gather & fling
+    const ultimate = intent({ punches: [punch('l', -10, 5), punch('r', 10, 5)], casts: [{ kind: 'ultimate', at: { x: 0, y: 10 } }] });
     const enemyAt = (id: number, z: number, x = 0) =>
       ({ id, x, y: 33, z, hp: 2, t: 0, appear: 1, dying: 0, flash: 0, cd: 99, winding: false, wind: 0, side: 1 as const, phase: 0 });
 
@@ -388,7 +495,7 @@ describe('Game', () => {
       expect(g.ultimateCharge).toBeLessThan(0.01);
       run(g, 3, intent()); // dummies are cut down, then come back
       expect(g.enemies.every(e => e.hp > 0)).toBe(true);
-      g.step(1 / 60, ultimate);
+      g.step(1 / 60, intent({ casts: ultimate.casts })); // still recharging: nothing
       run(g, 1, intent());
       expect(g.enemies.every(e => e.hp > 0)).toBe(true);
       run(g, TUNE.ultimateCooldownS, intent());

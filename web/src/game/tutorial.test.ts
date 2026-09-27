@@ -5,7 +5,7 @@ import type { HandState, Intent } from '../intent/interpret';
 import { mulberry32 } from '../math';
 
 const hs = (x: number, y: number, open = false): HandState =>
-  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true, punchRise: null, reach: null, reachBase: null, reachNoise: null, aimDir: null });
+  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true, punchRise: null, reach: null, reachBase: null, reachNoise: null, aimDir: null, charge: 0 });
 const intent = (o: Partial<Intent> = {}): Intent =>
   ({ present: true, head: { x: 0, y: 0 }, hands: { l: hs(-12, 22), r: hs(12, 22) }, shoulders: { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } }, punches: [], palms: [], shield: false, xBlock: false, casts: [], face: null, bodyTilt: 0, ...o });
 
@@ -25,7 +25,10 @@ const lessonIndex = (id: string) => LESSONS.findIndex(l => l.id === id);
 
 describe('Tutorial', () => {
   it('starts with movement, then punching, and teaches every move', () => {
-    expect(LESSONS.map(l => l.id)).toEqual(['move', 'punch', 'pillar', 'wave', 'shield', 'xblock', 'palm', 'wall', 'wallpush', 'ultimate']);
+    expect(LESSONS.map(l => l.id)).toEqual([
+      'move', 'punch', 'charge', 'flurry', 'pillar', 'wave', 'shield', 'counter', 'xblock',
+      'palm', 'onetwo', 'volley', 'wall', 'wallbreaker', 'burst', 'ultimate',
+    ]);
   });
 
   it('takes over the field: no waves, and you cannot lose', () => {
@@ -56,7 +59,7 @@ describe('Tutorial', () => {
     expect(g.enemies.map(e => e.dummy)).toEqual([true]);
     const shoulder = { x: 20, y: 20 };
     play(g, t, 6, i => intent({ punches: i % 30 === 0 ? [{ hand: 'r', at: { x: 0, y: 8 }, shoulder, dir: null }] : [] }));
-    expect(t.lesson.id === 'pillar' || t.done === LESSONS[lessonIndex('punch')].need).toBe(true);
+    expect(t.lesson.id !== 'punch' || t.done === LESSONS[lessonIndex('punch')].need).toBe(true);
   });
 
   it('dodging lessons count dodges: the pillar lesson passes by leaning away each time', () => {
@@ -83,7 +86,11 @@ describe('Tutorial', () => {
   it('the ultimate lesson charges the ultimate for you', () => {
     const { g, t } = setup(lessonIndex('ultimate'));
     expect(g.ultimateCharge).toBe(1);
-    play(g, t, 0.1, i => intent({ casts: i === 0 ? [{ kind: 'ultimate', at: { x: 0, y: 10 } }] : [] }));
+    const shoulder = { x: 20, y: 20 };
+    play(g, t, 0.1, i => intent({
+      punches: i === 0 ? [{ hand: 'l', at: { x: -5, y: 8 }, shoulder, dir: null }, { hand: 'r', at: { x: 5, y: 8 }, shoulder, dir: null }] : [],
+      casts: i === 3 ? [{ kind: 'ultimate', at: { x: 0, y: 10 } }] : [],
+    }));
     expect(t.completedFor).not.toBeNull();
   });
 
