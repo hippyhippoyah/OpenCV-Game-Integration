@@ -27,12 +27,13 @@
     <div id="toasts"></div>
     <div id="banner"></div>
     <div id="away" class="notice hidden">Step into frame — we can't see you</div>
+    <div id="recording" class="notice rec hidden">● Recording tracking for 10 s — punch a few times</div>
   </div>
 
   <div class="card" id="start">
     <h1>Firebending</h1>
     <p>Bend fire with your hands in front of your webcam. You look through your own eyes. Keep your fists up in guard; punch to shoot fire where your fist goes; open both hands for a flame shield; lean and duck to dodge.</p>
-    <p class="muted">Stand about 1.5–2 m back so your head, shoulders and hands are all in view. Press <kbd>T</kbd> in game to switch to practice dummies that don't fight back, and <kbd>P</kbd> to switch between fist punches and open-hand punches.</p>
+    <p class="muted">Stand about 1.5–2 m back so your head, shoulders and hands are all in view. Press <kbd>T</kbd> in game to switch to practice dummies that don't fight back, and <kbd>P</kbd> to switch between fist punches and open-hand punches. <kbd>K</kbd> records 10 s of tracking data for debugging.</p>
     <div class="actions">
       <button id="camBtn">Play with camera</button>
       <button id="mockBtn" class="secondary">Mouse &amp; keys</button>
@@ -61,6 +62,7 @@
       <div><kbd>T</kbd> practice dummies ↔ spirits</div>
       <div><kbd>P</kbd> fist punch ↔ open-hand punch</div>
       <div><kbd>O</kbd> hold: right hand out of view</div>
+      <div><kbd>K</kbd> record 10 s of tracking (debug)</div>
     </div>
     <div class="actions"><button id="mockHelpClose">Got it</button><span class="muted"><kbd>?</kbd> reopens · <kbd>`</kbd> debug numbers</span></div>
   </div>

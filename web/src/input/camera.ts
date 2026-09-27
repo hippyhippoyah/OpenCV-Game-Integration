@@ -1,5 +1,6 @@
 import { FilesetResolver, HandLandmarker, PoseLandmarker } from '@mediapipe/tasks-vision';
 import { toFrame } from './landmarks';
+import type { RawLandmarks } from '../debug/recorder';
 import type { Tracker, TrackingFrame } from './types';
 
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm';
@@ -12,6 +13,8 @@ export class CameraError extends Error {}
 /** Webcam + MediaPipe hand and pose models, polled once per new video frame. */
 export class CameraTracker implements Tracker {
   private lastVideoTime = -1;
+  /** MediaPipe's raw output for the latest frame (for the recorder). */
+  lastRaw: RawLandmarks | null = null;
 
   private constructor(
     readonly video: HTMLVideoElement,
@@ -68,6 +71,7 @@ export class CameraTracker implements Tracker {
     this.lastVideoTime = this.video.currentTime;
     const hands = this.hands.detectForVideo(this.video, now);
     const pose = this.pose.detectForVideo(this.video, now);
+    this.lastRaw = { hands: hands.landmarks, handsWorld: hands.worldLandmarks, pose: pose.landmarks[0] ?? [], poseWorld: pose.worldLandmarks[0] ?? [] };
     return toFrame(now / 1000, hands.landmarks, pose.landmarks[0], hands.worldLandmarks, pose.worldLandmarks[0]);
   }
 

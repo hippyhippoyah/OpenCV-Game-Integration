@@ -1,4 +1,5 @@
 import './style.css';
+import { downloadRecording, Recorder } from './debug/recorder';
 import { Game } from './game/game';
 import { CameraError, CameraTracker } from './input/camera';
 import { bindMockControls, MOCK_CALIBRATION, MockTracker } from './input/mock';
@@ -34,6 +35,13 @@ let practice = params.has('dummies');
 /** Fist punches by arm extension (default) or open-hand punches; toggled with P, or start with ?punch=open. */
 if (params.get('punch') === 'open') TUNING.punchTrigger = 'open';
 let acc = 0, last = performance.now(), fpsTime = 0, fpsFrames = 0;
+const RECORD_SECONDS = 10;
+/** K records RECORD_SECONDS of tracking numbers and downloads them, for debugging detection offline. */
+const recorder = new Recorder(r => {
+  downloadRecording(r);
+  hud.toast(`SAVED ${r.samples.length} FRAMES`, 'cool');
+  show('recording', false);
+});
 
 function startMock(): void {
   const mock = new MockTracker(renderer);
@@ -98,6 +106,7 @@ function onFrame(f: TrackingFrame): void {
   } else if (phase === 'play' && calibration) {
     intent = interpret(f, calibration, istate);
     pendingPunches.push(...intent.punches); // held until the next fixed step consumes them
+    recorder.push(f, camera?.lastRaw ?? null, intent);
   }
 }
 
@@ -166,6 +175,10 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toLowerCase();
   if (k === '`') debug.toggle();
+  if (k === 'k' && calibration && phase === 'play' && !recorder.active) {
+    recorder.start(RECORD_SECONDS, calibration);
+    show('recording');
+  }
   if (k === 'p') {
     TUNING.punchTrigger = TUNING.punchTrigger === 'extend' ? 'open' : 'extend';
     istate.pending = [];
