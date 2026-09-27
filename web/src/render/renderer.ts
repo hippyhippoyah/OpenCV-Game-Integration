@@ -135,7 +135,7 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.4);
         this.flare = { l: FLARE_S * 2, r: FLARE_S * 2 };
         break;
-      case 'quake':
+      case 'stonePillar':
         this.burst(e.x, e.y - 4, e.z, 'earth', 30, 30);
         this.shake = Math.max(this.shake, 0.3);
         break;
@@ -361,6 +361,10 @@ export class Renderer {
       this.drawDummy(e);
       return;
     }
+    if (e.earth) {
+      this.drawEarthbender(e);
+      return;
+    }
     const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), s = p.s, sx = p.x;
     const bob = Math.sin(e.t * 2 + e.phase) * 1.5 * u * s;
     const cy = p.y + bob, hgt = 52 * u * s, feet = this.project(e.x, FLOOR_Y, e.z).y;
@@ -404,21 +408,8 @@ export class Renderer {
     c.beginPath(); c.ellipse(sx + hr * 0.35, hy - hr * 0.1, hr * 0.22, hr * 0.1, -0.35, 0, 7); c.fill();
     c.fillStyle = '#c0392b';
     c.fillRect(sx - hr * 0.08, hy + hr * 0.3, hr * 0.16, hr * 0.35);
-    // wind-up telegraph: an orb in the hand, the ground cracking (quake) or a disc spinning up (sweep)
-    if (e.winding && e.attack === 'quake') {
-      const f = this.project(e.x, FLOOR_Y, e.z), r = (6 + e.wind * 14) * u * s;
-      c.globalCompositeOperation = 'lighter';
-      c.globalAlpha = alpha * (0.4 + 0.6 * e.wind);
-      c.drawImage(SPR.earth[1], f.x - r, f.y - r * 0.35, r * 2, r * 0.7);
-      c.strokeStyle = `rgba(230,170,100,${0.4 + 0.5 * e.wind})`;
-      c.lineWidth = 2;
-      for (let i = 0; i < 5; i++) {
-        const a = i * 1.26 + e.phase;
-        c.beginPath(); c.moveTo(f.x, f.y); c.lineTo(f.x + Math.cos(a) * r, f.y + Math.sin(a) * r * 0.3); c.stroke();
-      }
-      c.globalCompositeOperation = 'source-over';
-      c.globalAlpha = alpha;
-    } else if (e.winding && e.attack === 'slab') {
+    // wind-up telegraph: an orb in the hand, or a disc spinning up (sweep)
+    if (e.winding && e.attack === 'slab') {
       const o = this.project(e.x, e.y - 30, e.z), rx = (4 + e.wind * 12) * u * s;
       c.globalCompositeOperation = 'lighter';
       c.strokeStyle = `rgba(140,230,255,${0.4 + 0.5 * e.wind})`;
@@ -437,6 +428,76 @@ export class Renderer {
       c.globalCompositeOperation = 'source-over';
     }
     c.globalAlpha = 1;
+  }
+
+  /**
+   * An earthbender in green and brown. Raising a pillar he stomps and lifts both arms (first 60% of
+   * the wind-up), then drives both palms forward; throwing a rock he draws one arm back.
+   */
+  private drawEarthbender(e: Enemy): void {
+    const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), k = u * p.s, x = p.x;
+    const feet = this.project(e.x, FLOOR_Y, e.z).y;
+    const alpha = e.appear * (1 - Math.min(1, e.dying));
+    if (alpha <= 0) return;
+    const hit = e.flash > 0, w = e.winding ? e.wind : 0;
+    const lift = e.attack === 'pillar' ? Math.min(1, w / 0.6) : 0, shove = e.attack === 'pillar' ? clamp((w - 0.6) / 0.4, 0, 1) : 0;
+    const crouch = (lift - shove) * 3 * k;
+    c.globalAlpha = alpha;
+    c.fillStyle = 'rgba(0,0,0,.5)';
+    c.beginPath(); c.ellipse(x, feet, 9 * k, 2 * k, 0, 0, 7); c.fill();
+    // legs in a wide stance
+    c.strokeStyle = hit ? '#ffe0b0' : '#4a3a26';
+    c.lineWidth = 3.2 * k;
+    const hip = { x, y: p.y + 8 * k + crouch };
+    c.beginPath(); c.moveTo(hip.x - 2 * k, hip.y); c.lineTo(x - 7 * k, feet); c.moveTo(hip.x + 2 * k, hip.y); c.lineTo(x + 7 * k, feet); c.stroke();
+    // robe
+    const top = p.y - 14 * k + crouch;
+    c.fillStyle = hit ? '#fff0c8' : '#4e6b3a';
+    c.beginPath();
+    c.moveTo(x - 6 * k, top); c.lineTo(x + 6 * k, top); c.lineTo(x + 8 * k, hip.y + 3 * k); c.lineTo(x - 8 * k, hip.y + 3 * k); c.closePath(); c.fill();
+    c.fillStyle = hit ? '#ffe0b0' : '#b58a3c';
+    c.fillRect(x - 7 * k, hip.y - 3 * k, 14 * k, 2.4 * k);
+    // arms: rest → raised (lifting the stone) → driven forward (shoving it); a rock is drawn back
+    c.strokeStyle = hit ? '#ffe0b0' : '#4e6b3a';
+    c.lineWidth = 3 * k;
+    for (const side of [-1, 1]) {
+      const sh = { x: x + side * 6 * k, y: top + 2 * k };
+      let hand = { x: sh.x + side * 4 * k, y: sh.y + 10 * k };
+      if (e.attack === 'pillar' && e.winding) {
+        const up = { x: sh.x + side * 5 * k, y: sh.y - 10 * k }, fwd = { x: sh.x + side * 2 * k, y: sh.y + 2 * k };
+        hand = { x: lerp(lerp(hand.x, up.x, lift), fwd.x, shove), y: lerp(lerp(hand.y, up.y, lift), fwd.y, shove) };
+      } else if (e.winding && side === e.side) {
+        hand = { x: sh.x + side * lerp(4, 9, w) * k, y: sh.y - lerp(0, 8, w) * k };
+      }
+      c.beginPath(); c.moveTo(sh.x, sh.y); c.lineTo(hand.x, hand.y); c.stroke();
+      c.fillStyle = hit ? '#fff0c8' : '#d9a27a';
+      c.beginPath(); c.arc(hand.x, hand.y, 1.6 * k, 0, 7); c.fill();
+      if (e.winding && e.attack === 'rock' && side === e.side) this.drawRock(hand.x, hand.y - 2 * k, (1 + 2.5 * w) * k, e.t);
+    }
+    // head: skin, dark topknot
+    const hy = top - 5 * k;
+    c.fillStyle = hit ? '#fff0c8' : '#d9a27a';
+    c.beginPath(); c.arc(x, hy, 4 * k, 0, 7); c.fill();
+    c.fillStyle = '#1e1a16';
+    c.beginPath(); c.arc(x, hy - 1.5 * k, 4 * k, Math.PI, 0); c.fill();
+    c.beginPath(); c.arc(x, hy - 5 * k, 1.6 * k, 0, 7); c.fill();
+    c.globalAlpha = 1;
+  }
+
+  /** A lumpy stone. */
+  private drawRock(x: number, y: number, r: number, spin: number): void {
+    const c = this.ctx;
+    c.fillStyle = '#8a6a48';
+    c.strokeStyle = '#3b2a1a';
+    c.lineWidth = Math.max(1, r * 0.15);
+    c.beginPath();
+    for (let i = 0; i < 7; i++) {
+      const a = spin * 3 + (i / 7) * Math.PI * 2, rr = r * (0.8 + 0.2 * Math.sin(i * 2.7));
+      if (i === 0) c.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); else c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = 'rgba(255,230,190,.25)';
+    c.beginPath(); c.arc(x - r * 0.3, y - r * 0.3, r * 0.3, 0, 7); c.fill();
   }
 
   /** Wooden training post with a straw body and a target for a head. */
@@ -472,6 +533,12 @@ export class Renderer {
     for (const p of g.projs) {
       if ((p.z > 1) !== far) continue;
       const q = this.project(p.x, p.y, p.z), r = p.r * q.s * this.u, set = p.kind === 'player' ? SPR.fire : SPR.spirit;
+      if (p.rock) {
+        c.globalCompositeOperation = 'source-over';
+        this.drawRock(q.x, q.y, r * 1.1, p.z);
+        c.globalCompositeOperation = 'lighter';
+        continue;
+      }
       c.drawImage(set[1], q.x - r * 2.4, q.y - r * 2.4, r * 4.8, r * 4.8);
       c.drawImage(set[0], q.x - r * 1.2, q.y - r * 1.2, r * 2.4, r * 2.4);
     }
@@ -698,32 +765,43 @@ export class Renderer {
   }
 
   /**
-   * A quake: a line of rock spikes bursting up across its side of the field, with that side of the
-   * floor in front of you glowing red as it closes in. A high sweep: a spinning sheet of water at
-   * the height your eyes were, with a red line across the view as it comes.
+   * A stone pillar: a tall column of rock rising out of the ground in front of its earthbender,
+   * then sliding at you; as it closes in, its lane on the floor in front of you glows red. A high
+   * sweep: a spinning sheet of water at the height your eyes were, with a red line across the view.
    */
   private drawHazard(g: Game, h: Hazard): void {
     const c = this.ctx, u = this.u, near = clamp(1 - h.z / 6, 0, 1);
-    if (h.kind === 'quake') {
-      const far = h.edge + h.side * 160;
-      // warning: the danger side of the floor, from you out to where the quake is
-      const a = this.project(h.edge, FLOOR_Y, 0.2), b = this.project(far, FLOOR_Y, 0.2);
-      const a2 = this.project(h.edge, FLOOR_Y, Math.max(0.3, h.z)), b2 = this.project(far, FLOOR_Y, Math.max(0.3, h.z));
-      c.fillStyle = `rgba(255,70,50,${0.08 + 0.3 * near})`;
-      c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.lineTo(b2.x, b2.y); c.lineTo(a2.x, a2.y); c.closePath(); c.fill();
-      c.strokeStyle = `rgba(255,120,90,${0.3 + 0.6 * near})`;
-      c.lineWidth = 3;
-      c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(a2.x, a2.y); c.stroke();
-      // the spikes along the front
-      if (h.z < 0) return;
-      c.fillStyle = '#7a5a3a';
-      c.strokeStyle = '#3b2a1a';
-      c.lineWidth = 1;
-      for (let i = 0; i < 14; i++) {
-        const x = h.edge + h.side * (i + 0.5) * 11, jag = 0.7 + 0.3 * Math.sin(i * 2.3 + h.id);
-        const base = this.project(x, FLOOR_Y, h.z), tip = this.project(x, FLOOR_Y - 22 * jag, h.z), w = 5 * base.s * u;
-        c.beginPath(); c.moveTo(base.x - w, base.y); c.lineTo(tip.x, tip.y); c.lineTo(base.x + w, base.y); c.closePath(); c.fill(); c.stroke();
+    if (h.kind === 'stonePillar') {
+      const hw = TUNE.stonePillarHalfW;
+      if (h.owner === null) {
+        // warning: the lane it will come down, on the floor just in front of you
+        const a = this.project(h.laneX - hw, FLOOR_Y, 0.2), b = this.project(h.laneX + hw, FLOOR_Y, 0.2);
+        const a2 = this.project(h.laneX - hw, FLOOR_Y, 2.5), b2 = this.project(h.laneX + hw, FLOOR_Y, 2.5);
+        c.fillStyle = `rgba(255,70,50,${0.1 + 0.35 * near})`;
+        c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.lineTo(b2.x, b2.y); c.lineTo(a2.x, a2.y); c.closePath(); c.fill();
       }
+      if (h.z < -0.5) return;
+      const hgt = TUNE.pillarHeightStone * h.rise, base = this.project(h.x, FLOOR_Y, h.z), topP = this.project(h.x, FLOOR_Y - hgt, h.z);
+      const w = hw * base.s * u;
+      c.fillStyle = '#7d6246';
+      c.strokeStyle = '#3b2a1a';
+      c.lineWidth = Math.max(1, w * 0.06);
+      c.beginPath();
+      c.moveTo(base.x - w, base.y);
+      c.lineTo(topP.x - w * 0.85, topP.y + w * 0.1);
+      c.lineTo(topP.x - w * 0.3, topP.y - w * 0.12);
+      c.lineTo(topP.x + w * 0.4, topP.y);
+      c.lineTo(topP.x + w * 0.9, topP.y + w * 0.15);
+      c.lineTo(base.x + w, base.y);
+      c.closePath(); c.fill(); c.stroke();
+      // strata and cracks
+      c.strokeStyle = 'rgba(40,28,16,.6)';
+      for (let i = 1; i < 5; i++) {
+        const y = lerp(base.y, topP.y, i / 5);
+        c.beginPath(); c.moveTo(base.x - w * 0.95, y + Math.sin(i * 3.1) * w * 0.05); c.lineTo(base.x + w * 0.95, y - Math.sin(i * 1.7) * w * 0.05); c.stroke();
+      }
+      c.fillStyle = 'rgba(255,230,190,.12)';
+      c.fillRect(base.x - w, topP.y, w * 0.5, base.y - topP.y);
       return;
     }
     // the sweep: a flat spinning sheet across the field
@@ -882,11 +960,11 @@ export class Renderer {
         this.emit(wall.x + rnd(-wall.halfW, wall.halfW), FLOOR_Y - rnd(0, 6), wall.z, rnd(-4, 4), rnd(-110, -55), wall.vz, rnd(0.55, 1.05), rnd(5, 9));
       }
     }
-    // dust off the quakes
+    // dust off stone pillars as they rise and grind forward
     for (const h of g.hazards) {
-      if (h.kind !== 'quake' || h.z < 0) continue;
-      for (let i = nOf(160, dt); i > 0; i--) {
-        this.emit(h.edge + h.side * rnd(0, 150), FLOOR_Y - rnd(0, 6), h.z, rnd(-6, 6), rnd(-30, -10), h.vz, rnd(0.3, 0.7), rnd(4, 8), 'earth', 0.3);
+      if (h.kind !== 'stonePillar' || h.z < 0 || (h.owner !== null && h.rise >= 1)) continue;
+      for (let i = nOf(140, dt); i > 0; i--) {
+        this.emit(h.x + rnd(-1, 1) * TUNE.stonePillarHalfW, FLOOR_Y - rnd(0, 4), h.z, rnd(-10, 10), rnd(-25, -8), h.vz, rnd(0.3, 0.7), rnd(4, 8), 'earth', 0.3);
       }
     }
     const { l, r } = g.hands;

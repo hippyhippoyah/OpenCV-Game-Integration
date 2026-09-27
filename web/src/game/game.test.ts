@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bodyHit, FLOOR_Y, Game, TUNE, type Proj } from './game';
+import { bodyHit, FLOOR_Y, Game, TUNE, type Enemy, type Proj } from './game';
 import type { HandState, Intent, Palm, Punch, Side } from '../intent/interpret';
 import { mulberry32 } from '../math';
 
@@ -172,62 +172,110 @@ describe('Game', () => {
 
   describe('attacks you have to move out of', () => {
     const at = (x: number, y = 0) => intent({ head: { x, y } });
-    function withHazard(kind: 'quake' | 'slab', fromX = 60) {
+    const foe = (o: Partial<Enemy> = {}): Enemy =>
+      ({ id: 7, x: 10, y: FLOOR_Y - 30, z: 8, hp: 2, t: 0, appear: 1, dying: 0, flash: 0, cd: 0, winding: false, wind: 0, side: 1, phase: 0, ...o });
+    /** An earthbender about to raise a pillar; returns once it is shoved at you. */
+    function pillarComing(): Game {
       const g = quietGame();
-      g.enemies.push({ id: 7, x: fromX, y: FLOOR_Y - 30, z: 8, hp: 2, t: 0, appear: 1, dying: 0, flash: 0, cd: 0, winding: false, wind: 0, side: 1, phase: 0, attack: kind });
+      g.enemies.push(foe({ earth: true }));
       g.step(1 / 60, at(0));
-      run(g, TUNE.windupS + 0.05, at(0)); // the enemy winds up and lets go
-      expect(g.hazards.map(h => h.kind)).toEqual([kind]);
+      expect(g.hazards.map(h => h.kind)).toEqual(['stonePillar']);
+      expect(g.hazards[0].vz).toBe(0); // rising in front of him
+      run(g, TUNE.pillarWindupS * 0.5, at(0));
+      expect(g.hazards[0].rise).toBeGreaterThan(0.5);
+      run(g, TUNE.pillarWindupS * 0.5 + 0.05, at(0));
+      expect(g.hazards[0].vz).toBeLessThan(0); // shoved
+      expect(g.drainEvents().some(e => e.type === 'stonePillar')).toBe(true);
       return g;
     }
 
-    it('a quake from your right rips up the ground on your right: stay and it hits', () => {
-      const g = withHazard('quake');
-      expect(g.hazards[0].side).toBe(1);
-      run(g, 3, at(0));
+    it('an earthbender raises a stone pillar, then shoves it along a lane beside you: stay and it hits', () => {
+      const g = pillarComing();
+      const lane = g.hazards[0].laneX;
+      expect(Math.abs(lane)).toBe(TUNE.pillarOffset);
+      run(g, 4, at(0));
       expect(g.hp).toBe(TUNE.maxHp - TUNE.hitDamage);
     });
 
-    it('lean or step left and it misses you', () => {
-      const g = withHazard('quake');
-      run(g, 3, at(-TUNE.quakeMargin - 14));
+    it('lean or step away from the pillar side and it misses you', () => {
+      const g = pillarComing();
+      const away = -Math.sign(g.hazards[0].laneX) * (TUNE.stonePillarHalfW + TUNE.bodyHalfW - TUNE.pillarOffset + 3);
+      run(g, 4, at(away));
       expect(g.hp).toBe(TUNE.maxHp);
       expect(g.drainEvents().some(e => e.type === 'dodged')).toBe(true);
     });
 
-    it('a quake from your left comes up on your left', () => {
-      expect(withHazard('quake', -60).hazards[0].side).toBe(-1);
+    it('it comes slowly enough to see and react to', () => {
+      const g = pillarComing();
+      let t = 0;
+      while (g.hazards.length && !g.hazards[0].resolved) { g.step(1 / 60, at(0)); t += 1 / 60; }
+      expect(t).toBeGreaterThan(1.8);
     });
 
-    it('the shield and X block do not stop a quake, a fire wall does', () => {
-      const shielded = withHazard('quake');
-      run(shielded, 3, { ...shieldUp(10), xBlock: true });
+    it('knocking the earthbender down while he raises it crumbles the pillar', () => {
+      const g = quietGame();
+      g.enemies.push(foe({ earth: true }));
+      g.step(1 / 60, at(0));
+      g.enemies[0].hp = 0;
+      g.step(1 / 60, at(0));
+      expect(g.hazards).toHaveLength(0);
+    });
+
+    it('after the pillar he throws rocks', () => {
+      const g = quietGame();
+      g.enemies.push(foe({ earth: true, opened: true }));
+      const kinds = new Set<string>();
+      for (let t = 0; t < 40; t += 1 / 60) {
+        g.step(1 / 60, at(0));
+        g.hp = TUNE.maxHp;
+        g.projs.filter(p => p.kind === 'enemy').forEach(p => kinds.add(p.rock ? 'rock' : 'orb'));
+        g.hazards.forEach(h => kinds.add(h.kind));
+      }
+      expect([...kinds].sort()).toEqual(['rock', 'stonePillar']);
+    });
+
+    it('the shield and X block do not stop a pillar; a fire wall does', () => {
+      const shielded = pillarComing();
+      run(shielded, 4, { ...shieldUp(10), xBlock: true });
       expect(shielded.hp).toBe(TUNE.maxHp - TUNE.hitDamage);
-      const walled = withHazard('quake');
+      const walled = pillarComing();
       walled.step(1 / 60, intent({ casts: [{ kind: 'wall', at: { x: 0, y: 10 } }] }));
-      run(walled, 3, at(0));
+      run(walled, 4, at(0));
       expect(walled.hp).toBe(TUNE.maxHp);
     });
 
     it('a high sweep comes at head height: stand and it hits, duck and it passes over', () => {
-      const standing = withHazard('slab');
+      const sweep = () => {
+        const g = quietGame();
+        g.enemies.push(foe({ attack: 'slab' }));
+        run(g, TUNE.windupS + 0.05, at(0));
+        expect(g.hazards.map(h => h.kind)).toEqual(['slab']);
+        return g;
+      };
+      const standing = sweep();
       run(standing, 3, at(0));
       expect(standing.hp).toBe(TUNE.maxHp - TUNE.hitDamage);
-      const ducking = withHazard('slab');
+      const ducking = sweep();
       run(ducking, 3, at(0, TUNE.slabDuck + 2));
       expect(ducking.hp).toBe(TUNE.maxHp);
     });
 
-    it('spirits mix all three kinds of attack', () => {
+    it('waves bring spirits and earthbenders, and keep them all near the middle of the screen', () => {
       const g = new Game(mulberry32(3));
       const kinds = new Set<string>();
-      for (let t = 0; t < 90; t += 1 / 60) {
+      let widest = 0;
+      for (let t = 0; t < 120; t += 1 / 60) {
         g.step(1 / 60, intent());
         g.hp = TUNE.maxHp;
+        for (const e of g.enemies) {
+          kinds.add(e.earth ? 'earthbender' : 'spirit');
+          widest = Math.max(widest, Math.abs(e.x * (3 / (3 + e.z))));
+        }
         for (const h of g.hazards) kinds.add(h.kind);
-        if (g.projs.some(p => p.kind === 'enemy')) kinds.add('orb');
+        g.projs.filter(p => p.kind === 'enemy').forEach(p => kinds.add(p.rock ? 'rock' : 'orb'));
       }
-      expect([...kinds].sort()).toEqual(['orb', 'quake', 'slab']);
+      expect([...kinds].sort()).toEqual(['earthbender', 'orb', 'rock', 'slab', 'spirit', 'stonePillar']);
+      expect(widest).toBeLessThanOrEqual(g.viewHalfW * TUNE.enemyBand + 0.01);
     });
   });
 

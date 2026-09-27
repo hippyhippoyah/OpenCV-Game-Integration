@@ -17,7 +17,7 @@ export class Hud {
     const noHands = !hands.l && !hands.r;
     pill.classList.toggle('off', noHands);
     pill.classList.toggle('shield', g.shield.on);
-    const [name, hint] = g.xBlock ? ['X BLOCK', 'arms crossed: blocks attacks (not quakes or sweeps: move!)']
+    const [name, hint] = g.xBlock ? ['X BLOCK', 'arms crossed: blocks attacks (not pillars or sweeps: move!)']
       : g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
       : noHands ? ['NO HANDS', 'raise your fists into view']
       : tooFar ? ['GUARD', 'step closer (about 1.5 m) so fist punches can see your fists clearly']
@@ -50,7 +50,7 @@ export class Hud {
       case 'wall': this.toast('FIRE WALL'); break;
       case 'pillar': this.toast('PILLAR'); break;
       case 'wallPush': this.toast('WALL PUSH'); break;
-      case 'quake': this.toast(e.side > 0 ? '← QUAKE ON YOUR RIGHT' : 'QUAKE ON YOUR LEFT →', 'bad'); break;
+      case 'stonePillar': this.toast(e.side > 0 ? '← PILLAR ON YOUR RIGHT' : 'PILLAR ON YOUR LEFT →', 'bad'); break;
       case 'slab': this.toast('↓ DUCK', 'bad'); break;
       case 'ultimate': this.banner('ULTIMATE'); break;
       case 'wave': this.banner(`WAVE ${e.wave}`); break;

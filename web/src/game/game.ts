@@ -45,13 +45,18 @@ export const TUNE = {
   /** Both palms pushed: a fire wall pushWallHalfW wide rolls forward at pushWallSpeed, burning (palmDamage) what it passes. */
   pushWallHalfW: 40, pushWallSpeed: 7, pushWallStartZ: 1.2, pushWallCooldownS: 2.5,
   /**
-   * Attacks you can only move out of. Spirits wind up an orb, a quake or a high sweep (attackMix
-   * gives the share of quakes and sweeps). A quake rips along the ground on the side the spirit
-   * stands on, covering from quakeMargin past where you stood outward: lean or step the other way
-   * (your body is bodyHalfW wide). A high sweep crosses the whole field at the height your eyes were:
-   * duck at least slabDuck. Shield and X block don't stop either; a fire wall does.
+   * Enemies: water spirits and (earthShare of them) earthbenders. Spirits throw water orbs, or
+   * (slabShare) a high sweep: a sheet of water crossing the whole field at the height your eyes
+   * were — duck at least slabDuck. Earthbenders open by raising a stone pillar (over their
+   * pillarWindupS wind-up) in a lane just to one side of where you stand — its centre pillarOffset
+   * off your centre, pillarHalfW wide — and shoving it at you at stonePillarSpeed: lean or step the
+   * other way (your body is bodyHalfW wide). After that they throw rocks, raising another pillar
+   * now and then (pillarAgain). Shield and X block don't stop pillars or sweeps; a fire wall does.
    */
-  attackMix: { quake: 0.3, slab: 0.2 }, quakeSpeed: 6, quakeMargin: 10, bodyHalfW: 12, slabSpeed: 6, slabDuck: 14,
+  earthShare: 0.35, slabShare: 0.3, slabSpeed: 6, slabDuck: 14, bodyHalfW: 12,
+  pillarWindupS: 1.4, stonePillarSpeed: 3.5, stonePillarHalfW: 13, pillarHeightStone: 70, pillarOffset: 10, pillarAgain: 0.3,
+  /** Enemies stay within this fraction of the screen's half-width of its centre (easier to aim at). */
+  enemyBand: 0.4,
   /** Testing: the shield never drains or breaks. */
   shieldInfinite: true,
   shieldDrainPerS: 0.33, shieldRegenPerS: 0.22, shieldBlockCost: 0.18, shieldBrokenS: 1.2, shieldReach: 8,
@@ -64,6 +69,10 @@ export interface Enemy {
   cd: number; winding: boolean; wind: number; side: 1 | -1; phase: number;
   /** The attack it is winding up (picked when the wind-up starts). */
   attack?: AttackKind;
+  /** Earthbender (stone pillars and rocks) instead of a water spirit. */
+  earth?: boolean;
+  /** Earthbender: has already opened with a pillar. */
+  opened?: boolean;
   /** Practice target: never moves or attacks, respawns in its slot. */
   dummy?: boolean;
   slot?: number;
@@ -71,6 +80,8 @@ export interface Enemy {
 
 export interface Proj {
   id: number; kind: 'player' | 'enemy';
+  /** An earthbender's rock rather than a water orb. */
+  rock?: boolean;
   x: number; y: number; z: number; vx: number; vy: number; vz: number; r: number;
   resolved: boolean;
 }
@@ -79,7 +90,7 @@ type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEne
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
   | { type: 'punch' | 'pillar'; x: number; y: number; z: number; side: Side }
-  | { type: 'quake'; x: number; y: number; z: number; side: 1 | -1 }
+  | { type: 'stonePillar'; x: number; y: number; z: number; side: 1 | -1 }
   | { type: 'shieldBroken' | 'gameOver' }
   | { type: 'wave'; wave: number };
 
@@ -91,19 +102,23 @@ export interface Blade { id: number; x: number; y: number; r: number }
 /** A palm push: a column of fire rolling forward from the floor, `hit` = enemies it already burned. */
 export interface Pillar { id: number; x: number; z: number; vx: number; age: number; hit: number[] }
 
-export type AttackKind = 'orb' | 'quake' | 'slab';
+export type AttackKind = 'orb' | 'rock' | 'slab' | 'pillar';
 
 /**
- * An attack you have to move out of, travelling toward you at depth z. A quake covers the ground
- * on `side` of `edge` (world x); a slab (high sweep) crosses the whole field at height y.
+ * An attack you have to move out of, travelling toward you at depth z. A stone pillar rises in
+ * front of its earthbender (rise 0 → 1, `owner` while it rises), then slides toward `laneX`, where
+ * it arrives; a slab (high sweep) crosses the whole field at height y.
  */
-export interface Hazard { id: number; kind: 'quake' | 'slab'; x: number; y: number; z: number; vz: number; side: 1 | -1; edge: number; resolved: boolean }
+export interface Hazard {
+  id: number; kind: 'stonePillar' | 'slab'; x: number; y: number; z: number; vz: number; resolved: boolean;
+  laneX: number; side: 1 | -1; startX: number; startZ: number; rise: number; owner: number | null;
+}
 
 /** A wall of fire across the courtyard: standing (vz 0), or rolling forward (a wall push) burning what it passes. */
 export interface Wall { id: number; x: number; z: number; halfW: number; life: number; vz: number; hit: number[] }
 
 /** Where practice dummies stand (world x, depth). */
-const DUMMY_SLOTS = [{ x: -45, z: 6 }, { x: 0, z: 9 }, { x: 45, z: 6 }];
+const DUMMY_SLOTS = [{ x: -36, z: 6 }, { x: 0, z: 9 }, { x: 36, z: 6 }];
 const DUMMY_RESPAWN_S = 1.5;
 
 /** Head + torso hitbox. `v` is relative to the eyes. */
@@ -146,6 +161,8 @@ export class Game {
 
   private events: GameEvent[] = [];
   private toSpawn = 0;
+  /** An earthbender has come this wave (every wave brings at least one). */
+  private waveEarth = false;
   private spawnT = 0;
   private waveBreak = 0;
   private nextId = 1;
@@ -325,30 +342,43 @@ export class Game {
     });
   }
 
-  /** Move quakes and sweeps toward you; walls stop them; when they arrive, did you get out of the way? */
+  /**
+   * Raise pillars while their earthbender winds up (a pillar crumbles if he falls), move pillars and
+   * sweeps toward you; walls stop them; when they arrive, did you get out of the way?
+   */
   private updateHazards(dt: number): void {
     const dead = new Set<number>();
     for (const h of this.hazards) {
+      if (h.owner !== null) {
+        const e = this.enemies.find(x => x.id === h.owner);
+        if (!e || e.hp <= 0 || !e.winding) {
+          dead.add(h.id);
+          this.emit('cut', h.x, FLOOR_Y - 20, h.z);
+        } else h.rise = Math.min(1, e.wind / 0.6);
+        continue;
+      }
       const z0 = h.z;
       h.z += h.vz * dt;
+      // a stone pillar is shoved from in front of its earthbender toward its lane beside you
+      if (h.kind === 'stonePillar') h.x = lerp(h.laneX, h.startX, Math.max(0, h.z) / h.startZ);
       // a wall stops it if it stands between the attack and you
-      const wall = this.wallMet(this.cam.x, 0, z0, h.z, dt);
+      const wall = this.wallMet(h.kind === 'stonePillar' ? h.x : this.cam.x, h.kind === 'stonePillar' ? TUNE.stonePillarHalfW : 0, z0, h.z, dt);
       if (wall) {
         dead.add(h.id);
         this.score += 15;
-        this.emit('blocked', this.cam.x, h.kind === 'quake' ? FLOOR_Y - 10 : h.y, wall.z);
+        this.emit('blocked', h.x, h.kind === 'stonePillar' ? FLOOR_Y - 20 : h.y, wall.z);
         continue;
       }
       if (!h.resolved && h.z <= 0.2) {
         h.resolved = true;
-        const hit = h.kind === 'quake'
-          ? h.side * (this.cam.x - h.edge) > -TUNE.bodyHalfW
+        const hit = h.kind === 'stonePillar'
+          ? Math.abs(this.cam.x - h.laneX) < TUNE.stonePillarHalfW + TUNE.bodyHalfW
           : this.cam.y - h.y < TUNE.slabDuck;
         if (!hit) {
           this.score += 20;
           this.emit('dodged', this.cam.x, this.cam.y + 10, 0);
         } else if (this.inv <= 0) {
-          this.hurt(this.cam.x, h.kind === 'quake' ? this.cam.y + 30 : h.y);
+          this.hurt(this.cam.x, h.kind === 'stonePillar' ? this.cam.y + 20 : h.y);
         }
       }
       if (h.z < -1.5) dead.add(h.id);
@@ -463,6 +493,7 @@ export class Game {
   private startWave(): void {
     this.wave++;
     this.toSpawn = 2 + this.wave;
+    this.waveEarth = false;
     this.spawnT = 0.6;
     this.events.push({ type: 'wave', wave: this.wave });
   }
@@ -506,11 +537,26 @@ export class Game {
 
   private spawnEnemy(): void {
     const z = this.rnd(6.5, 11), s = depthScale(z);
+    // this.toSpawn still counts this one: if no earthbender yet, one of the last two is
+    const earth = (this.toSpawn <= 2 && !this.waveEarth) || this.rand() < TUNE.earthShare;
+    this.waveEarth ||= earth;
+    // near the middle of the screen, away from where the others stand
+    let x = 0;
+    for (let tries = 0; tries < 6; tries++) {
+      x = (this.rnd(-1, 1) * this.viewHalfW * TUNE.enemyBand) / s;
+      if (this.enemies.every(e => e.hp <= 0 || Math.abs(e.x * depthScale(e.z) - x * s) > 10)) break;
+    }
     this.enemies.push({
-      id: this.nextId++, x: this.cam.x + (this.rnd(-1, 1) * this.viewHalfW * 0.85) / s, y: FLOOR_Y - 30, z,
+      id: this.nextId++, x, y: FLOOR_Y - 30, z,
       hp: TUNE.enemyHp, t: 0, appear: 0, dying: 0, flash: 0,
       cd: this.rnd(1.2, 2.6), winding: false, wind: 0, side: this.rand() < 0.5 ? -1 : 1, phase: this.rnd(0, 6),
+      earth,
     });
+  }
+
+  /** Most you can drift sideways (world x) at depth z and stay near the middle of the screen. */
+  private bandAt(z: number): number {
+    return (this.viewHalfW * TUNE.enemyBand) / depthScale(z);
   }
 
   private updateEnemies(dt: number): void {
@@ -526,17 +572,20 @@ export class Game {
         continue;
       }
       if (e.dummy) continue;
-      e.x += (Math.sin(e.t * 0.5 + e.phase) * 8 * dt) / depthScale(e.z);
+      // sway gently, staying near the middle of the screen
+      const band = this.bandAt(e.z);
+      e.x = Math.max(-band, Math.min(band, e.x + (Math.sin(e.t * 0.5 + e.phase) * 5 * dt) / depthScale(e.z)));
       if (e.appear < 1) continue;
       if (!e.winding) {
         e.cd -= dt;
         if (e.cd <= 0) {
           e.winding = true;
           e.wind = 0;
-          e.attack ??= this.pickAttack();
+          e.attack ??= this.pickAttack(e);
+          if (e.attack === 'pillar') this.raisePillar(e);
         }
       } else {
-        e.wind += dt / TUNE.windupS;
+        e.wind += dt / (e.attack === 'pillar' ? TUNE.pillarWindupS : TUNE.windupS);
         if (e.wind >= 1) {
           this.enemyAttack(e);
           e.winding = false;
@@ -548,32 +597,45 @@ export class Game {
     }
   }
 
-  private pickAttack(): AttackKind {
-    const r = this.rand(), { quake, slab } = TUNE.attackMix;
-    return r < quake ? 'quake' : r < quake + slab ? 'slab' : 'orb';
+  private pickAttack(e: Enemy): AttackKind {
+    if (e.earth) return !e.opened || this.rand() < TUNE.pillarAgain ? 'pillar' : 'rock';
+    return this.rand() < TUNE.slabShare ? 'slab' : 'orb';
+  }
+
+  /** An earthbender stomps: a stone pillar starts rising in front of him, aimed at a lane beside you. */
+  private raisePillar(e: Enemy): void {
+    const side: 1 | -1 = this.rand() < 0.5 ? -1 : 1, z = e.z - 0.6, x = e.x + side * 16;
+    this.hazards.push({
+      id: this.nextId++, kind: 'stonePillar', x, y: FLOOR_Y, z, vz: 0, resolved: false,
+      laneX: this.cam.x + side * TUNE.pillarOffset, side, startX: x, startZ: z, rise: 0, owner: e.id,
+    });
   }
 
   private enemyAttack(e: Enemy): void {
     const kind = e.attack ?? 'orb';
-    if (kind === 'orb') { this.enemyThrow(e); return; }
-    const z = e.z - 0.1;
-    if (kind === 'quake') {
-      // along the ground on the spirit's side of you, from just past where you stand, outward
-      const side: 1 | -1 = e.x >= this.cam.x ? 1 : -1;
-      this.hazards.push({ id: this.nextId++, kind, x: e.x, y: FLOOR_Y, z, vz: -TUNE.quakeSpeed, side, edge: this.cam.x - side * TUNE.quakeMargin, resolved: false });
-      this.events.push({ type: 'quake', x: e.x, y: FLOOR_Y, z, side });
-    } else {
-      this.hazards.push({ id: this.nextId++, kind, x: e.x, y: this.cam.y, z, vz: -TUNE.slabSpeed, side: 1, edge: 0, resolved: false });
-      this.emit('slab', e.x, this.cam.y, z);
+    if (kind === 'orb' || kind === 'rock') { this.enemyThrow(e, kind === 'rock'); return; }
+    if (kind === 'pillar') {
+      // shove the raised pillar at you
+      e.opened = true;
+      const h = this.hazards.find(x => x.owner === e.id);
+      if (!h) return;
+      h.owner = null;
+      h.rise = 1;
+      h.vz = -TUNE.stonePillarSpeed;
+      this.events.push({ type: 'stonePillar', x: h.x, y: FLOOR_Y, z: h.z, side: h.side });
+      return;
     }
+    const z = e.z - 0.1;
+    this.hazards.push({ id: this.nextId++, kind, x: e.x, y: this.cam.y, z, vz: -TUNE.slabSpeed, resolved: false, laneX: 0, side: 1, startX: e.x, startZ: z, rise: 1, owner: null });
+    this.emit('slab', e.x, this.cam.y, z);
   }
 
   /** Aim at where your head/chest is now; moving afterwards is how you dodge. */
-  private enemyThrow(e: Enemy): void {
+  private enemyThrow(e: Enemy, rock = false): void {
     const tx = this.cam.x + this.rnd(-4, 4), ty = this.cam.y + this.rnd(-3, 12);
     const hx = e.x + e.side * 11, hy = e.y - 14, z = e.z - 0.1;
     const vz = -(4.6 + this.wave * 0.35), T = z / -vz;
-    this.projs.push({ id: this.nextId++, kind: 'enemy', x: hx, y: hy, z, vx: (tx - hx) / T, vy: (ty - hy) / T, vz, r: TUNE.enemyProjRadius, resolved: false });
+    this.projs.push({ id: this.nextId++, kind: 'enemy', rock, x: hx, y: hy, z, vx: (tx - hx) / T, vy: (ty - hy) / T, vz, r: TUNE.enemyProjRadius, resolved: false });
   }
 
   private updateProjs(dt: number): void {

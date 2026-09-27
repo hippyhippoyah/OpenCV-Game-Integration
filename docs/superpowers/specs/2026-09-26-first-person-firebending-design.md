@@ -267,3 +267,19 @@ apart in 3D, or ≤ 0.9 shoulder widths on screen without 3D data) and spread �
 push doesn't change); the push is checked first. Simulated at 1.2–1.8 m (sensitivity ×1 and ×1.4):
 pushes, pushes out of the shield, gather-and-fling and sweeps each fire only their own cast; a held
 shield casts nothing. Mock: F = wall push.
+
+## Revision 2026-09-27: earthbenders instead of quakes; enemies stay central
+
+The quake didn't fit the world and came too fast. It is replaced by an **earthbender** (green and
+brown robes; about a third of enemies, at least one per wave). His opening move: over a 1.4 s
+wind-up he stomps and lifts his arms, raising a 70-unit stone pillar beside himself, then drives
+both palms forward and the pillar slides at you at 3.5 depth/s (~2 s to arrive), curving into a
+lane just to one side of where you stood (centre 10 units off yours, 26 wide); that lane glows red
+on the floor in front of you and a toast names the side. Lean or step the other way. Knocking him
+down while he raises it crumbles it; a fire wall (standing or rolling) stops it; shield and X
+block don't. Afterwards he throws rocks (blockable like orbs), raising another pillar 30% of the
+time. Water spirits keep orbs and the high sweep (30%).
+
+**Centred enemies.** Aiming at the screen edges is hard, so enemies spawn and drift only within
+0.4 of the screen's half-width of its centre (spread apart from each other), and dummies stand at
+±36 instead of ±45.
