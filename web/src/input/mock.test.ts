@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MOCK_CALIBRATION, MockTracker } from './mock';
-import { initialState, interpret, type Intent } from '../intent/interpret';
+import { initialState, interpret, TUNING, type Intent } from '../intent/interpret';
 
 const identity = { screenToView: (x: number, y: number) => ({ x, y }) };
 
@@ -22,15 +22,24 @@ describe('MockTracker', () => {
     expect(last.punches).toHaveLength(0);
   });
 
-  it('a click punches with the right hand and opens it at the mouse', () => {
-    const m = new MockTracker(identity);
-    m.setMouse(5, 5);
-    const punches = run(m, 40, i => { if (i === 5) m.punch('r'); }).flatMap(o => o.punches);
-    expect(punches).toHaveLength(1);
-    expect(punches[0].hand).toBe('r');
-    expect(Math.abs(punches[0].at.x - 5)).toBeLessThan(2);
-    expect(Math.abs(punches[0].at.y - 5)).toBeLessThan(2);
-  });
+  for (const style of ['extend', 'open'] as const) {
+    it(`a click punches with the right hand toward the mouse (${style} style)`, () => {
+      TUNING.punchTrigger = style;
+      try {
+        const m = new MockTracker(identity);
+        m.setMouse(5, 5);
+        const out = run(m, 40, i => { if (i === 5) m.punch('r'); });
+        const punches = out.flatMap(o => o.punches);
+        expect(punches).toHaveLength(1);
+        expect(punches[0].hand).toBe('r');
+        expect(Math.abs(punches[0].at.x - 5)).toBeLessThan(6);
+        expect(Math.abs(punches[0].at.y - 5)).toBeLessThan(6);
+        expect(out.some(o => o.hands.r!.open)).toBe(style === 'open');
+      } finally {
+        TUNING.punchTrigger = 'extend';
+      }
+    });
+  }
 
   it('holding Space opens both hands into a shield without punching', () => {
     const m = new MockTracker(identity);

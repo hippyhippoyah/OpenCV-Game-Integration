@@ -14,7 +14,7 @@
   <div class="hud">
     <div class="tl"><div class="label">Vitality</div><div class="bar"><i id="hpFill"></i></div></div>
     <div class="tr"><div class="label">Score</div><div class="score" id="score">0</div><div class="wave" id="wave"></div></div>
-    <div class="pill off" id="pill"><b id="modeName">NO FIRE</b><span id="modeHint"></span></div>
+    <div class="pill off" id="pill"><b id="modeName">GUARD</b><span id="modeHint"></span></div>
     <div class="bl">
       <div class="label">Shield <span class="state" id="shieldState">ready</span></div>
       <div class="bar" id="shieldBar"><i id="shieldFill"></i></div>
@@ -31,8 +31,8 @@
 
   <div class="card" id="start">
     <h1>Firebending</h1>
-    <p>Bend fire with your hands in front of your webcam. You look through your own eyes. Keep your fists up in guard; punch and open your hand at the end to shoot fire where it points; open both hands for a flame shield; lean and duck to dodge.</p>
-    <p class="muted">Stand about 1.5–2 m back so your head, shoulders and hands are all in view. Press <kbd>T</kbd> in game to switch to practice dummies that don't fight back.</p>
+    <p>Bend fire with your hands in front of your webcam. You look through your own eyes. Keep your fists up in guard; punch to shoot fire where your fist goes; open both hands for a flame shield; lean and duck to dodge.</p>
+    <p class="muted">Stand about 1.5–2 m back so your head, shoulders and hands are all in view. Press <kbd>T</kbd> in game to switch to practice dummies that don't fight back, and <kbd>P</kbd> to switch between fist punches and open-hand punches.</p>
     <div class="actions">
       <button id="camBtn">Play with camera</button>
       <button id="mockBtn" class="secondary">Mouse &amp; keys</button>
@@ -59,6 +59,8 @@
       <div><kbd>Space</kbd> hold: open both hands → shield</div>
       <div><kbd>A</kbd><kbd>D</kbd> lean · <kbd>S</kbd> duck</div>
       <div><kbd>T</kbd> practice dummies ↔ spirits</div>
+      <div><kbd>P</kbd> fist punch ↔ open-hand punch</div>
+      <div><kbd>O</kbd> hold: right hand out of view</div>
     </div>
     <div class="actions"><button id="mockHelpClose">Got it</button><span class="muted"><kbd>?</kbd> reopens · <kbd>`</kbd> debug numbers</span></div>
   </div>

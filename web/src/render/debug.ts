@@ -1,5 +1,5 @@
 import type { TrackingFrame } from '../input/types';
-import type { Intent } from '../intent/interpret';
+import { TUNING, type Intent } from '../intent/interpret';
 import type { Vec2 } from '../math';
 
 /** Corner panel: what the camera sees plus the tracked points; backtick adds live numbers. */
@@ -89,6 +89,7 @@ export class DebugView {
         c.fillText(`face ${hand.facing.toFixed(2)}`, x, p.y + h / 12);
       });
     }
+    if (intent) this.drawArmMeters(intent);
     if (this.detailed && intent) {
       const line = (name: string, h: Intent['hands']['l']) => h
         ? `${name} ${h.open ? 'open' : 'fist'} ${h.openness.toFixed(2)}  face ${h.facing.toFixed(2)}  speed ${Math.hypot(h.vel.x, h.vel.y).toFixed(0)}`
@@ -105,5 +106,35 @@ export class DebugView {
         f?.hands.length ? `size ${f.hands.map(x => x.size.toFixed(3)).join('  ')}` : '',
       ].join('\n');
     }
+  }
+
+  /**
+   * Per-arm extension bars along the bottom: orange tick = fires a fist punch, green tick = re-arms.
+   * The dot is lit while that arm is ready to punch.
+   */
+  private drawArmMeters(intent: Intent): void {
+    const c = this.ctx, w = this.canvas.width, h = this.canvas.height;
+    const barH = Math.max(4, h * 0.045), y = h - barH - h * 0.03, font = Math.round(h / 16);
+    c.font = `${font}px ui-monospace, Menlo, monospace`;
+    c.textBaseline = 'bottom';
+    c.textAlign = 'left';
+    c.fillStyle = '#cfe';
+    c.fillText(`punch: ${TUNING.punchTrigger === 'extend' ? 'fist' : 'open hand'}  (P)`, w * 0.04, y - font * 0.4);
+    (['l', 'r'] as const).forEach((side, i) => {
+      const hand = intent.hands[side], x0 = w * (0.04 + i * 0.5), bw = w * 0.42;
+      c.fillStyle = 'rgba(255,255,255,.1)';
+      c.fillRect(x0, y, bw, barH);
+      const ext = hand?.extension;
+      if (ext !== null && ext !== undefined) {
+        c.fillStyle = hand!.punchReady ? '#ffb347' : '#8a6a4a';
+        c.fillRect(x0, y, bw * ext, barH);
+      }
+      for (const [at, col] of [[TUNING.extendRearmBelow, '#9dffcf'], [TUNING.extendFireAbove, '#ff7a3d']] as const) {
+        c.fillStyle = col;
+        c.fillRect(x0 + bw * at - 1, y - 2, 2, barH + 4);
+      }
+      c.fillStyle = hand?.punchReady ? '#ffb347' : '#444';
+      c.beginPath(); c.arc(x0 - barH * 0.1 + bw + barH * 0.9, y + barH / 2, barH * 0.45, 0, 7); c.fill();
+    });
   }
 }

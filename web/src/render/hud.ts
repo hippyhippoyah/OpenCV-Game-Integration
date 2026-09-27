@@ -1,21 +1,25 @@
 import { TUNE, type Game, type GameEvent } from '../game/game';
+import { TUNING, type Intent } from '../intent/interpret';
 
 const $ = (id: string) => document.getElementById(id)!;
 
 /** DOM overlay: health, score, current move, shield energy, toasts and wave banners. */
 export class Hud {
-  update(g: Game): void {
+  /** `hands` is the live tracking, so the HUD is right even before the game has stepped (e.g. paused). */
+  update(g: Game, hands: Intent['hands'] = g.hands): void {
     $('hpFill').style.width = `${g.hp}%`;
     $('score').textContent = String(g.score);
     $('wave').textContent = g.practice ? 'Practice dummies' : `Wave ${g.wave}`;
     const pill = $('pill');
-    const noHands = !g.hands.l && !g.hands.r;
+    const noHands = !hands.l && !hands.r;
     pill.classList.toggle('off', noHands);
     pill.classList.toggle('shield', g.shield.on);
     const [name, hint] = g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
       : noHands ? ['NO HANDS', 'raise your fists into view']
-        : ['GUARD', 'punch, then open your hand to shoot · open both hands to shield'];
-    const lost = (['l', 'r'] as const).filter(side => g.hands[side] && !g.hands[side]!.inView);
+        : ['GUARD', TUNING.punchTrigger === 'extend'
+          ? 'punch to shoot · open both hands to shield'
+          : 'punch, then open your hand to shoot · open both hands to shield'];
+    const lost = (['l', 'r'] as const).filter(side => hands[side] && !hands[side]!.inView);
     $('modeName').textContent = name;
     $('modeHint').textContent = lost.length
       ? `${lost.map(side => (side === 'l' ? 'left' : 'right')).join(' and ')} hand out of camera view`
@@ -38,7 +42,7 @@ export class Hud {
     }
   }
 
-  private toast(text: string, cls = ''): void {
+  toast(text: string, cls = ''): void {
     const box = $('toasts');
     while (box.children.length > 3) box.firstChild!.remove();
     const d = document.createElement('div');

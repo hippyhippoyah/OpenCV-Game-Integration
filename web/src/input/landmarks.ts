@@ -52,6 +52,12 @@ export function armExtension(w: Landmark[], side: Side): number {
   return clamp((deg - BENT_DEG) / (STRAIGHT_DEG - BENT_DEG), 0, 1);
 }
 
+/** Shoulder → wrist in 3D, with x flipped to match the mirrored picture. */
+function reachOf(w: Landmark[], side: Side): { x: number; y: number; z: number } {
+  const s = w[ARM[side].shoulder], r = w[ARM[side].wrist];
+  return { x: -(r.x - s.x), y: r.y - s.y, z: (r.z ?? 0) - (s.z ?? 0) };
+}
+
 /**
  * Raw MediaPipe results → mirrored TrackingFrame (moving right moves right on screen).
  * `handsWorld` / `poseWorld` are MediaPipe's 3D landmarks in metres; hand shape and arm
@@ -71,6 +77,7 @@ export function toFrame(t: number, hands: Landmark[][], pose: Landmark[] | undef
       elbow: bodyPoint(pose[a.elbow]),
       wrist: bodyPoint(pose[a.wrist]),
       extension: poseWorld ? armExtension(poseWorld, side) : null,
+      reach: poseWorld ? reachOf(poseWorld, side) : null,
     };
   };
   const arms = { l: armOf('l'), r: armOf('r') };

@@ -4,7 +4,7 @@ import { CameraError, CameraTracker } from './input/camera';
 import { bindMockControls, MOCK_CALIBRATION, MockTracker } from './input/mock';
 import type { Tracker, TrackingFrame } from './input/types';
 import { Calibrator, type Calibration } from './intent/calibration';
-import { initialState, interpret, type Intent, type InterpretState, type Punch } from './intent/interpret';
+import { initialState, interpret, TUNING, type Intent, type InterpretState, type Punch } from './intent/interpret';
 import { DebugView } from './render/debug';
 import { Hud } from './render/hud';
 import { Renderer } from './render/renderer';
@@ -28,8 +28,11 @@ let intent: Intent | null = null;
 let pendingPunches: Punch[] = [];
 let lastFrame: TrackingFrame | null = null;
 let game: Game | null = null;
+const params = new URLSearchParams(location.search);
 /** Dummies instead of spirits; toggled with T, or start with ?dummies. */
-let practice = new URLSearchParams(location.search).has('dummies');
+let practice = params.has('dummies');
+/** Fist punches by arm extension (default) or open-hand punches; toggled with P, or start with ?punch=open. */
+if (params.get('punch') === 'open') TUNING.punchTrigger = 'open';
 let acc = 0, last = performance.now(), fpsTime = 0, fpsFrames = 0;
 
 function startMock(): void {
@@ -100,6 +103,7 @@ function onFrame(f: TrackingFrame): void {
 
 function stepGame(dt: number): void {
   if (!game || !intent) return;
+  hud.update(game, intent.hands);
   show('away', !intent.present);
   const paused = !$('mockHelp').classList.contains('hidden');
   if (!intent.present || paused) { acc = 0; return; }
@@ -117,7 +121,7 @@ function stepGame(dt: number): void {
       show('over');
     }
   }
-  hud.update(game);
+  hud.update(game, intent.hands);
 }
 
 function headLabel(i: Intent | null): string {
@@ -129,9 +133,9 @@ function headLabel(i: Intent | null): string {
 }
 
 function loop(now: number): void {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const elapsed = (now - last) / 1000, dt = Math.min(0.05, elapsed); // dt is capped for the simulation only
   last = now;
-  fpsTime += dt;
+  fpsTime += elapsed;
   fpsFrames++;
   if (fpsTime > 0.5) {
     $('fps').textContent = `${Math.round(fpsFrames / fpsTime)} fps`;
@@ -162,6 +166,11 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toLowerCase();
   if (k === '`') debug.toggle();
+  if (k === 'p') {
+    TUNING.punchTrigger = TUNING.punchTrigger === 'extend' ? 'open' : 'extend';
+    istate.pending = [];
+    hud.toast(TUNING.punchTrigger === 'extend' ? 'PUNCH: FIST' : 'PUNCH: OPEN HAND', 'cool');
+  }
   if (k === 't' && game?.state === 'play') {
     practice = !game.practice;
     game.setPractice(practice);
@@ -171,5 +180,5 @@ addEventListener('keydown', e => {
   if ((k === '?' || k === '/') && tracker instanceof MockTracker) $('mockHelp').classList.toggle('hidden');
 });
 
-if (new URLSearchParams(location.search).get('input') === 'mock') startMock();
+if (params.get('input') === 'mock') startMock();
 requestAnimationFrame(loop);

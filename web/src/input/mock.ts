@@ -16,7 +16,7 @@ export interface ViewMapper { screenToView(x: number, y: number): Vec2 }
 
 /**
  * Pretends to be the camera. The mouse is where you aim; a punch drives that fist to the mouse
- * and opens it; holding Space opens both hands around the mouse (shield); A/D/S lean and duck;
+ * (opening it at the end in the open-hand punch style); holding Space opens both hands around the mouse (shield); A/D/S lean and duck;
  * holding O swings the right hand out of the picture (only its arm is still tracked).
  */
 export class MockTracker implements Tracker {
@@ -70,7 +70,8 @@ export class MockTracker implements Tracker {
         const e = clamp(since / EXTEND_S, 0, 1);
         pos = { x: lerp(GUARD[side].x, aim.x, e), y: lerp(GUARD[side].y, aim.y, e) };
         grow = 0.3 * e;
-        open = since >= EXTEND_S ? 1 : 0;
+        // a real punch stays a fist; only the open-hand style opens at the end
+        open = TUNING.punchTrigger === 'open' && since >= EXTEND_S ? 1 : 0;
         ext = 0.25 + 0.65 * e;
       }
       const away = side === 'r' && this.keys.has('o');
@@ -84,6 +85,8 @@ export class MockTracker implements Tracker {
         elbow: { ...elbow, vis: 0.9 },
         wrist: { ...wrist, vis: inPicture ? 0.9 : 0.1 },
         extension: ext,
+        // shoulder → wrist, pushed toward the camera as the arm straightens (metres-ish)
+        reach: { x: (wrist.x - shoulder.x) * 1.5, y: (wrist.y - shoulder.y) * 1.5, z: -0.6 * ext },
       };
       if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open, facing, side });
     }

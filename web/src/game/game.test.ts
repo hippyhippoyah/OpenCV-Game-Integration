@@ -5,11 +5,11 @@ import { mulberry32 } from '../math';
 
 const SHOULDERS = { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } };
 const hs = (x: number, y: number, open = false): HandState =>
-  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null });
+  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true });
 const guard = () => ({ l: hs(-12, 22), r: hs(12, 22) });
 const intent = (o: Partial<Intent> = {}): Intent =>
   ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], shield: false, face: null, bodyTilt: 0, ...o });
-const punch = (hand: Side, x: number, y: number): Punch => ({ hand, at: { x, y }, shoulder: SHOULDERS[hand] });
+const punch = (hand: Side, x: number, y: number, dir: Punch['dir'] = null): Punch => ({ hand, at: { x, y }, shoulder: SHOULDERS[hand], dir });
 const shieldUp = (y = 0) => intent({ hands: { l: hs(-15, y, true), r: hs(15, y, true) }, shield: true });
 const incoming = (x: number, y: number, id = 999): Proj =>
   ({ id, kind: 'enemy', x, y, z: 0.4, vx: 0, vy: 0, vz: -5, r: TUNE.enemyProjRadius, resolved: false });
@@ -49,6 +49,12 @@ describe('Game', () => {
       const [left, right] = [...g.projs].sort((a, b) => a.x - b.x);
       expect(left.vx).toBeLessThan(0);
       expect(right.vx).toBeGreaterThan(0);
+    });
+
+    it('steers by the 3D direction of the arm when known', () => {
+      const g = quietGame();
+      g.step(1 / 60, intent({ punches: [punch('r', 20, 20, { x: -0.8, y: 0 })] }));
+      expect(g.projs[0].vx).toBeLessThan(0); // punched across to the left from in front of the right shoulder
     });
 
     it('snaps onto a target near where you punch and knocks it down', () => {

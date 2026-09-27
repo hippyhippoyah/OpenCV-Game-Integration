@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { initialState, interpret, TUNING, type Intent } from './interpret';
 import type { Calibration } from './calibration';
 import { arm, bodyFrame, hand, type HandSpec } from '../test/frames';
@@ -29,6 +29,8 @@ function rightPunch(to: HandSpec): Pair[] {
 }
 
 describe('interpret', () => {
+  afterEach(() => { TUNING.punchTrigger = 'extend'; });
+
   it('maps hands relative to the shoulders, independent of distance to the camera', () => {
     const at = (mid: Vec2, sw: number) =>
       interpret(bodyFrame(0, { mid, sw, hands: [hand(mid, sw, { x: -0.5, y: -0.5 }), hand(mid, sw, { x: 0.5, y: -0.5 })] }), cal, initialState());
@@ -58,6 +60,7 @@ describe('interpret', () => {
   });
 
   it('fires one punch from the hand that opens at the end of a fast move, where it opened', () => {
+    TUNING.punchTrigger = 'open';
     const to = { x: -0.1, y: -0.6 };
     const p = punchesIn(play(rightPunch(to)));
     expect(p).toHaveLength(1);
@@ -68,11 +71,13 @@ describe('interpret', () => {
   });
 
   it('does not punch when a still fist simply opens', () => {
+    TUNING.punchTrigger = 'open';
     const out = play([...repeat(6, () => [GUARD_L, GUARD_R]), ...repeat(10, () => [GUARD_L, { ...GUARD_R, open: 1 }])]);
     expect(punchesIn(out)).toHaveLength(0);
   });
 
   it('does not punch with hands down at rest', () => {
+    TUNING.punchTrigger = 'open';
     const low = { x: 0.3, y: 1.2 };
     const out = play([...repeat(6, () => [GUARD_L, GUARD_R]), ...rightPunch(low).slice(6)]);
     expect(punchesIn(out)).toHaveLength(0);
@@ -112,6 +117,58 @@ describe('interpret', () => {
     expect(r.hands.l).toBeNull();
   });
 
+  describe('fist punches (arm extension)', () => {
+    const armFrame = (i: number, extR: number, o: { openR?: number; openL?: number; reachR?: { x: number; y: number; z: number }; at?: HandSpec } = {}) => {
+      const at = o.at ?? { x: 0.2, y: -0.2 };
+      return bodyFrame(i / FPS, {
+        hands: [hand(MID, SW, { ...GUARD_L, open: o.openL ?? 0, side: 'l' }), hand(MID, SW, { ...at, open: o.openR ?? 0, side: 'r' })],
+        arms: { l: arm(MID, SW, 'l', GUARD_L, 0.25), r: { ...arm(MID, SW, 'r', at, extR), reach: o.reachR ?? null } },
+      });
+    };
+    const runExt = (exts: number[], o: Parameters<typeof armFrame>[2] = {}) => {
+      const s = initialState();
+      return exts.map((e, i) => interpret(armFrame(i, e, o), cal, s));
+    };
+    const punchExt = [...repeat(6, () => 0.25), 0.4, 0.55, 0.7, 0.85, 0.95, ...repeat(10, () => 0.95)];
+
+    it('fires when a fist is driven out by a fast-straightening arm, without opening', () => {
+      const out = runExt(punchExt);
+      const p = punchesIn(out);
+      expect(p).toHaveLength(1);
+      expect(p[0].hand).toBe('r');
+      expect(out.at(-1)!.hands.r!.open).toBe(false);
+    });
+
+    it('ignores an arm that straightens slowly', () => {
+      expect(punchesIn(runExt([...repeat(6, () => 0.25), ...repeat(60, i => 0.25 + (0.7 * (i + 1)) / 60)]))).toHaveLength(0);
+    });
+
+    it('needs the arm pulled back before it can punch again', () => {
+      const exts = [...punchExt, 0.8, 0.95, 0.8, 0.95, ...repeat(8, () => 0.25), 0.4, 0.55, 0.7, 0.85, 0.95, ...repeat(6, () => 0.95)];
+      expect(punchesIn(runExt(exts))).toHaveLength(2);
+    });
+
+    it('does not fire with open hands (shield)', () => {
+      expect(punchesIn(runExt(punchExt, { openR: 1, openL: 1 }))).toHaveLength(0);
+    });
+
+    it('does not fire with the hand resting low', () => {
+      expect(punchesIn(runExt(punchExt, { at: { x: 0.3, y: 1.2 } }))).toHaveLength(0);
+    });
+
+    it('passes the 3D reach direction on as aim', () => {
+      const p = punchesIn(runExt(punchExt, { reachR: { x: -0.3, y: 0, z: -0.5 } }));
+      expect(p[0].dir!.x).toBeCloseTo(-0.6);
+      expect(p[0].dir!.y).toBeCloseTo(0);
+    });
+
+    it('reports when each arm is ready to punch', () => {
+      const out = runExt(punchExt);
+      expect(out[3].hands.r!.punchReady).toBe(true);
+      expect(out.at(-1)!.hands.r!.punchReady).toBe(false);
+    });
+  });
+
   describe('with the body tracked', () => {
     it('uses the arms to tell the hands apart, even when they jump', () => {
       const s = initialState();
@@ -144,6 +201,7 @@ describe('interpret', () => {
     });
 
     it('counts a fast-straightening arm as a punch even when the hand barely moves on screen', () => {
+    TUNING.punchTrigger = 'open';
       const at = { x: 0.2, y: -0.2 };
       const frame = (i: number, ext: number, open = 0) =>
         bodyFrame(i / FPS, { hands: [hand(MID, SW, { ...GUARD_L, side: 'l' }), hand(MID, SW, { ...at, open, side: 'r' })], arms: { l: arm(MID, SW, 'l', GUARD_L), r: arm(MID, SW, 'r', at, ext) } });

@@ -27,6 +27,7 @@ export function arm(mid: Vec2, sw: number, side: Side, wrist: { x: number; y: nu
     elbow: at((sx + wrist.x) / 2, (0 + wrist.y) / 2 + 0.3),
     wrist: at(wrist.x, wrist.y, wrist.vis ?? 1),
     extension,
+    reach: null,
   };
 }
 

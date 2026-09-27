@@ -111,3 +111,15 @@ Replaces the palms-together summon and push-throw, which depended on weak depth 
 - **Also recorded:** head turn/tilt (from nose, eyes, ears) and shoulder tilt.
 - **Feedback:** first-person arms bend at the tracked elbow; an edge marker shows where an
   out-of-view hand is; the debug panel draws the arm skeleton and lists source/extension.
+
+## Revision 2026-09-26: fist punches
+
+- **Default punch = fist punch** (`TUNING.punchTrigger = 'extend'`): fires when an arm that is a
+  fist straightens past 0.75 after rising by 0.3 within 0.35 s (hand raised, in view or tracked by
+  its arm). The arm must drop below 0.5 to re-arm. 50 ms confirm window; cancelled if either hand
+  opens (shield).
+- **Open-hand punch** kept as the alternative (`'open'`): toggle with `P` in game or `?punch=open`.
+- **Aim** also uses the 3D shoulder→wrist direction (tangent of the punch angle × 40 view units,
+  blended 60% with the 2D aim), then snaps to a nearby target.
+- **Debug panel** shows per-arm extension bars with the fire (orange) and re-arm (green) marks and
+  a ready dot, plus the current punch style.

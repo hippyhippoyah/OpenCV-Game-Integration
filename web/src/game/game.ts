@@ -15,6 +15,11 @@ export const TUNE = {
    * helps cross punches and hooks; vertically it mostly overshoots, so it is kept small.
    */
   aimSkewX: 0.5, aimSkewY: 0.2, aimDepth: 10,
+  /**
+   * With a 3D arm direction: aim at the hand's position pushed along the punch angle (view units per
+   * unit of tangent), blended with the 2D aim by aimDirWeight.
+   */
+  aimDirScale: 40, aimDirWeight: 0.6,
   /** Shots snap (by aimAssist) onto a target within assistRadius view units of the aim point. */
   aimAssist: 1, assistRadius: 22,
   /** Testing: the shield never drains or breaks. */
@@ -171,6 +176,10 @@ export class Game {
     this.punchCool[p.hand] = TUNE.punchCooldownS;
     const start = this.handWorld(p.at);
     let aim = { x: p.at.x + (p.at.x - p.shoulder.x) * TUNE.aimSkewX, y: p.at.y + (p.at.y - p.shoulder.y) * TUNE.aimSkewY };
+    if (p.dir) {
+      const along = { x: p.at.x + p.dir.x * TUNE.aimDirScale, y: p.at.y + p.dir.y * TUNE.aimDirScale };
+      aim = { x: lerp(aim.x, along.x, TUNE.aimDirWeight), y: lerp(aim.y, along.y, TUNE.aimDirWeight) };
+    }
     let depth = TUNE.aimDepth;
     const tgt = this.pickTarget(aim);
     if (tgt) {

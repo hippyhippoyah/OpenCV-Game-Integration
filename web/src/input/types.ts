@@ -18,6 +18,11 @@ export interface ArmObs {
   wrist: BodyPoint;
   /** 0 = elbow fully bent … 1 = straight arm, from the 3D pose; null if unknown. */
   extension: number | null;
+  /**
+   * Shoulder → wrist in metres from the 3D pose, mirrored like the picture (x right, y down,
+   * z negative toward the camera); null if unknown.
+   */
+  reach: { x: number; y: number; z: number } | null;
 }
 
 export interface HandObs {

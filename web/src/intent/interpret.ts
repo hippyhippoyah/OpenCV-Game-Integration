@@ -23,12 +23,22 @@ export interface HandState {
   elbow: Vec2 | null;
   /** 0 = elbow bent … 1 = straight arm (3D), if known. */
   extension: number | null;
+  /** Fist-punch mode: this arm has been pulled back and can punch again. */
+  punchReady: boolean;
 }
 
 export type { Side };
 
-/** A fist that shot open at the end of a fast move. */
-export interface Punch { hand: Side; at: Vec2; shoulder: Vec2 }
+export type PunchTrigger = 'extend' | 'open';
+
+export interface Punch {
+  hand: Side;
+  /** Where the hand was (view space) when the punch fired. */
+  at: Vec2;
+  shoulder: Vec2;
+  /** Aim from the 3D arm: sideways/vertical tangent of the punch angle; null without 3D pose. */
+  dir: Vec2 | null;
+}
 
 export interface Intent {
   /** A head and shoulders are visible. */
@@ -47,6 +57,13 @@ export interface Intent {
 }
 
 export const TUNING = {
+  /**
+   * What fires a punch. 'extend': a fist driven out by a fast-straightening arm (the hand stays
+   * closed). 'open': a fist that opens at the end of a fast move.
+   */
+  punchTrigger: 'extend' as PunchTrigger,
+  /** 'extend': fire once the arm straightens past extendFireAbove (after rising by punchExtendRise); re-arm below extendRearmBelow. */
+  extendFireAbove: 0.75, extendRearmBelow: 0.5, extendConfirmS: 0.05,
   leanUnitsPerSw: 40, maxLean: 30,
   duckUnitsPerSw: 40, minDuck: -10, maxDuck: 25,
   /** Hand offset from the shoulder centre (in shoulder widths) × scale = view units. */
@@ -75,6 +92,7 @@ export const TUNING = {
 };
 
 interface Track extends HandState {
+  armed: boolean;
   lastSeen: number;
   hist: { t: number; speed: number; size: number | null; ext: number | null }[];
 }
@@ -100,6 +118,7 @@ const snapshot = (t: Track | null): HandState | null =>
   t && {
     pos: { ...t.pos }, vel: { ...t.vel }, openness: t.openness, open: t.open, facing: t.facing,
     source: t.source, inView: t.inView, elbow: t.elbow && { ...t.elbow }, extension: t.extension,
+    punchReady: t.armed,
   };
 const inPicture = (p: BodyPoint) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
 
@@ -159,19 +178,35 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     if (tr) tr.elbow = arm ? toView(arm.elbow) : null;
   }
 
-  // A hand that shot open after a fast move becomes a punch — unless the other hand is open too,
-  // now or within punchConfirmS, because both hands open means shield.
-  for (const side of opened) {
-    const tr = s[side]!;
-    if (tr.pos.y > TUNING.raisedAboveY || !movedRecently(tr)) continue;
-    s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, t: f.t });
+  const extendMode = TUNING.punchTrigger === 'extend';
+  const confirmS = extendMode ? TUNING.extendConfirmS : TUNING.punchConfirmS;
+  if (extendMode) {
+    // A fist driven out by a fast-straightening arm; pull the arm back to re-arm.
+    for (const side of SIDES) {
+      const tr = s[side];
+      if (!tr || tr.extension === null || tr.source === 'estimate') continue;
+      if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
+      else if (tr.armed && !tr.open && tr.extension >= TUNING.extendFireAbove
+        && extensionRise(tr) >= TUNING.punchExtendRise && tr.pos.y < TUNING.raisedAboveY) {
+        tr.armed = false;
+        s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t });
+      }
+    }
+  } else {
+    // A hand that shot open after a fast move.
+    for (const side of opened) {
+      const tr = s[side]!;
+      if (tr.pos.y > TUNING.raisedAboveY || !movedRecently(tr)) continue;
+      s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t });
+    }
   }
+  // Wait briefly before firing: if either hand opens meanwhile it's a shield, not a punch.
   const punches: Punch[] = [];
   s.pending = s.pending.filter(p => {
     const tr = s[p.hand];
-    if (!tr || s[other(p.hand)]?.open) return false;
-    if (f.t - p.t < TUNING.punchConfirmS) return true;
-    punches.push({ hand: p.hand, at: { ...tr.pos }, shoulder: p.shoulder });
+    if (!tr || s[other(p.hand)]?.open || (extendMode && tr.open)) return false;
+    if (f.t - p.t < confirmS) return true;
+    punches.push({ hand: p.hand, at: { ...tr.pos }, shoulder: p.shoulder, dir: aimDir(f.arms[p.hand]?.reach ?? null) });
     return false;
   });
 
@@ -185,6 +220,14 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, shield,
     face: f.face, bodyTilt: Math.atan2(f.shoulderR.y - f.shoulderL.y, f.shoulderR.x - f.shoulderL.x),
   };
+}
+
+/** Sideways/vertical tangent of the punch angle from the 3D shoulder → wrist direction. */
+function aimDir(reach: { x: number; y: number; z: number } | null): Vec2 | null {
+  if (!reach) return null;
+  // guard against arms pointing sideways (almost no forward component)
+  const forward = Math.max(-reach.z, 0.25 * Math.hypot(reach.x, reach.y, reach.z));
+  return forward > 0 ? { x: reach.x / forward, y: reach.y / forward } : null;
 }
 
 function bySide(sides: Side[]): Record<Side, number | null> {
@@ -229,7 +272,8 @@ function updateTrack(
     const open = h ? h.open : 0;
     const track: Track = {
       pos: { ...pos }, vel: { x: 0, y: 0 }, openness: open, open: open >= 0.5, facing: h ? h.facing : 1,
-      source: 'hand', inView: true, elbow: null, extension: ext, lastSeen: t, hist: [{ t, speed: 0, size, ext }],
+      source: 'hand', inView: true, elbow: null, extension: ext, punchReady: true, armed: true, lastSeen: t,
+      hist: [{ t, speed: 0, size, ext }],
     };
     return { track, opened: false };
   }
@@ -251,6 +295,17 @@ function updateTrack(
   tr.hist.push({ t, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension });
   while (tr.hist.length && t - tr.hist[0].t > TUNING.punchWindowS) tr.hist.shift();
   return { track: tr, opened };
+}
+
+/** How much the arm straightened within the recent window (largest rise from an earlier low). */
+function extensionRise(tr: Track): number {
+  let minExt = Infinity, rise = 0;
+  for (const h of tr.hist) {
+    if (h.ext === null) continue;
+    minExt = Math.min(minExt, h.ext);
+    rise = Math.max(rise, h.ext - minExt);
+  }
+  return rise;
 }
 
 /** Fast across the screen, quickly growing (moving toward the camera), or the arm quickly straightening. */

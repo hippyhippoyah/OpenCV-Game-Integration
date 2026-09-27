@@ -112,6 +112,16 @@ describe('body', () => {
     expect(f.arms.l!.extension).toBeLessThan(0.3);
   });
 
+  it('gives each arm a 3D reach direction, mirrored like the picture', () => {
+    const world: Landmark[] = Array.from({ length: 33 }, () => ({ x: 0, y: 0, z: 0 }));
+    world[12] = { x: -0.2, y: 0, z: 0 }; world[16] = { x: -0.4, y: 0.1, z: -0.5 }; // right arm: toward the camera, off to its right
+    const reach = toFrame(0, [], fullPose(), [], world).arms.r!.reach!;
+    expect(reach.z).toBeLessThan(0);
+    expect(reach.x).toBeCloseTo(0.2); // mirrored: the image's left is the screen's right
+    expect(reach.y).toBeCloseTo(0.1);
+    expect(toFrame(0, [], fullPose()).arms.r!.reach).toBeNull();
+  });
+
   it('matches each hand to the nearest wrist, whatever order the hands come in', () => {
     const p = fullPose();
     p[16] = { x: 0.25, y: 0.55, visibility: 0.9 };
