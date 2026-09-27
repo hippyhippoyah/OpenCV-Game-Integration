@@ -2363,7 +2363,8 @@ function onFrame(f: TrackingFrame): void {
 function stepGame(dt: number): void {
   if (!game || !intent) return;
   show('away', !intent.present);
-  if (!intent.present) { acc = 0; return; }
+  const paused = !$('mockHelp').classList.contains('hidden');
+  if (!intent.present || paused) { acc = 0; return; }
   acc += dt;
   while (acc >= STEP) {
     game.step(STEP, { ...intent, throwNow: pendingThrow });

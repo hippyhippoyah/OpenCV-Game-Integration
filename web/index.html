@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Firebending</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div class="hud">
+    <div class="tl"><div class="label">Vitality</div><div class="bar"><i id="hpFill"></i></div></div>
+    <div class="tr"><div class="label">Score</div><div class="score" id="score">0</div><div class="wave" id="wave"></div></div>
+    <div class="pill off" id="pill"><b id="modeName">NO FIRE</b><span id="modeHint"></span></div>
+    <div class="bl">
+      <div class="label">Shield <span class="state" id="shieldState">ready</span></div>
+      <div class="bar" id="shieldBar"><i id="shieldFill"></i></div>
+    </div>
+    <div class="br">
+      <canvas id="pip"></canvas>
+      <div class="pipinfo"><span>HEAD <em id="headTag">—</em></span><span>HANDS <em id="handsN">0</em></span><span id="fps"></span></div>
+      <pre id="debugText" class="hidden"></pre>
+    </div>
+    <div id="toasts"></div>
+    <div id="banner"></div>
+    <div id="away" class="notice hidden">Step into frame — we can't see you</div>
+  </div>
+
+  <div class="card" id="start">
+    <h1>Firebending</h1>
+    <p>Bend fire with your hands in front of your webcam. You look through your own eyes: lean and duck to dodge, bring your palms together to make fire, push toward the screen to throw it, and spread your hands wide for a flame shield.</p>
+    <p class="muted">Stand about 1.5–2 m back so your head, shoulders and hands are all in view.</p>
+    <div class="actions">
+      <button id="camBtn">Play with camera</button>
+      <button id="mockBtn" class="secondary">Mouse &amp; keys</button>
+    </div>
+  </div>
+
+  <div class="card hidden" id="status">
+    <p id="statusText">Loading…</p>
+    <div class="actions"><button id="statusFallback" class="hidden">Play with mouse &amp; keys</button></div>
+  </div>
+
+  <div class="card hidden" id="calib">
+    <h1>Calibrating</h1>
+    <p>Stand where you'll play, face the screen with your arms relaxed, and hold still.</p>
+    <div class="bar wide"><i id="calibFill"></i></div>
+  </div>
+
+  <div class="card hidden" id="mockHelp">
+    <h1>Mouse &amp; keys</h1>
+    <div class="grid">
+      <div><kbd>Mouse</kbd> move both hands</div>
+      <div><kbd>Scroll</kbd> hands together / apart</div>
+      <div><kbd>1</kbd> palms together → fire</div>
+      <div><kbd>Click</kbd> push → throw</div>
+      <div><kbd>2</kbd> hands wide → shield</div>
+      <div><kbd>A</kbd><kbd>D</kbd> lean · <kbd>S</kbd> duck</div>
+    </div>
+    <div class="actions"><button id="mockHelpClose">Got it</button><span class="muted"><kbd>?</kbd> reopens · <kbd>`</kbd> debug numbers</span></div>
+  </div>
+
+  <div class="card hidden" id="over">
+    <h1>Extinguished</h1>
+    <p>The spirits got through. Final score: <b id="overScore">0</b></p>
+    <div class="actions"><button id="againBtn">Rekindle</button><span class="muted"><kbd>R</kbd> restart · <kbd>C</kbd> recalibrate</span></div>
+  </div>
+</body>
+</html>
