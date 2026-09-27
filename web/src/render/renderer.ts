@@ -2,6 +2,7 @@ import { arrival, FLOOR_Y, FOCAL, TUNE, type Blade, type Enemy, type Game, type 
 import type { Side } from '../input/types';
 import { TUNING } from '../intent/interpret';
 import { clamp, lerp, mulberry32, type Vec2 } from '../math';
+import { ghostPose } from './ghost';
 
 type Pal = 'fire' | 'spirit' | 'earth' | 'blue';
 interface Particle {
@@ -60,6 +61,10 @@ export class Renderer {
   /** Pixels per world unit at the player's plane. */
   u = 8;
   VP: Vec2 = { x: 0, y: 0 };
+  /** Ghost hands to show (campaign practice), and how visible. */
+  ghost: { lessonId: string; alpha: number } | null = null;
+  /** Campaign place colours for the fight view (sky wash and light), or null. */
+  tint: { sky: string; light: string } | null = null;
 
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
@@ -191,6 +196,14 @@ export class Renderer {
     }
 
     c.drawImage(this.sky, -M - this.cam.x * u * PAR_SKY, -M - this.cam.y * u * PAR_SKY, W + 2 * M, H + 2 * M);
+    if (this.tint) {
+      c.globalCompositeOperation = 'color';
+      c.fillStyle = this.tint.sky;
+      c.globalAlpha = 0.35;
+      c.fillRect(-M, -M, W + 2 * M, H + 2 * M);
+      c.globalAlpha = 1;
+      c.globalCompositeOperation = 'source-over';
+    }
     this.drawFloor();
     const mx = -M - this.cam.x * u * PAR_MID, my = -M - this.cam.y * u * PAR_MID;
     c.drawImage(this.mid, mx, my, W + 2 * M, H + 2 * M);
@@ -213,6 +226,7 @@ export class Renderer {
       this.drawAimReticles(g);
       if (g.xBlock) this.drawXBlock(g);
       this.drawHands(g);
+      this.drawGhost();
       this.drawOffscreenHands(g);
     }
     this.drawParticles(false);
@@ -378,6 +392,12 @@ export class Renderer {
     }
     if (e.earth) {
       this.drawEarthbender(e);
+      if (e.boss?.wall) {
+        const c = this.ctx;
+        const a = this.project(e.x - 16, FLOOR_Y, e.z - 0.8), b = this.project(e.x + 16, FLOOR_Y - 45, e.z - 0.8);
+        c.fillStyle = '#6f5a44'; c.strokeStyle = '#2d2014'; c.lineWidth = 2;
+        c.fillRect(a.x, b.y, b.x - a.x, a.y - b.y); c.strokeRect(a.x, b.y, b.x - a.x, a.y - b.y);
+      }
       return;
     }
     const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), s = p.s, sx = p.x;
@@ -450,13 +470,23 @@ export class Renderer {
    * the wind-up), then drives both palms forward.
    */
   private drawEarthbender(e: Enemy): void {
-    const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), k = u * p.s, x = p.x;
+    const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), k = u * p.s * (e.boss ? 1.6 : 1), x = p.x;
     const feet = this.project(e.x, FLOOR_Y, e.z).y;
     const alpha = e.appear * (1 - Math.min(1, e.dying));
     if (alpha <= 0) return;
     const hit = e.flash > 0, w = e.winding ? e.wind : 0;
     const lift = e.attack === 'pillar' ? Math.min(1, w / 0.6) : 0, shove = e.attack === 'pillar' ? clamp((w - 0.6) / 0.4, 0, 1) : 0;
     const crouch = (lift - shove) * 3 * k;
+    if (e.boss && e.boss.winded > 0) {
+      c.globalAlpha = alpha;
+      c.globalCompositeOperation = 'lighter';
+      const gr = c.createRadialGradient(x, p.y, 0, x, p.y, 24 * k);
+      gr.addColorStop(0, 'rgba(255,220,120,.35)');
+      gr.addColorStop(1, 'rgba(255,220,120,0)');
+      c.fillStyle = gr;
+      c.fillRect(x - 24 * k, p.y - 24 * k, 48 * k, 48 * k);
+      c.globalCompositeOperation = 'source-over';
+    }
     c.globalAlpha = alpha;
     c.fillStyle = 'rgba(0,0,0,.5)';
     c.beginPath(); c.ellipse(x, feet, 9 * k, 2 * k, 0, 0, 7); c.fill();
@@ -678,6 +708,23 @@ export class Renderer {
     c.drawImage(this.handLayer, 0, 0, this.W, this.H);
   }
 
+  /** Translucent hands demonstrating the move being learned, over your own. */
+  private drawGhost(): void {
+    if (!this.ghost) return;
+    const pose = ghostPose(this.ghost.lessonId, this.t);
+    if (!pose) return;
+    const c = this.ctx, a = this.ghost.alpha * (0.55 + 0.1 * Math.sin(this.t * 3));
+    c.save();
+    c.globalAlpha = a;
+    c.globalCompositeOperation = 'lighter';
+    c.strokeStyle = c.fillStyle = 'rgba(160,210,255,0.55)';
+    for (const [side, sign] of [['l', -1], ['r', 1]] as const) {
+      const h = pose[side];
+      this.handShape(c, this.viewToScreen(h.pos), sign, 0.6 * this.u, h.open, null, h.scale);
+    }
+    c.restore();
+  }
+
   /**
    * Fist punches: a small ring on whatever a punch from each ready fist would hit (or where it
    * would fly), so you can line up before you throw. Uses the game's own aim.
@@ -779,7 +826,7 @@ export class Renderer {
   private drawHazard(g: Game, h: Hazard): void {
     const c = this.ctx, u = this.u, near = clamp(1 - h.z / 6, 0, 1);
     if (h.kind === 'stonePillar') {
-      const hw = TUNE.stonePillarHalfW;
+      const hw = h.halfW ?? TUNE.stonePillarHalfW;
       // the furrow it will plough: its lane on the ground, from the pillar all the way to you
       if (h.z > 0.2) {
         const zs = [h.z, h.z * 0.66, h.z * 0.33, 0.2];
@@ -822,8 +869,22 @@ export class Renderer {
       c.fillRect(base.x - w, topP.y, w * 0.5, base.y - topP.y);
       return;
     }
-    // the sweep: a wave of water rolling at you, crest at your eye height, underside just above a duck
     if (h.z <= -0.3) return;
+    if (h.look === 'boulder') {
+      const p = this.project(g.cam.x, h.y, Math.max(0.05, h.z)), r = 18 * u * p.s, N = 7;
+      c.fillStyle = '#8a6a48';
+      c.strokeStyle = '#3b2a1a';
+      c.lineWidth = Math.max(1, r * 0.1);
+      c.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const a = (i / N) * Math.PI * 2 + this.t * 3, rr = r * (0.85 + 0.15 * Math.sin(i * 2.7));
+        const px = p.x + Math.cos(a) * rr, py = p.y + Math.sin(a) * rr * 0.9;
+        i ? c.lineTo(px, py) : c.moveTo(px, py);
+      }
+      c.closePath(); c.fill(); c.stroke();
+      return;
+    }
+    // the sweep: a wave of water rolling at you, crest at your eye height, underside just above a duck
     const z = Math.max(0.05, h.z), crest = h.y - 4, under = h.y + TUNE.slabDuck - 2, N = 24;
     const pts = (y: number, wav: number) => Array.from({ length: N + 1 }, (_, i) => {
       const x = g.cam.x - 130 + (260 * i) / N;
