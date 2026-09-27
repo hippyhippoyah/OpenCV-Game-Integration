@@ -40,7 +40,7 @@ export class CampaignUI {
     const s = r.state, exploring = s === 'walk' || s === 'scroll' || s === 'arena';
     const pausable = s === 'practice' || s === 'fight';
     $('campControls').innerHTML = exploring
-      ? '<span><kbd>E</kbd> interact</span><span><kbd>Space</kbd> skip ahead</span><span><kbd>Tab</kbd> scrolls</span><span><kbd>Click</kbd> a lit stop to replay it</span><span><kbd>Esc</kbd> menu</span>'
+      ? (s === 'walk' ? '<span><kbd>E</kbd> skip ahead</span>' : '<span><kbd>E</kbd> interact</span>') + '<span><kbd>Tab</kbd> scrolls</span><span><kbd>Click</kbd> a lit stop to replay it</span><span><kbd>Esc</kbd> menu</span>'
       : s === 'result' ? '<span><kbd>Enter</kbd> walk on</span><span><kbd>R</kbd> try again</span>'
       : s === 'lost' ? '<span><kbd>R</kbd> try again</span>'
       : pausable && paused ? '<span><kbd>Esc</kbd> resume</span>' : '<span><kbd>Esc</kbd> pause</span>';

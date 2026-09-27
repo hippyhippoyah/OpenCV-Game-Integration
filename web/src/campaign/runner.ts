@@ -96,8 +96,10 @@ export class CampaignRunner {
     }
   }
 
+  /** E: skip ahead while walking (never past the next scroll or arena), pick up a scroll, or step into an arena. */
   interact(): void {
-    if (this.state === 'scroll') {
+    if (this.state === 'walk') this.skip();
+    else if (this.state === 'scroll') {
       const s = STOPS[this.stop], id = (this.epilogue ? s.reward : s.scroll) as ScrollId;
       if (this.progress.addScroll(id)) {
         this.notes.push({ kind: 'scroll', text: `New move learned: ${SCROLLS[id].name} — scroll added to your Scrolls (Tab)` });

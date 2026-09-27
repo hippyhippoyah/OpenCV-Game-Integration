@@ -24,7 +24,7 @@ The game alternates between two ways of playing, and the switch between them is 
   the mountain (temple, stairs, river and bamboo bridge, stone garden, the village), with the path
   drawn on it and you as a flame token that **auto-walks** it, leaving the walked part in red. It
   stops where there's something to do — a scroll (E to pick it up), an arena (E to step in) — and
-  walks on after. Tab for scrolls, Space to skip ahead, click a lit stop to replay it. You sit at the
+  walks on after. Tab for scrolls, E (or Space) to skip ahead to the next scroll or arena, click a lit stop to replay it. You sit at the
   computer; this is the rest between fights. (A 3D world is saved for the temple, with WASD and
   mouse; the first 3D attempt at the path was dropped for looking poor.)
 - **Fight — webcam.** You stand back from the screen and bend. The view is the existing
@@ -40,7 +40,7 @@ starts the fight. Esc backs out to explore. If the camera loses you mid-fight, t
 and hands control back to keyboard and mouse. Losing offers "Try again" (the fight only).
 
 A small **controls strip** in a corner always shows the keys for the current half (explore:
-`E` interact · `Space` skip ahead · `Tab` scrolls · `Click` a lit stop to replay it · `Esc` menu; fight:
+`E` skip ahead while walking, pick up a scroll, or enter an arena (never skips a scroll) · `Tab` scrolls · `Click` a lit stop to replay it · `Esc` menu; fight:
 `Esc` pause).
 
 ## Story

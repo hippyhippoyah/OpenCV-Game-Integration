@@ -87,6 +87,20 @@ describe('CampaignRunner', () => {
     expect(r.state).toBe('arena');
   });
 
+  it('E while walking skips ahead, but never past a scroll to pick up', () => {
+    const p = Progress.load(null);
+    p.completeStop(STOPS[0].id, 1);
+    const r = new CampaignRunner(p, make);
+    expect(r.state).toBe('walk');
+    // mash E while walking: it jumps to just short of the next pause, then walks into it
+    for (let i = 0; i < 60 && r.state === 'walk'; i++) { r.interact(); r.update(0.1, true, []); }
+    expect(r.state).toBe('scroll');
+    expect(p.hasScroll(STOPS[1].scroll!)).toBe(false);
+    r.interact(); // at the scroll, E picks it up
+    expect(p.hasScroll(STOPS[1].scroll!)).toBe(true);
+    expect(r.state).toBe('walk');
+  });
+
   it('replaying a finished stop returns to your real progress after winning it again', () => {
     const p = Progress.load(null);
     for (const s of STOPS.slice(0, 3)) {
