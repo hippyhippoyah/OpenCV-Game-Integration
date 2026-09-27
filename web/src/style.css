@@ -10,6 +10,7 @@
 html, body { margin: 0; height: 100%; background: #07060b; overflow: hidden; color: var(--ui);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
 canvas#game { display: block; width: 100vw; height: 100vh; cursor: none; }
+canvas#world { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
 .hidden { display: none !important; }
 
 .hud { position: fixed; inset: 0; pointer-events: none; }
