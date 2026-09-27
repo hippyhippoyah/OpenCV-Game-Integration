@@ -188,6 +188,11 @@ addEventListener('keydown', e => {
     istate.pending = [];
     hud.toast(TUNING.punchTrigger === 'extend' ? 'PUNCH: FIST' : 'PUNCH: OPEN HAND', 'cool');
   }
+  if ((k === '[' || k === ']') && TUNING.punchTrigger === 'extend') {
+    // live punch sensitivity: ] = easier to trigger, [ = stricter
+    TUNING.punchSensitivity = Math.round(Math.min(2.5, Math.max(0.5, TUNING.punchSensitivity + (k === ']' ? 0.1 : -0.1))) * 10) / 10;
+    hud.toast(`PUNCH SENSITIVITY ×${TUNING.punchSensitivity.toFixed(1)}`, 'cool');
+  }
   if (k === 't' && game?.state === 'play') {
     practice = !game.practice;
     game.setPractice(practice);

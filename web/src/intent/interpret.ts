@@ -84,17 +84,22 @@ export const TUNING = {
    */
   punchTrigger: 'extend' as PunchTrigger,
   /**
-   * Fist punches, from how far each fist is in front of the shoulders (metres): fire when a fist is
-   * reachFire past your guard baseline, came forward by reachRise within punchWindowS, and leads
-   * the other fist by reachLead; re-arm once back within reachRearm of the baseline.
+   * Fist punches are mostly about distance, in metres in front of the shoulders: fire when a fist
+   * is reachFire past your guard, leads the other fist by reachLead, and came forward by at least
+   * reachRise within reachRiseWindowS (only so a slow drift doesn't count). Re-arm once back
+   * within reachRearm of guard. See fistThresholds().
    */
-  reachFire: 0.12, reachRise: 0.14, reachLead: 0.06, reachRearm: 0.08, extendConfirmS: 0.05,
+  reachFire: 0.12, reachRise: 0.1, reachRiseWindowS: 0.5, reachLead: 0.05, reachRearm: 0.08, extendConfirmS: 0.05,
   /**
-   * Thresholds scale with each fist's own measured wobble (so a far-away, noisy fist can't misfire):
-   * rise ≥ max(reachRise, noiseRise × wobble), past guard ≥ max(reachFire, noiseFire × wobble),
-   * lead ≥ max(reachLead, noiseLead × wobble). Above reachNoiseMax, fist punches are unreliable.
+   * With a noisy camera the thresholds rise with the reading's wobble (noiseX × wobble) — but never
+   * past these caps, so a noisy camera can't make punches impossible. Above reachNoiseMax the HUD
+   * suggests stepping closer.
    */
-  noiseRise: 12, noiseFire: 8, noiseLead: 5, reachNoiseMax: 0.017,
+  noiseRise: 8, noiseFire: 7, noiseLead: 4, reachFireCap: 0.2, reachRiseCap: 0.16, reachLeadCap: 0.1, reachNoiseMax: 0.017,
+  /** Live punch sensitivity ([ and ] in game): thresholds are divided by this. */
+  punchSensitivity: 1,
+  /** Fist punches: a hand only stops a punch (or counts as opening for a shield) once it is clearly open. */
+  clearlyOpen: 0.8,
   /**
    * The wobble comes from the camera and grows with distance², so it is modelled as
    * noiseCoef × (distance to the body)². noiseCoef starts at noiseCoefStart and learns this camera's
@@ -344,18 +349,16 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       if (!tr || tr.source === 'estimate') continue;
       let fire = false;
       if (tr.reach !== null && tr.reachBase !== null) {
-        const past = tr.reach - tr.reachBase, noise = tr.reachNoise ?? 0;
+        const past = tr.reach - tr.reachBase, need = fistThresholds(tr.reachNoise ?? 0);
         if (past < TUNING.reachRearm) tr.armed = true;
-        const leads = !o || o.reach === null || tr.reach - o.reach >= Math.max(TUNING.reachLead, TUNING.noiseLead * noise);
-        fire = tr.armed && leads
-          && past >= Math.max(TUNING.reachFire, TUNING.noiseFire * noise)
-          && reachRise(tr) >= Math.max(TUNING.reachRise, TUNING.noiseRise * noise);
+        const leads = !o || o.reach === null || tr.reach - o.reach >= need.lead;
+        fire = tr.armed && leads && past >= need.past && reachRise(tr) >= need.rise;
       } else if (tr.extension !== null) {
         // no 3D hand data: fall back to the arm straightening
         if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
         fire = tr.armed && tr.extension >= TUNING.extendFireAbove && extensionRise(tr) >= TUNING.punchExtendRise;
       }
-      if (fire && !tr.open && tr.pos.y < TUNING.raisedAboveY) {
+      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY) {
         tr.armed = false;
         tr.lastPunchT = f.t;
         s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t });
@@ -373,7 +376,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
   const punches: Punch[] = [];
   s.pending = s.pending.filter(p => {
     const tr = s[p.hand];
-    if (!tr || s[other(p.hand)]?.open || (extendMode && tr.open)) return false;
+    // a fist that reads half-open mid-punch still counts; only clearly open hands mean shield
+    const opens = (t: Track | null) => !!t && (extendMode ? t.openness >= TUNING.clearlyOpen : t.open);
+    if (!tr || opens(s[other(p.hand)]) || (extendMode && opens(tr))) return false;
     if (f.t - p.t < confirmS) return true;
     punches.push({ hand: p.hand, at: { ...tr.pos }, shoulder: p.shoulder, dir: tr.aimDir && { ...tr.aimDir } });
     return false;
@@ -526,7 +531,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
   }
   tr.lastSeen = t;
   tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension, reach: reach !== null ? tr.reach : null });
-  const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS);
+  const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS, TUNING.reachRiseWindowS);
   while (tr.hist.length && t - tr.hist[0].t > keepS) tr.hist.shift();
   return { track: tr, opened };
 }
@@ -548,10 +553,22 @@ function updateReachBase(tr: Track, dt: number): void {
   }
 }
 
-/** How far the fist came forward within the recent window (largest rise from an earlier low), metres. */
+/** The distances (m) a fist punch needs, given the reading's wobble: capped, and scaled by sensitivity. */
+export function fistThresholds(noise: number): { past: number; rise: number; lead: number } {
+  const t = TUNING, k = t.punchSensitivity;
+  return {
+    past: Math.min(t.reachFireCap, Math.max(t.reachFire, t.noiseFire * noise)) / k,
+    rise: Math.min(t.reachRiseCap, Math.max(t.reachRise, t.noiseRise * noise)) / k,
+    lead: Math.min(t.reachLeadCap, Math.max(t.reachLead, t.noiseLead * noise)) / k,
+  };
+}
+
+/** How far the fist came forward within reachRiseWindowS (largest rise from an earlier low), metres. */
 function reachRise(tr: Track): number {
   let low = Infinity, rise = 0;
-  for (const h of punchWindow(tr)) {
+  const now = tr.hist[tr.hist.length - 1]?.t ?? 0;
+  for (const h of tr.hist) {
+    if (now - h.t > TUNING.reachRiseWindowS) continue;
     if (h.reach === null) continue;
     low = Math.min(low, h.reach);
     rise = Math.max(rise, h.reach - low);

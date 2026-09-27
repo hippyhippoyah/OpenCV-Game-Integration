@@ -1,5 +1,5 @@
 import type { TrackingFrame } from '../input/types';
-import { TUNING, type Intent } from '../intent/interpret';
+import { fistThresholds, TUNING, type Intent } from '../intent/interpret';
 import type { Vec2 } from '../math';
 
 /** Corner panel: what the camera sees plus the tracked points; backtick adds live numbers. */
@@ -120,7 +120,7 @@ export class DebugView {
     c.textBaseline = 'bottom';
     c.textAlign = 'left';
     c.fillStyle = '#cfe';
-    c.fillText(`punch: ${TUNING.punchTrigger === 'extend' ? 'fist' : 'open hand'}  (P)`, w * 0.04, y - font * 0.4);
+    c.fillText(`punch: ${TUNING.punchTrigger === 'extend' ? `fist ×${TUNING.punchSensitivity.toFixed(1)} ([ ])` : 'open hand'}  (P)`, w * 0.04, y - font * 0.4);
     const noiseY = y - font * 0.4;
     const noises: string[] = [];
     (['l', 'r'] as const).forEach((side, i) => {
@@ -131,7 +131,7 @@ export class DebugView {
       const RANGE = 0.4, noise = hand?.reachNoise ?? 0;
       const value = byReach ? (hand!.reach! - hand!.reachBase!) / RANGE : hand?.extension ?? null;
       const marks = byReach
-        ? [[TUNING.reachRearm / RANGE, '#9dffcf'], [Math.max(TUNING.reachFire, TUNING.noiseFire * noise) / RANGE, '#ff7a3d']] as const
+        ? [[TUNING.reachRearm / RANGE, '#9dffcf'], [fistThresholds(noise).past / RANGE, '#ff7a3d']] as const
         : [[TUNING.extendRearmBelow, '#9dffcf'], [TUNING.extendFireAbove, '#ff7a3d']] as const;
       if (value !== null) {
         c.fillStyle = hand!.punchReady ? '#ffb347' : '#8a6a4a';

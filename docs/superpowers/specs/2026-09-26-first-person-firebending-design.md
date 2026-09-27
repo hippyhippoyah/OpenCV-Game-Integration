@@ -172,3 +172,12 @@ wrist; arm labels are overridden by frame-to-frame continuity when they'd telepo
 
 **X block:** each wrist crossed past the body's centre line (a cross punch moves only one), wrists
 raised, held 0.08 s → blocks every attack that reaches you; draws a fiery X.
+
+## Revision 2026-09-27: fist punches relaxed ("mostly distance")
+
+Real-camera punches were often missed: the noise-scaled thresholds could climb out of reach on a
+noisy webcam. Now: past guard ≥ 0.12 m, leading the other fist by ≥ 0.05 m, and ≥ 0.10 m of
+forward movement within 0.5 s (only so drift doesn't count); noise scaling is capped (0.20 / 0.10 /
+0.16 m), a fist only blocks a punch once it is clearly open (openness ≥ 0.8), and `[` / `]` change
+sensitivity live. Simulated: 100% of punches caught at 1.2–1.8 m with no misfires there (was
+80–98%); ~90% at 2.5 m with rare misfires (was 27%). A deliberate slow reach now counts.
