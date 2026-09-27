@@ -149,7 +149,7 @@ export class Tutorial {
   finished = false;
   private marks = new Set<string>();
 
-  constructor(private g: Game, start = 0, private lessons: Lesson[] = LESSONS) {
+  constructor(private g: Game, start = 0, readonly lessons: Lesson[] = LESSONS) {
     g.scripted();
     this.go(start);
   }

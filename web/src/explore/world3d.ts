@@ -19,12 +19,16 @@ export class World3D {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.scene.background = new THREE.Color('#120c1f');
-    this.scene.fog = new THREE.FogExp2('#1a1230', 0.018);
-    this.scene.add(new THREE.HemisphereLight('#6a6fb0', '#1b0f12', 0.55));
-    const moon = new THREE.DirectionalLight('#b8c4ff', 0.9);
+    this.renderer.toneMappingExposure = 1.6;
+    // a lighter blue-violet haze that fades the distant mountains rather than hiding the view
+    this.scene.background = new THREE.Color('#332f5c');
+    this.scene.fog = new THREE.FogExp2('#3a3768', 0.0048);
+    // strong moonlight + a bright hemisphere fill so the night reads clearly, not pitch dark
+    this.scene.add(new THREE.HemisphereLight('#aab0ff', '#3a2e3a', 1.1));
+    const moon = new THREE.DirectionalLight('#c9d2ff', 2.0);
     moon.position.set(-80, 120, -60);
     this.scene.add(moon);
+    this.scene.add(new THREE.AmbientLight('#6a6698', 0.35));
     this.moonMesh = this.buildSky();
     this.buildTerrain();
     this.buildPath();
@@ -65,7 +69,7 @@ export class World3D {
     // lantern flicker
     for (let i = 0; i < this.lanterns.length; i++) {
       const l = this.lanterns[i];
-      l.intensity = 6 + Math.sin(this.t * 9 + i * 2.1) * 0.8 + Math.sin(this.t * 23 + i) * 0.4;
+      l.intensity = 9 + Math.sin(this.t * 9 + i * 2.1) * 0.8 + Math.sin(this.t * 23 + i) * 0.4;
     }
     // the moon breathes a slow glow
     (this.moonMesh.material as THREE.MeshBasicMaterial).opacity = 0.85 + 0.1 * Math.sin(this.t * 0.5);
@@ -74,11 +78,36 @@ export class World3D {
 
   dispose(): void { this.renderer.dispose(); }
 
+  /** A big inverted sphere with a vertical gradient (canvas texture): a moonlit-night sky, not a flat void. */
+  private buildSkyDome(): void {
+    const c = document.createElement('canvas');
+    c.width = 2;
+    c.height = 256;
+    const ctx = c.getContext('2d')!;
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, '#171335'); // zenith: deep night violet
+    g.addColorStop(0.55, '#332f5c'); // mid sky
+    g.addColorStop(0.82, '#5c548f'); // low sky, lit by the moon
+    g.addColorStop(1, '#7a729c'); // horizon glow
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 2, 256);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(500, 24, 16),
+      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false, depthWrite: false }),
+    );
+    this.scene.add(dome);
+  }
+
   private buildSky(): THREE.Mesh {
-    const moon = new THREE.Mesh(new THREE.SphereGeometry(14, 32, 16), new THREE.MeshBasicMaterial({ color: '#dfe6ff', fog: false, transparent: true, opacity: 0.9 }));
-    moon.position.set(-160, 150, -380);
+    this.buildSkyDome();
+    // large and clearly visible from the path: placed toward -z (the way the path mostly faces),
+    // off to one side, low enough to sit over the valley rather than straight overhead
+    const moon = new THREE.Mesh(new THREE.SphereGeometry(34, 32, 16), new THREE.MeshBasicMaterial({ color: '#eef1ff', fog: false, transparent: true, opacity: 0.95 }));
+    moon.position.set(-120, 95, -360);
     this.scene.add(moon);
-    const halo = new THREE.Mesh(new THREE.SphereGeometry(24, 32, 16), new THREE.MeshBasicMaterial({ color: '#8a90ff', transparent: true, opacity: 0.18, fog: false }));
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(58, 32, 16), new THREE.MeshBasicMaterial({ color: '#9aa0ff', transparent: true, opacity: 0.22, fog: false }));
     halo.position.copy(moon.position);
     this.scene.add(halo);
     const stars = new THREE.BufferGeometry(), n = 900, a = new Float32Array(n * 3);
@@ -91,32 +120,45 @@ export class World3D {
     return moon;
   }
 
-  /** Mountain slopes: a displaced plane falling away from the path, with far peaks. */
+  /**
+   * The ground: a ridge/cliff side rather than a corridor. One side (downhill, `dx < 0`) drops away
+   * into an open valley so there's a clear vista down the mountain; the other rises gently, well
+   * back from the path, toward the distant peaks — it never walls in the path close beside it.
+   */
   private buildTerrain(): void {
-    const geo = new THREE.PlaneGeometry(700, 700, 140, 140);
+    const geo = new THREE.PlaneGeometry(900, 900, 160, 160);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i);
-      // follow the path's height near it, rising into ridges away from it
       const along = Math.max(0, Math.min(300, -z));
       const onPath = pointAt(along);
-      const side = Math.abs(x - onPath.x);
-      const ridge = Math.max(0, side - 18) * 0.45 + Math.sin(x * 0.05) * 4 + Math.cos(z * 0.04) * 5;
-      pos.setY(i, onPath.y - 1.5 + ridge);
+      const dx = x - onPath.x;
+      const noise = Math.sin(x * 0.05) * 3 + Math.cos(z * 0.04) * 4;
+      let h: number;
+      if (dx < 0) {
+        // cliff side: falls away into the valley, opening up the view
+        const drop = Math.max(0, -dx - 5);
+        h = onPath.y - 1.5 - drop * 1.1 - Math.min(drop * 0.25, 55) + noise;
+      } else {
+        // uphill side: stays open near the path, then rises slowly toward the far peaks
+        const rise = Math.max(0, dx - 22);
+        h = onPath.y - 1.5 + rise * 0.22 + noise;
+      }
+      pos.setY(i, h);
     }
     geo.computeVertexNormals();
-    this.scene.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#2b2436', roughness: 0.95, flatShading: true })));
+    this.scene.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#3a3452', roughness: 0.95, flatShading: true })));
     for (let i = 0; i < 9; i++) {
-      const peak = new THREE.Mesh(new THREE.ConeGeometry(60 + i * 8, 140 + (i % 3) * 40, 5), new THREE.MeshStandardMaterial({ color: '#1f1a2c', flatShading: true }));
-      peak.position.set(-260 + i * 65, 30, -420 - (i % 2) * 60);
+      const peak = new THREE.Mesh(new THREE.ConeGeometry(70 + i * 10, 170 + (i % 3) * 50, 5), new THREE.MeshStandardMaterial({ color: '#2c2740', flatShading: true }));
+      peak.position.set(-320 + i * 80, 10, -480 - (i % 2) * 70);
       this.scene.add(peak);
     }
   }
 
   /** The stone path: flagstones along the waypoints, a faint glowing edge, lanterns every few metres. */
   private buildPath(): void {
-    const stone = new THREE.MeshStandardMaterial({ color: '#5a5360', roughness: 0.9 });
+    const stone = new THREE.MeshStandardMaterial({ color: '#8b84a0', roughness: 0.85 });
     const edgeMat = new THREE.MeshBasicMaterial({ color: '#ffb35c', transparent: true, opacity: 0.35 });
     for (let d = 0; d < 300; d += 1.2) {
       const a = pointAt(d), b = pointAt(d + 1.2);
@@ -145,7 +187,7 @@ export class World3D {
     post.position.set(x, y + 0.8, z);
     const glow = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.45, 0.35), new THREE.MeshBasicMaterial({ color: '#ffb35c' }));
     glow.position.set(x, y + 1.75, z);
-    const light = new THREE.PointLight('#ff9a4a', 6, 14, 2);
+    const light = new THREE.PointLight('#ff9a4a', 9, 16, 2);
     light.position.copy(glow.position);
     this.lanterns.push(light);
     this.scene.add(post, glow, light);

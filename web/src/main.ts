@@ -1,4 +1,5 @@
 import './style.css';
+import { ghostAlpha } from './campaign/ghostFade';
 import { CampaignRunner } from './campaign/runner';
 import { CampaignUI, type HandoffCheck } from './campaign/ui';
 import { Progress } from './campaign/progress';
@@ -51,6 +52,14 @@ let campaign: CampaignRunner | null = null;
 let campUI: CampaignUI | null = null;
 let world: World3D | null = null;
 const look = new Look();
+/** Ghost hands' fade state for the campaign's current practice lesson (see stepCampaign). */
+let ghostPractice: Tutorial | null = null;
+let ghostLessonIndex = -1;
+let ghostDone = 0;
+let ghostSinceProgress = 0;
+let ghostAlphaNow = 1;
+/** So "NOW FOR REAL" toasts only when practice just ended (the runner's previous state). */
+let prevCampaignState: string | null = null;
 const params = new URLSearchParams(location.search);
 /** Skip the mode menu with ?mode=tutorial|waves|training|campaign (?dummies = training). */
 const startMode: Mode | null = params.has('dummies') ? 'training'
@@ -142,6 +151,10 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
     tutorial = null;
     show('lesson', false);
     document.body.classList.remove('tutorial');
+    ghostPractice = null;
+    ghostLessonIndex = -1;
+    ghostAlphaNow = 1;
+    prevCampaignState = null;
     if (tracker instanceof MockTracker && !mockHelpShown) {
       mockHelpShown = true;
       show('mockHelp');
@@ -154,28 +167,30 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
   if (tutorial) game.label = 'Tutorial';
   show('lesson', !!tutorial);
   document.body.classList.toggle('tutorial', !!tutorial);
-  drawLesson();
+  if (tutorial) drawLesson(tutorial);
   if (tracker instanceof MockTracker && !mockHelpShown) {
     mockHelpShown = true;
     show('mockHelp');
   }
 }
 
-/** The lesson panel: which lesson, how to do it, and how far along the goal you are. */
-function drawLesson(): void {
-  if (!tutorial) return;
-  const l = tutorial.lesson, done = tutorial.completedFor !== null;
-  $('lessonStep').textContent = `Lesson ${tutorial.index + 1} of ${LESSONS.length}`;
+/**
+ * The lesson panel: which lesson, how to do it, and how far along the goal you are. Used for the
+ * tutorial's own lessons and (with a different `Tutorial` instance) for a campaign practice.
+ */
+function drawLesson(t: Tutorial): void {
+  const l = t.lesson, done = t.completedFor !== null;
+  $('lessonStep').textContent = `Lesson ${t.index + 1} of ${t.lessons.length}`;
   $('lessonTitle').textContent = l.title;
   $('lessonHow').textContent = l.how;
   $('lessonGoal').textContent = done ? '✓ Done — next lesson…' : l.goal;
-  $('lessonCount').textContent = `${tutorial.done} / ${l.need}`;
-  $('lessonFill').style.width = `${Math.round((tutorial.done / l.need) * 100)}%`;
+  $('lessonCount').textContent = `${t.done} / ${l.need}`;
+  $('lessonFill').style.width = `${Math.round((t.done / l.need) * 100)}%`;
   const steps = $('lessonSteps');
   steps.replaceChildren(...(l.steps ?? []).map(st => {
     const el = document.createElement('span');
-    el.textContent = tutorial!.marksDone.has(st.mark) ? `✓ ${st.label}` : st.label;
-    el.classList.toggle('done', tutorial!.marksDone.has(st.mark));
+    el.textContent = t.marksDone.has(st.mark) ? `✓ ${st.label}` : st.label;
+    el.classList.toggle('done', t.marksDone.has(st.mark));
     return el;
   }));
   show('lessonSteps', !!l.steps);
@@ -227,7 +242,7 @@ function stepGame(dt: number): void {
   if (tutorial) {
     if (tutorial.update(dt, events)) hud.toast('✓ LESSON COMPLETE', 'good');
     if (tutorial.finished) { showModes('Tutorial complete — you know every move. Try the waves!'); return; }
-    drawLesson();
+    drawLesson(tutorial);
   }
   hud.update(game, intent.hands);
 }
@@ -247,7 +262,32 @@ function stepCampaign(dt: number, now: number): void {
     hud.update(game, intent.hands);
   }
   if (!campUI!.overlayOpen) r.update(dt, check.seen && check.handsUp && check.distance === 'ok', events);
-  renderer.ghost = r.ghostMove ? { lessonId: r.ghostMove, alpha: 1 } : null;
+  if (prevCampaignState === 'practice' && r.state === 'fight') hud.toast('NOW FOR REAL');
+  prevCampaignState = r.state;
+  // the lesson card, shared with the tutorial's own: shown only while practising a campaign lesson
+  const practice = r.state === 'practice' ? r.practice : null;
+  show('lesson', !!practice);
+  document.body.classList.toggle('tutorial', !!practice);
+  if (practice) {
+    if (practice !== ghostPractice || practice.index !== ghostLessonIndex) {
+      ghostPractice = practice;
+      ghostLessonIndex = practice.index;
+      ghostDone = practice.done;
+      ghostSinceProgress = 0;
+      ghostAlphaNow = 1;
+    } else if (practice.done !== ghostDone) {
+      ghostDone = practice.done;
+      ghostSinceProgress = 0;
+    } else {
+      ghostSinceProgress += dt;
+    }
+    ghostAlphaNow = ghostAlpha(ghostAlphaNow, dt, practice.done, ghostSinceProgress, practice.finished);
+    drawLesson(practice);
+    renderer.ghost = ghostAlphaNow > 0.001 ? { lessonId: practice.lesson.id, alpha: ghostAlphaNow } : null;
+  } else {
+    ghostPractice = null;
+    renderer.ghost = null;
+  }
   renderer.tint = STOPS[r.stop].tint;
   show('world', exploring || r.state === 'handoff' || r.state === 'countdown');
   show('game', !(exploring || r.state === 'handoff' || r.state === 'countdown'));
@@ -257,6 +297,7 @@ function stepCampaign(dt: number, now: number): void {
     world!.render(r.rail, look, dt, r.state === 'scroll' ? 'scroll' : r.state === 'arena' ? 'arena' : null);
   }
   campUI!.update(r, check, now);
+  if (practice) lessonDemo.draw(practice.lesson.id, now / 1000);
 }
 
 /** Is the camera ready for a fight: you're seen, fists up, at a good distance? (Mouse & keys: always.) */
@@ -402,7 +443,7 @@ addEventListener('keydown', e => {
   if (tutorial && phase === 'play' && (k === 'n' || k === 'b')) {
     if (k === 'n') tutorial.next(); else tutorial.back();
     if (tutorial.finished) showModes('Tutorial complete — you know every move. Try the waves!');
-    else drawLesson();
+    else drawLesson(tutorial);
   }
   if (k === 'r' && game?.state === 'over' && mode !== 'campaign') beginPlay();
   if (k === 'c' && camera && phase === 'play') beginCalibration();
