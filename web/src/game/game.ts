@@ -1,4 +1,4 @@
-import type { Cast, Intent, Punch, Side } from '../intent/interpret';
+import type { Cast, Intent, Palm, Punch, Side } from '../intent/interpret';
 import { distToSeg, lerp, type Vec2 } from '../math';
 
 /** An object at depth z appears at scale FOCAL / (FOCAL + z). */
@@ -35,6 +35,15 @@ export const TUNE = {
    * the disc would be almost at eye level and look like a thin line; lower, you see it as a layer.
    */
   bladeDrop: 0.45,
+  /**
+   * Palm moves, the heavy attacks: palmDamage per hit (a punch does 1), then that hand rests for
+   * palmCooldownS. A push sends a pillar of fire (pillarHalfW wide, pillarHeight tall) rolling
+   * forward at pillarSpeed, through every enemy and attack in its way. A rise erupts a pillar
+   * (eruptRadius wide) under the target eruptDelayS later; it burns for eruptLifeS.
+   */
+  palmDamage: 2, palmCooldownS: 0.8,
+  pillarSpeed: 9, pillarHalfW: 9, pillarHeight: 75, pillarMaxZ: 14,
+  eruptDelayS: 0.25, eruptRadius: 14, eruptLifeS: 1,
   /** Testing: the shield never drains or breaks. */
   shieldInfinite: true,
   shieldDrainPerS: 0.33, shieldRegenPerS: 0.22, shieldBlockCost: 0.18, shieldBrokenS: 1.2, shieldReach: 8,
@@ -59,7 +68,7 @@ export interface Proj {
 type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
-  | { type: 'punch'; x: number; y: number; z: number; side: Side }
+  | { type: 'punch' | 'pillar' | 'erupt'; x: number; y: number; z: number; side: Side }
   | { type: 'shieldBroken' | 'gameOver' }
   | { type: 'wave'; wave: number };
 
@@ -67,6 +76,12 @@ export type Rand = () => number;
 
 /** The ultimate's spinning disc of fire: centred at the hands (world x, y), reach r in depth units. */
 export interface Blade { id: number; x: number; y: number; r: number }
+
+/** A palm push: a column of fire rolling forward from the floor, `hit` = enemies it already burned. */
+export interface Pillar { id: number; x: number; z: number; vx: number; age: number; hit: number[] }
+
+/** A rising palm: a column of fire bursting out of the ground at (x, z); it erupts at eruptDelayS. */
+export interface Eruption { id: number; x: number; z: number; t: number; erupted: boolean }
 
 /** A standing wall of fire across the courtyard. */
 export interface Wall { id: number; x: number; z: number; halfW: number; life: number }
@@ -100,6 +115,8 @@ export class Game {
   projs: Proj[] = [];
   walls: Wall[] = [];
   blades: Blade[] = [];
+  pillars: Pillar[] = [];
+  eruptions: Eruption[] = [];
   /** Forearms crossed: everything that reaches you is blocked. */
   xBlock = false;
   /** Last known shoulder positions (view space), for aiming. */
@@ -119,6 +136,7 @@ export class Game {
   private dummyTimers = DUMMY_SLOTS.map(() => 0);
   private punchCool: Record<Side, number> = { l: 0, r: 0 };
   private wallCool = 0;
+  private palmCool: Record<Side, number> = { l: 0, r: 0 };
 
   constructor(private rand: Rand = Math.random, public viewHalfW = 70, practice = false) {
     if (practice) this.setPractice(true);
@@ -148,14 +166,18 @@ export class Game {
     this.inv = Math.max(0, this.inv - dt);
     this.punchCool = { l: Math.max(0, this.punchCool.l - dt), r: Math.max(0, this.punchCool.r - dt) };
     this.wallCool = Math.max(0, this.wallCool - dt);
+    this.palmCool = { l: Math.max(0, this.palmCool.l - dt), r: Math.max(0, this.palmCool.r - dt) };
     this.ultimateIn = Math.max(0, this.ultimateIn - dt);
     this.updateShield(dt, intent.shield);
     if (this.state !== 'play') return;
     for (const p of intent.punches) this.punch(p);
     for (const c of intent.casts) this.cast(c);
+    for (const p of intent.palms ?? []) this.palm(p);
     for (const w of this.walls) w.life -= dt;
     this.walls = this.walls.filter(w => w.life > 0);
     this.updateBlades(dt);
+    this.updatePillars(dt);
+    this.updateEruptions(dt);
     this.updateWaves(dt);
     this.updateEnemies(dt);
     this.updateProjs(dt);
@@ -248,6 +270,69 @@ export class Game {
       vx: (target.x - start.x) / T, vy: (target.y - start.y) / T, vz: TUNE.fireballSpeed, r: TUNE.fireballRadius, resolved: false,
     });
     this.events.push({ type: 'punch', x: start.x, y: start.y, z: TUNE.launchZ, side: p.hand });
+  }
+
+  private palm(p: Palm): void {
+    if (this.palmCool[p.hand] > 0) return;
+    this.palmCool[p.hand] = TUNE.palmCooldownS;
+    const { point, depth } = this.aimFor(p.at, p.shoulder, p.dir);
+    if (p.kind === 'push') {
+      // rolls from in front of the hand toward where the palm points
+      const start = this.handWorld(p.at).x, z = TUNE.launchZ;
+      const vx = ((point.x - start) / Math.max(1, depth - z)) * TUNE.pillarSpeed;
+      this.pillars.push({ id: this.nextId++, x: start, z, vx, age: 0, hit: [] });
+      this.events.push({ type: 'pillar', x: start, y: FLOOR_Y, z, side: p.hand });
+    } else {
+      this.eruptions.push({ id: this.nextId++, x: point.x, z: depth, t: 0, erupted: false });
+      this.events.push({ type: 'erupt', x: point.x, y: FLOOR_Y, z: depth, side: p.hand });
+    }
+  }
+
+  /** Burn an enemy with a palm move. */
+  private burn(e: Enemy): void {
+    e.hp -= TUNE.palmDamage;
+    e.flash = 1;
+    if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', e.x, e.y, e.z); }
+    else this.emit('hitEnemy', e.x, e.y, e.z);
+  }
+
+  /** Roll each pillar forward, burning every enemy it passes (once) and every attack it meets. */
+  private updatePillars(dt: number): void {
+    for (const c of this.pillars) {
+      const z0 = c.z;
+      c.x += c.vx * dt;
+      c.z += TUNE.pillarSpeed * dt;
+      c.age += dt;
+      for (const e of this.enemies) {
+        if (e.hp <= 0 || c.hit.includes(e.id) || e.z < z0 - 0.5 || e.z > c.z + 0.5 || Math.abs(e.x - c.x) > TUNE.pillarHalfW + 7) continue;
+        c.hit.push(e.id);
+        this.burn(e);
+      }
+      this.projs = this.projs.filter(p => {
+        if (p.kind !== 'enemy' || Math.abs(p.z - c.z) > 0.8 || Math.abs(p.x - c.x) > TUNE.pillarHalfW + p.r) return true;
+        this.score += 25;
+        this.emit('clash', p.x, p.y, p.z);
+        return false;
+      });
+    }
+    this.pillars = this.pillars.filter(c => c.z < TUNE.pillarMaxZ);
+  }
+
+  /** Erupt each pillar once its moment comes, burning what stands on it; then let it burn out. */
+  private updateEruptions(dt: number): void {
+    for (const u of this.eruptions) {
+      u.t += dt;
+      if (u.erupted || u.t < TUNE.eruptDelayS) continue;
+      u.erupted = true;
+      const near = (x: number, z: number) => Math.abs(x - u.x) <= TUNE.eruptRadius && Math.abs(z - u.z) <= 1.5;
+      for (const e of this.enemies) if (e.hp > 0 && near(e.x, e.z)) this.burn(e);
+      this.projs = this.projs.filter(p => {
+        if (p.kind !== 'enemy' || !near(p.x, p.z)) return true;
+        this.emit('cut', p.x, p.y, p.z);
+        return false;
+      });
+    }
+    this.eruptions = this.eruptions.filter(u => u.t < TUNE.eruptDelayS + TUNE.eruptLifeS);
   }
 
   /** 0 = just used … 1 = ready. */

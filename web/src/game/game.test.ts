@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bodyHit, FLOOR_Y, Game, TUNE, type Proj } from './game';
-import type { HandState, Intent, Punch, Side } from '../intent/interpret';
+import type { HandState, Intent, Palm, Punch, Side } from '../intent/interpret';
 import { mulberry32 } from '../math';
 
 const SHOULDERS = { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } };
@@ -8,7 +8,7 @@ const hs = (x: number, y: number, open = false): HandState =>
   ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true, punchRise: null, reach: null, reachBase: null, reachNoise: null, aimDir: null });
 const guard = () => ({ l: hs(-12, 22), r: hs(12, 22) });
 const intent = (o: Partial<Intent> = {}): Intent =>
-  ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], shield: false, xBlock: false, casts: [], face: null, bodyTilt: 0, ...o });
+  ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], palms: [], shield: false, xBlock: false, casts: [], face: null, bodyTilt: 0, ...o });
 const punch = (hand: Side, x: number, y: number, dir: Punch['dir'] = null): Punch => ({ hand, at: { x, y }, shoulder: SHOULDERS[hand], dir });
 const shieldUp = (y = 0) => intent({ hands: { l: hs(-15, y, true), r: hs(15, y, true) }, shield: true });
 const incoming = (x: number, y: number, id = 999): Proj =>
@@ -96,6 +96,60 @@ describe('Game', () => {
       run(g, 0.2, shieldUp(0));
       expect(g.hp).toBe(TUNE.maxHp);
       expect(g.drainEvents().some(e => e.type === 'blocked')).toBe(true);
+    });
+  });
+
+  describe('palm moves', () => {
+    const palm = (kind: Palm['kind'], x = 0, y = 10, hand: Side = 'r'): Palm => ({ kind, hand, at: { x, y }, shoulder: SHOULDERS[hand], dir: null });
+    const foe = (id: number, x: number, z: number, hp = 3) =>
+      ({ id, x, y: FLOOR_Y - 30, z, hp, t: 0, appear: 1, dying: 0, flash: 0, cd: 99, winding: false, wind: 0, side: 1 as const, phase: 0 });
+
+    it('a push sends a pillar rolling forward that hits hard and passes through everything in its way', () => {
+      const g = quietGame();
+      g.enemies.push(foe(1, 0, 5), foe(2, 4, 9), foe(3, 60, 7));
+      g.step(1 / 60, intent({ palms: [palm('push')] }));
+      expect(g.pillars).toHaveLength(1);
+      expect(g.drainEvents().some(e => e.type === 'pillar')).toBe(true);
+      run(g, 2, intent());
+      const hp = (id: number) => g.enemies.find(e => e.id === id)?.hp ?? 0;
+      expect(hp(1)).toBe(3 - TUNE.palmDamage);
+      expect(hp(2)).toBe(3 - TUNE.palmDamage);
+      expect(hp(3)).toBe(3); // well off to the side
+      expect(g.pillars).toHaveLength(0); // rolled off the end of the field
+    });
+
+    it('a push burns through incoming attacks', () => {
+      const g = quietGame();
+      g.projs.push({ ...incoming(0, 20), z: 4, vz: -2 });
+      g.step(1 / 60, intent({ palms: [palm('push')] }));
+      run(g, 1, intent());
+      expect(g.projs.filter(p => p.kind === 'enemy')).toHaveLength(0);
+      expect(g.hp).toBe(TUNE.maxHp);
+    });
+
+    it('a rise erupts a pillar under the target near where the palm points, after a moment', () => {
+      const g = quietGame();
+      g.enemies.push(foe(1, 30, 8), foe(2, -40, 8));
+      const s = 3 / (3 + 8); // where that enemy appears on screen
+      g.step(1 / 60, intent({ palms: [palm('rise', 30 * s, (FLOOR_Y - 30) * s)] }));
+      expect(g.eruptions).toHaveLength(1);
+      expect(g.eruptions[0].x).toBeCloseTo(30);
+      expect(g.eruptions[0].z).toBeCloseTo(8);
+      expect(g.enemies[0].hp).toBe(3);
+      run(g, TUNE.eruptDelayS + 0.1, intent());
+      expect(g.enemies[0].hp).toBe(3 - TUNE.palmDamage);
+      expect(g.enemies[1].hp).toBe(3);
+      run(g, TUNE.eruptLifeS, intent());
+      expect(g.eruptions).toHaveLength(0);
+    });
+
+    it('each hand rests between palm moves', () => {
+      const g = quietGame();
+      g.step(1 / 60, intent({ palms: [palm('push'), palm('rise'), palm('push', 0, 10, 'l')] }));
+      expect(g.pillars.length + g.eruptions.length).toBe(2);
+      run(g, TUNE.palmCooldownS, intent());
+      g.step(1 / 60, intent({ palms: [palm('rise')] }));
+      expect(g.eruptions).toHaveLength(1);
     });
   });
 

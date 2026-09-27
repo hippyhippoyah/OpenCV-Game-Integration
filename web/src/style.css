@@ -29,7 +29,7 @@ canvas#game { display: block; width: 100vw; height: 100vh; cursor: none; }
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 18px;
   backdrop-filter: blur(6px); white-space: nowrap; }
 .pill b { font-family: Cinzel, serif; font-size: 15px; letter-spacing: .08em; color: var(--accent-2); }
-.pill span { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.pill span { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; white-space: normal; max-width: calc(100vw - 72px); }
 .pill.off b { color: var(--muted); }
 .pill.shield b { color: #ffe08a; }
 

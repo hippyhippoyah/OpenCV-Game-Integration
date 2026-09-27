@@ -194,3 +194,26 @@ filter releases faster (One Euro 2 Hz, β 4) so rapid snaps aren't averaged away
 Simulated, tuned sensitivity-first: rapid snaps (4/s, 13–24 cm) and jabs 100% caught at 1.2–1.8 m;
 misfires from standing/weaving/leaning/two-handed pushes: none at 1.2 m, ~1 per 50 s at 1.5–1.8 m;
 trigger-happy at 2.5 m (HUD: step closer). `[` / `]` trade sensitivity for strictness live.
+
+## Revision 2026-09-27: palm moves (pillar and eruption)
+
+Two heavy single-hand attacks with an open palm, fist-punch mode only (the open-hand punch style
+already turns opening hands into punches). The palm must have been open ≥ 0.1 s (so a fist opening
+at the end of a punch isn't one) and the other hand not open. Each waits 0.08 s and is dropped if the
+other hand opens meanwhile (shield or cast), then that hand rests 0.5 s in detection, 0.8 s in game.
+
+- **Push → rolling pillar:** the palm shoved toward the camera: its reach, averaged over 3 frames,
+  rises ≥ max(0.12 m, 9 × wobble) (capped at 0.17 m) within 0.3 s, leading the other hand. An open
+  palm's reach reading wobbles ~1.7× a fist's, hence the bigger, smoothed threshold. A column of
+  fire rolls forward from the hand toward the aim at 9 depth/s, burning each enemy it passes
+  (2 damage, a punch does 1) and every attack it meets.
+- **Rise → eruption:** the palm swept up ≥ 16 view units (½ shoulder width) within 0.3 s, 1.5× more
+  up than sideways. A glowing mark appears under the aimed target (same aim and assist as punches);
+  0.25 s later a pillar bursts up there, burning enemies and attacks within 14 units, for 1 s.
+
+Opening or closing a hand switches how its distance is measured (palm plane vs whole-fist fit), so
+the reach reading restarts on a shape change instead of reading the jump as movement.
+
+Simulated at 1.2–1.8 m: every push and rise caught, with no fist punch; nothing fires from jabs, a
+still or slowly moving open palm, raising the shield, or a two-hand wall sweep. Mock: E = push,
+Q = rise (right hand). A rise-then-push combo (a bigger pillar) is a possible follow-up.

@@ -119,6 +119,14 @@ export class Renderer {
         this.shake = 0.8;
         this.flare = { l: FLARE_S * 3, r: FLARE_S * 3 };
         break;
+      case 'pillar':
+        this.shake = Math.max(this.shake, 0.35);
+        this.flare[e.side] = FLARE_S * 2;
+        break;
+      case 'erupt':
+        this.shake = Math.max(this.shake, 0.15);
+        this.flare[e.side] = FLARE_S * 2;
+        break;
       case 'cut': this.burst(e.x, e.y, e.z, 'fire', 16, 30); break;
       case 'hitEnemy':
       case 'killEnemy': this.burst(e.x, e.y, e.z, 'fire', 30, 40); break;
@@ -154,7 +162,16 @@ export class Renderer {
     this.drawLanterns(mx + M, my + M);
 
     if (g) [...g.enemies].sort((a, b) => b.z - a.z).forEach(e => this.drawEnemy(e));
-    if (g) g.walls.forEach(w => this.drawWall(w));
+    if (g) {
+      g.walls.forEach(w => this.drawWall(w));
+      // far pillars first, so nearer ones glow over them
+      const cols = [
+        ...g.pillars.map(p => ({ x: p.x, z: p.z, halfW: TUNE.pillarHalfW, glow: Math.min(1, p.age / 0.1) })),
+        ...g.eruptions.filter(u => u.erupted).map(u => ({ x: u.x, z: u.z, halfW: TUNE.eruptRadius * 0.8, glow: 1 - (u.t - TUNE.eruptDelayS) / TUNE.eruptLifeS })),
+      ].sort((a, b) => b.z - a.z);
+      g.eruptions.filter(u => !u.erupted).forEach(u => this.drawEruptionMark(u.x, u.z, u.t / TUNE.eruptDelayS));
+      cols.forEach(col => this.drawColumn(col.x, col.z, col.halfW, col.glow));
+    }
     this.drawParticles(true);
     if (g) {
       this.drawProjectiles(g, true);
@@ -619,6 +636,41 @@ export class Renderer {
     c.globalCompositeOperation = 'source-over';
   }
 
+  /** A pillar of fire standing on the floor at (x, z): a glowing column with a ragged top. */
+  private drawColumn(x: number, z: number, halfW: number, glow: number): void {
+    if (glow <= 0) return;
+    const c = this.ctx, top = FLOOR_Y - TUNE.pillarHeight;
+    const a = this.project(x - halfW, FLOOR_Y, z), b = this.project(x + halfW, FLOOR_Y, z);
+    const at = this.project(x - halfW, top, z), bt = this.project(x + halfW, top, z);
+    const gr = c.createLinearGradient(0, a.y, 0, at.y);
+    gr.addColorStop(0, `rgba(255,200,90,${0.7 * glow})`);
+    gr.addColorStop(0.5, `rgba(255,120,40,${0.45 * glow})`);
+    gr.addColorStop(1, 'rgba(255,60,20,0)');
+    c.globalCompositeOperation = 'lighter';
+    c.fillStyle = gr;
+    c.beginPath();
+    c.moveTo(a.x, a.y);
+    c.lineTo(b.x, b.y);
+    for (let i = 0; i <= 8; i++) {
+      const k = 1 - i / 8, sway = Math.sin(k * 9 + this.t * 14) * (b.x - a.x) * 0.08;
+      c.lineTo(lerp(at.x, bt.x, k) + sway, lerp(at.y, bt.y, k) + (a.y - at.y) * 0.12 * (1 + Math.sin(k * 13 + this.t * 11)));
+    }
+    c.closePath();
+    c.fill();
+    c.globalCompositeOperation = 'source-over';
+  }
+
+  /** Where a rising palm's pillar is about to burst out: a glowing crack on the floor, brightening. */
+  private drawEruptionMark(x: number, z: number, k: number): void {
+    const c = this.ctx, p = this.project(x, FLOOR_Y, z), rx = TUNE.eruptRadius * p.s * this.u, ry = rx * 0.25;
+    c.globalCompositeOperation = 'lighter';
+    c.fillStyle = `rgba(255,140,50,${0.25 + 0.5 * Math.min(1, k)})`;
+    c.beginPath();
+    c.ellipse(p.x, p.y, rx * (0.4 + 0.6 * Math.min(1, k)), ry, 0, 0, Math.PI * 2);
+    c.fill();
+    c.globalCompositeOperation = 'source-over';
+  }
+
   /** A point on a blade's rim: angle 0 = your right, π/2 = straight ahead, π = your left. */
   private bladePoint(b: Blade, angle: number, r = b.r): { x: number; y: number } {
     return this.project(b.x + Math.cos(angle) * r * TUNE.bladeWidthPerDepth, b.y, Math.max(0.05, Math.sin(angle) * r));
@@ -740,6 +792,20 @@ export class Renderer {
       for (let i = nOf(260, dt); i > 0; i--) {
         const k = rnd(-24, 24), diag = Math.random() < 0.5 ? 1 : -1;
         this.emit(w.x + k, w.y + k * diag, 0.2, rnd(-4, 4), rnd(-22, -8), 0, rnd(0.2, 0.4), rnd(2, 3.5));
+      }
+    }
+    // pillars of fire: rolling ones leave a trail, erupting ones roar straight up
+    for (const col of g.pillars) {
+      for (let i = nOf(420, dt); i > 0; i--) {
+        this.emit(col.x + rnd(-TUNE.pillarHalfW, TUNE.pillarHalfW), FLOOR_Y - rnd(0, TUNE.pillarHeight * 0.8), col.z + rnd(-0.3, 0.3),
+          rnd(-6, 6), rnd(-90, -40), rnd(-2, 0), rnd(0.25, 0.55), rnd(5, 9));
+      }
+    }
+    for (const u of g.eruptions) {
+      const fade = u.erupted ? 1 - (u.t - TUNE.eruptDelayS) / TUNE.eruptLifeS : 0.15;
+      const w = TUNE.eruptRadius * (u.erupted ? 0.8 : 0.5);
+      for (let i = nOf(600 * fade, dt); i > 0; i--) {
+        this.emit(u.x + rnd(-w, w), FLOOR_Y - rnd(0, 4), u.z, rnd(-5, 5), u.erupted ? rnd(-170, -90) : rnd(-30, -10), 0, rnd(0.4, 0.8), rnd(5, 10));
       }
     }
     // standing fire walls

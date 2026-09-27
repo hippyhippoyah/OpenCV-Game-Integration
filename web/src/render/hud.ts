@@ -21,7 +21,9 @@ export class Hud {
       : g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
       : noHands ? ['NO HANDS', 'raise your fists into view']
       : tooFar ? ['GUARD', 'step closer (about 1.5 m) so fist punches can see your fists clearly']
-        : ['GUARD', `${TUNING.punchTrigger === 'extend' ? 'punch' : 'punch & open'}: shoot · still open hands: shield · sweep up: wall · spread: ultimate`];
+        : ['GUARD', TUNING.punchTrigger === 'extend'
+          ? 'fist: punch · palm: push → pillar, up → eruption · both open: shield · wall · ultimate'
+          : 'punch & open: shoot · still open hands: shield · sweep up: wall · spread: ultimate'];
     const lost = (['l', 'r'] as const).filter(side => hands[side] && !hands[side]!.inView);
     $('modeName').textContent = name;
     $('modeHint').textContent = lost.length
@@ -46,6 +48,8 @@ export class Hud {
       case 'shieldBroken': this.toast('SHIELD BROKEN', 'bad'); break;
       case 'killEnemy': this.toast('+100'); break;
       case 'wall': this.toast('FIRE WALL'); break;
+      case 'pillar': this.toast('PILLAR'); break;
+      case 'erupt': this.toast('ERUPTION'); break;
       case 'ultimate': this.banner('ULTIMATE'); break;
       case 'wave': this.banner(`WAVE ${e.wave}`); break;
     }
