@@ -283,3 +283,8 @@ time. Water spirits keep orbs and the high sweep (30%).
 **Centred enemies.** Aiming at the screen edges is hard, so enemies spawn and drift only within
 0.4 of the screen's half-width of its centre (spread apart from each other), and dummies stand at
 ±36 instead of ±45.
+
+**Pillar warning (revised):** instead of a red lane on the floor, the edge of the screen on the
+pillar's side flashes red (the inner 45% of the width fades out) — faintly while it rises, then
+stronger and faster as it closes in — and only while you're still in its path: once you've moved
+out of the way, it stops.

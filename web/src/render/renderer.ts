@@ -216,6 +216,7 @@ export class Renderer {
 
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.drawImage(this.vig, 0, 0, W, H);
+    if (g) this.drawPillarWarnings(g);
     if (this.flash > 0) {
       const gr = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.2, W / 2, H / 2, Math.max(W, H) * 0.7);
       gr.addColorStop(0, 'rgba(255,0,0,0)');
@@ -765,21 +766,14 @@ export class Renderer {
   }
 
   /**
-   * A stone pillar: a tall column of rock rising out of the ground in front of its earthbender,
-   * then sliding at you; as it closes in, its lane on the floor in front of you glows red. A high
+   * A stone pillar: a tall column of rock rising out of the ground beside its earthbender, then
+   * sliding at you (the screen edge on its side flashes: see drawPillarWarnings). A high
    * sweep: a spinning sheet of water at the height your eyes were, with a red line across the view.
    */
   private drawHazard(g: Game, h: Hazard): void {
     const c = this.ctx, u = this.u, near = clamp(1 - h.z / 6, 0, 1);
     if (h.kind === 'stonePillar') {
       const hw = TUNE.stonePillarHalfW;
-      if (h.owner === null) {
-        // warning: the lane it will come down, on the floor just in front of you
-        const a = this.project(h.laneX - hw, FLOOR_Y, 0.2), b = this.project(h.laneX + hw, FLOOR_Y, 0.2);
-        const a2 = this.project(h.laneX - hw, FLOOR_Y, 2.5), b2 = this.project(h.laneX + hw, FLOOR_Y, 2.5);
-        c.fillStyle = `rgba(255,70,50,${0.1 + 0.35 * near})`;
-        c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.lineTo(b2.x, b2.y); c.lineTo(a2.x, a2.y); c.closePath(); c.fill();
-      }
       if (h.z < -0.5) return;
       const hgt = TUNE.pillarHeightStone * h.rise, base = this.project(h.x, FLOOR_Y, h.z), topP = this.project(h.x, FLOOR_Y - hgt, h.z);
       const w = hw * base.s * u;
@@ -821,6 +815,31 @@ export class Renderer {
     c.setLineDash([12, 8]);
     c.beginPath(); c.moveTo(0, y); c.lineTo(this.W, y); c.stroke();
     c.setLineDash([]);
+  }
+
+  /**
+   * While a stone pillar is coming down a lane you're standing in, the edge of the screen on its
+   * side flashes red, faster and stronger as it closes in; it stops once you've moved out of the way.
+   */
+  private drawPillarWarnings(g: Game): void {
+    const c = this.ctx, { W, H } = this;
+    for (const side of [-1, 1] as const) {
+      let level = 0;
+      for (const h of g.hazards) {
+        if (h.kind !== 'stonePillar' || h.resolved || (h.laneX > g.cam.x ? 1 : -1) !== side) continue;
+        if (Math.abs(g.cam.x - h.laneX) >= TUNE.stonePillarHalfW + TUNE.bodyHalfW) continue; // already out of its way
+        level = Math.max(level, h.owner !== null ? 0.35 * h.rise : 0.45 + 0.55 * clamp(1 - h.z / h.startZ, 0, 1));
+      }
+      if (level <= 0) continue;
+      const pulse = 0.5 + 0.5 * Math.sin(this.t * (6 + 8 * level));
+      const a = level * (0.25 + 0.35 * pulse), w = W * 0.45;
+      const x0 = side < 0 ? 0 : W, x1 = side < 0 ? w : W - w;
+      const gr = c.createLinearGradient(x0, 0, x1, 0);
+      gr.addColorStop(0, `rgba(255,40,30,${a})`);
+      gr.addColorStop(1, 'rgba(255,40,30,0)');
+      c.fillStyle = gr;
+      c.fillRect(Math.min(x0, x1), 0, w, H);
+    }
   }
 
   /** A point on a blade's rim: angle 0 = your right, π/2 = straight ahead, π = your left. */
