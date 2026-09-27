@@ -303,3 +303,7 @@ out of the way, it stops.
 - **Always know if you're dodging:** while a pillar or sweep is coming, a cue below the centre
   says what to do in red (← MOVE LEFT / MOVE RIGHT → / ↓ DUCK) with a bar filling as it arrives,
   and turns green (✓ CLEAR) the moment you're out of its way; a green ✓ DODGED confirms it.
+
+**Wave height (revised):** the high sweep always comes at standing eye height (`slabY` 0), no
+longer at wherever your eyes were when it was sent — a wave sent while you were ducking came in
+too low to duck under.

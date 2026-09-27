@@ -279,6 +279,15 @@ describe('Game', () => {
       expect(ducking.hp).toBe(TUNE.maxHp);
     });
 
+    it('a high sweep always comes at standing head height, even if you were ducking when it was sent', () => {
+      const g = quietGame();
+      g.enemies.push(foe({ attack: 'slab' }));
+      run(g, TUNE.windupS + 0.05, at(0, 30)); // crouched low the whole time
+      expect(g.hazards[0].y).toBe(TUNE.slabY);
+      run(g, 3, at(0, TUNE.slabDuck + 2)); // a normal duck gets under it
+      expect(g.hp).toBe(TUNE.maxHp);
+    });
+
     it('waves bring spirits and earthbenders, and keep them all near the middle of the screen', () => {
       const g = new Game(mulberry32(3));
       const kinds = new Set<string>();

@@ -744,7 +744,7 @@ export class Renderer {
   /**
    * A stone pillar: a tall column of rock rising out of the ground in its lane, ploughing a furrow
    * down it to you (the screen edge on its side glows softly while you're in its path). A high
-   * sweep: a wave of water rolling at you with its crest at the height your eyes were; its
+   * sweep: a wave of water rolling at you with its crest at standing eye height; its
    * underside sits just above where your eyes must duck to.
    */
   private drawHazard(g: Game, h: Hazard): void {

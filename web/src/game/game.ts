@@ -46,14 +46,15 @@ export const TUNE = {
   pushWallHalfW: 40, pushWallSpeed: 7, pushWallStartZ: 1.2, pushWallCooldownS: 2.5,
   /**
    * Enemies: water spirits and (earthShare of them) earthbenders. Spirits throw water orbs, or
-   * (slabShare) a high sweep: a sheet of water crossing the whole field at the height your eyes
-   * were — duck at least slabDuck. Earthbenders raise stone pillars (over their pillarWindupS
+   * (slabShare) a high sweep: a wave of water crossing the whole field, always at slabY (your eye
+   * height standing up, even if you were ducking when it was sent) — duck at least slabDuck below
+   * it. Earthbenders raise stone pillars (over their pillarWindupS
    * wind-up) out of the ground in a lane to one side of where you stand — its centre pillarOffset
    * off your centre, stonePillarHalfW wide, so it clearly runs down your left or right — and shove
    * them straight down that lane at stonePillarSpeed: lean or step the other way (your body is
    * bodyHalfW wide). Shield and X block don't stop pillars or sweeps; a fire wall does.
    */
-  earthShare: 0.35, slabShare: 0.3, slabSpeed: 6, slabDuck: 14, bodyHalfW: 12,
+  earthShare: 0.35, slabShare: 0.3, slabSpeed: 6, slabY: 0, slabDuck: 14, bodyHalfW: 12,
   pillarWindupS: 1.4, stonePillarSpeed: 3.5, stonePillarHalfW: 20, pillarHeightStone: 70, pillarOffset: 22,
   /** Enemies stay within this fraction of the screen's half-width of its centre (easier to aim at). */
   enemyBand: 0.4,
@@ -690,8 +691,8 @@ export class Game {
       return;
     }
     const z = e.z - 0.1;
-    this.hazards.push({ id: this.nextId++, kind, x: e.x, y: this.cam.y, z, vz: -TUNE.slabSpeed, resolved: false, laneX: 0, side: 1, startX: e.x, startZ: z, rise: 1, owner: null });
-    this.emit('slab', e.x, this.cam.y, z);
+    this.hazards.push({ id: this.nextId++, kind, x: e.x, y: TUNE.slabY, z, vz: -TUNE.slabSpeed, resolved: false, laneX: 0, side: 1, startX: e.x, startZ: z, rise: 1, owner: null });
+    this.emit('slab', e.x, TUNE.slabY, z);
   }
 
   /** Aim at where your head/chest is now; moving afterwards is how you dodge. */
