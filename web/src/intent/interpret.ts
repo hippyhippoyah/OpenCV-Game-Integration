@@ -118,7 +118,14 @@ export const TUNING = {
    * With a noisy camera the jolt needed rises with the reading's wobble (noiseQuick × wobble), but
    * never past quickRiseCap. Above reachNoiseMax the HUD suggests stepping closer.
    */
-  noiseQuick: 8, noiseLead: 4, noiseRearm: 4, quickRiseCap: 0.2, quickLeadCap: 0.1, reachNoiseMax: 0.017,
+  noiseQuick: 8, noiseLead: 5, noiseRearm: 4, quickRiseCap: 0.2, quickLeadCap: 0.1, reachNoiseMax: 0.017,
+  /**
+   * Leaning, stepping or ducking moves your fists too (a lean twists the torso), which the reach
+   * reading can't tell from a punch. While the head moves faster than leanFreeSpeed (view
+   * units/s), a punch or palm push needs leanPenalty m more forward movement per unit/s over it.
+   * Punches thrown from a steady stance measured under ~65 on a real camera; fast leans 125–140.
+   */
+  leanFreeSpeed: 70, leanPenalty: 0.0012, headSpeedRate: 15,
   /**
    * Live punch and push sensitivity ([ and ] in game): thresholds are divided by this. Tuned and tested
    * at 1; the default is set higher by preference (more misses caught, some more misfires).
@@ -132,6 +139,13 @@ export const TUNING = {
    * floor from both fists while they are in guard (falling quickly, rising slowly).
    */
   noiseCoefStart: 0.006, noiseCoefDownRate: 1, noiseCoefUpRate: 0.15,
+  /**
+   * The wobble is measured from the jitter of each hand's raw distance reading (mean |second
+   * difference| frame to frame), which smooth movement barely affects — unlike deviation from an
+   * average, which counted a fist drifting back to guard as wobble and made punches ever stricter.
+   * × jitterToWobble gives the same scale as the filtered reading's wobble (calibrated in simulation).
+   */
+  jitterToWobble: 0.21,
   /** The guard baseline follows a resting fist at this rate (1/s), and drops quickly if the fist is further back. */
   reachBaseRate: 0.7, reachBaseDropRate: 3,
   /** Fallback without 3D hand data: fire once the arm straightens past extendFireAbove; re-arm below extendRearmBelow. */
@@ -201,7 +215,7 @@ export const TUNING = {
    * It waits palmConfirmS (a second hand opening means shield or cast instead); the hand rests
    * palmRefractoryS afterwards. A fist punch whose hand opens while it is confirming becomes a push.
    */
-  palmPushRise: 0.08, palmPushWindowS: 0.35, palmNoise: 8, palmPushCap: 0.15, palmConfirmS: 0.08, palmRefractoryS: 0.5, palmOtherStill: 0.5, palmBothOpenConfirmS: 0.15,
+  palmPushRise: 0.08, palmPushWindowS: 0.35, palmNoise: 8.5, palmPushCap: 0.15, palmConfirmS: 0.08, palmRefractoryS: 0.5, palmOtherStill: 0.5, palmBothOpenConfirmS: 0.15,
   /** Experimental: only count palms facing each other (edge-on to the camera) as a shield. */
   shieldNeedsEdgeOnPalms: false, edgeOnBelow: 0.5,
   /** Pose wrists below this confidence are treated as guesses. */
@@ -218,13 +232,18 @@ interface Track extends HandState {
   filters: { x: OneEuro; y: OneEuro; depth: OneEuro; bx: OneEuro; by: OneEuro };
   /** Filtered 3D palm position (m, relative to the shoulder centre). */
   body3: { x: number; y: number; z: number } | null;
-  /** Reach wobble tracking: slow average, recent mean deviation from it. */
-  reachSlow: number | null;
+  /**
+   * How much this hand's reach reading wobbles at rest (m), from the jitter of its raw distance
+   * (see TUNING.jitterToWobble), and the last few raw distances it is measured from.
+   */
   reachDev: number;
+  rawDepths: (number | null)[];
   /** When this hand last threw a punch (its reading takes a while to settle afterwards). */
   lastPunchT: number;
   /** Furthest reach since that punch fired (it re-arms once the fist comes back from here). */
   peakReach: number;
+  /** When it got there: the next punch only counts forward movement after this. */
+  peakT: number;
   /** When this hand's reach reading started (it needs a moment to settle before it can punch). */
   reachSince: number | null;
   /** Hand tracker palm − pose-wrist palm estimate, so switching between them doesn't jump. */
@@ -267,12 +286,15 @@ export interface InterpretState {
   bodyDist: OneEuro;
   /** This camera's reach wobble per metre² of distance. */
   noiseCoef: number;
+  /** How fast the head (your body) is moving, view units/s, smoothed. */
+  headSpeed: number;
 }
 
 export const initialState = (): InterpretState => ({
   head: null, l: null, r: null, lastT: null, pending: [], palmPending: [], bothOpenAt: null, stillSince: null, shieldOn: false,
   castReadyAt: -Infinity, lastCastT: -Infinity, crossedSince: null,
   shoulderSpan: null, bodyDist: new OneEuro(TUNING.bodyDepthMinCutoff, TUNING.bodyDepthBeta), noiseCoef: TUNING.noiseCoefStart,
+  headSpeed: 0,
 });
 
 const SIDES = ['l', 'r'] as const;
@@ -314,10 +336,17 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     y: TUNING.handOffsetY + ((p.y - mid.y) / sw) * TUNING.handScaleY,
   });
 
+  const headBefore = s.head && { ...s.head };
   s.head = smooth(s.head, {
     x: clamp(((f.head.x - cal.head.x) / sw) * TUNING.leanUnitsPerSw, -TUNING.maxLean, TUNING.maxLean),
     y: clamp(((f.head.y - cal.head.y) / sw) * TUNING.duckUnitsPerSw, TUNING.minDuck, TUNING.maxDuck),
   }, k);
+  if (headBefore && dt > 0) {
+    const v = Math.hypot(s.head.x - headBefore.x, s.head.y - headBefore.y) / dt;
+    s.headSpeed = lerp(s.headSpeed, v, Math.min(1, dt * TUNING.headSpeedRate));
+  }
+  // moving your body makes fists move too: attacks need more while it does
+  const leanExtra = TUNING.leanPenalty * Math.max(0, s.headSpeed - TUNING.leanFreeSpeed);
   const shoulders = { l: toView(f.shoulderL), r: toView(f.shoulderR) };
 
   // How far away the body is: learned shoulder width in metres over its apparent width, filtered.
@@ -415,9 +444,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       if (!tr || tr.source === 'estimate') continue;
       let fire = false, jolt = false, shove = false;
       if (tr.reach !== null) {
-        const need = fistThresholds(tr.reachNoise ?? 0);
+        const need = fistThresholds(tr.reachNoise ?? 0, leanExtra);
         if (!tr.armed) {
-          tr.peakReach = Math.max(tr.peakReach, tr.reach);
+          if (tr.reach > tr.peakReach) { tr.peakReach = tr.reach; tr.peakT = f.t; }
           if (tr.reach <= tr.peakReach - Math.max(TUNING.rearmDrop, TUNING.noiseRearm * (tr.reachNoise ?? 0))) tr.armed = true;
         }
         const rise = reachRise(tr, TUNING.quickWindowS);
@@ -428,9 +457,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         // only movement since this hand's last punch or push counts (not the tail of that one)
         const push = palmPushRise(tr.hist, TUNING.palmPushWindowS, tr.lastPunchT);
         // with the other hand open too (shield territory) a stray push costs more: no sensitivity boost
-        const pushNeed = pushThreshold(tr.reachNoise ?? 0) * (o?.open ? TUNING.punchSensitivity : 1);
+        const pushNeed = pushThreshold(tr.reachNoise ?? 0) * (o?.open ? TUNING.punchSensitivity : 1) + leanExtra;
         shove = settled && tr.armed && f.t - tr.lastPunchT >= TUNING.refireS && push >= pushNeed && push - otherRise >= need.lead;
-        if (fire) tr.peakReach = tr.reach;
+        if (fire) { tr.peakReach = tr.reach; tr.peakT = f.t; }
       } else if (tr.extension !== null) {
         // no 3D hand data: fall back to the arm straightening
         if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
@@ -526,7 +555,7 @@ function startPush(s: InterpretState, side: Side, t: number, shoulder: Vec2): vo
   const tr = s[side]!;
   tr.armed = false;
   tr.lastPunchT = t;
-  if (tr.reach !== null) tr.peakReach = tr.reach;
+  if (tr.reach !== null) { tr.peakReach = tr.reach; tr.peakT = t; }
   tr.palmReadyAt = t + TUNING.palmRefractoryS;
   s.palmPending.push({ kind: 'push', hand: side, at: { ...tr.pos }, shoulder: { ...shoulder }, dir: null, t });
 }
@@ -634,7 +663,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     const track: Track = {
       pos: { ...pos }, vel: { x: 0, y: 0 }, openness: open, open: open >= 0.5, facing: h ? h.facing : 1,
       source: 'hand', inView: true, elbow: null, extension: ext, punchReady: true, armed: true, lastSeen: t,
-      reach: null, reachBase: null, reachNoise: 0.02, reachSlow: null, reachDev: 0.02, lastPunchT: -Infinity, peakReach: -Infinity,
+      reach: null, reachBase: null, reachNoise: 0.02, reachDev: 0.02, rawDepths: [depth], lastPunchT: -Infinity, peakReach: -Infinity, peakT: -Infinity,
       reachSince: null,
       punchRise: null,
       aimDir: null, body3: b3 && { ...b3 },
@@ -649,8 +678,8 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     return { track, opened: false };
   }
   // Opening or closing the hand switches how its distance is measured, which jumps the reading:
-  // restart the distance filter and shift the reach history by the jump, so a hand that opens
-  // mid-push keeps its forward movement and the jump itself isn't read as movement.
+  // restart the distance filter and shift the reach history by the jump, so the jump itself isn't
+  // read as movement.
   const shapeOpen = h ? h.open >= 0.5 : tr.shapeOpen;
   const reshaped = tr.shapeOpen !== null && shapeOpen !== tr.shapeOpen;
   if (reshaped) tr.filters.depth = new OneEuro(TUNING.handDepthMinCutoff, TUNING.handDepthBeta);
@@ -664,11 +693,20 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
   tr.extension = ext === null ? null : tr.extension === null ? ext : lerp(tr.extension, ext, k);
   const reach = reachNow(tr);
   if (reshaped && reach !== null && tr.reach !== null) {
+    // reach is body − hand distance, so the new way reads (old-way distance − new-way distance) further out
     const jump = reach - tr.reach;
     for (const x of tr.hist) if (x.reach !== null) x.reach += jump;
-    if (tr.reachSlow !== null) tr.reachSlow += jump;
     if (tr.reachBase !== null) tr.reachBase += jump;
     tr.peakReach += jump;
+    tr.rawDepths = [];
+  }
+  // the wobble: jitter (second difference) of the raw distance — smooth movement barely shows in it
+  if (h) {
+    tr.rawDepths = [...tr.rawDepths, depth].slice(-3);
+    const [a, b, c] = tr.rawDepths;
+    if (tr.rawDepths.length === 3 && a != null && b != null && c != null) {
+      tr.reachDev = lerp(tr.reachDev, TUNING.jitterToWobble * Math.abs(c - 2 * b + a), Math.min(1, dt * 1));
+    }
   }
   if (reach !== null && b3) {
     tr.reachSince ??= t;
@@ -697,8 +735,6 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
  */
 function updateReachBase(tr: Track, dt: number): void {
   if (tr.reach === null) return;
-  tr.reachSlow = tr.reachSlow === null ? tr.reach : lerp(tr.reachSlow, tr.reach, Math.min(1, dt * 3));
-  tr.reachDev = lerp(tr.reachDev, Math.abs(tr.reach - tr.reachSlow), Math.min(1, dt * 1));
   if (tr.reachBase === null) { tr.reachBase = tr.reach; return; }
   const still = Math.hypot(tr.vel.x, tr.vel.y) < 40;
   if (tr.reach < tr.reachBase) tr.reachBase = lerp(tr.reachBase, tr.reach, Math.min(1, dt * TUNING.reachBaseDropRate));
@@ -707,22 +743,29 @@ function updateReachBase(tr: Track, dt: number): void {
   }
 }
 
-/** The jolt (m) a fist punch needs, given the reading's wobble: capped, and scaled by sensitivity. */
-export function fistThresholds(noise: number): { rise: number; lead: number } {
+/**
+ * The jolt (m) a fist punch needs, given the reading's wobble: capped, and scaled by sensitivity;
+ * plus `leanExtra` while your body is moving fast.
+ */
+export function fistThresholds(noise: number, leanExtra = 0): { rise: number; lead: number } {
   const t = TUNING, k = t.punchSensitivity;
   return {
-    rise: Math.min(t.quickRiseCap, Math.max(t.quickRise, t.noiseQuick * noise)) / k,
+    rise: Math.min(t.quickRiseCap, Math.max(t.quickRise, t.noiseQuick * noise)) / k + leanExtra,
     lead: Math.min(t.quickLeadCap, Math.max(t.quickLead, t.noiseLead * noise)) / k,
   };
 }
 
-/** How far the fist has come forward within the last `windowS`: its reach now minus its lowest in that time, metres. */
+/**
+ * How far the fist has come forward within the last `windowS`: its reach now minus its lowest in
+ * that time, metres — counting only since its last punch peaked, so pulling back from one punch
+ * never counts toward the next.
+ */
 function reachRise(tr: Track, windowS: number): number {
   if (tr.reach === null) return 0;
   let low = tr.reach;
   const now = tr.hist[tr.hist.length - 1]?.t ?? 0;
   for (const h of tr.hist) {
-    if (now - h.t <= windowS && h.reach !== null) low = Math.min(low, h.reach);
+    if (now - h.t <= windowS && h.t >= tr.peakT && h.reach !== null) low = Math.min(low, h.reach);
   }
   return tr.reach - low;
 }

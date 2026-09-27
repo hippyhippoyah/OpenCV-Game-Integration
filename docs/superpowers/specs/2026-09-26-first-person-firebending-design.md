@@ -317,3 +317,23 @@ holding the shield costs more), confirms over 0.15 s (not 0.08 s), and is droppe
 hand starts pushing too or a wall push fires. Simulated: works at 1.2–1.5 m; at 1.8 m a still open
 palm's reading wobbles ±15 cm, too much to be sure it isn't pushing too, so it may read as a wall
 push there.
+
+## Revision 2026-09-27: tuned on real recordings
+
+Three K recordings (in `web/recordings/`, replayed by `src/intent/recordings.test.ts`) showed:
+
+- **The punch threshold crept up during play** (5 cm → 14 cm in 10 s): the wobble estimate —
+  deviation from a slow average — counted fists drifting back to guard as camera noise. Wobble is
+  now 0.21 × the jitter (mean |second difference|) of each hand's raw distance, which smooth
+  movement barely affects (0.21 matches the old measure at rest in simulation, fists and palms).
+  On the real camera the threshold now stays at its floor. To keep the simulator's stray rate,
+  the lead multiplier went 4 → 5 and the palm multiplier 8 → 8.5.
+- **A punch could fire twice:** re-arming while pulling back, the 0.2 s window still held the
+  previous punch's start. Forward movement now counts only after the last punch's peak.
+- **Fast leans fired punches** (the leaning fist moves as the torso twists). While the head moves
+  faster than 70 view units/s, punches and palm pushes need 1.2 mm more per unit/s over it;
+  steady-stance punches measured under ~65, the false ones 125–140.
+
+The real camera jitters about 4× less than the simulated one, so the simulator stays the
+pessimistic check; its rapid-snap test now allows one missed snap in a burst, and opening a palm
+mid-push is checked to 1.5 m (about 2 in 3 at 1.8 m, as before).
