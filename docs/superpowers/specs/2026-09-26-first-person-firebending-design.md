@@ -307,3 +307,13 @@ out of the way, it stops.
 **Wave height (revised):** the high sweep always comes at standing eye height (`slabY` 0), no
 longer at wherever your eyes were when it was sent — a wave sent while you were ducking came in
 too low to duck under.
+
+## Revision 2026-09-27: palm push with both palms open
+
+A single palm push also works while both palms are open (e.g. from the shield), as long as the
+other palm stays still: it came forward less than half as far as the pushing one (both pushing is
+a wall push). With both open the push needs the threshold at sensitivity ×1 (a stray one while
+holding the shield costs more), confirms over 0.15 s (not 0.08 s), and is dropped if the other
+hand starts pushing too or a wall push fires. Simulated: works at 1.2–1.5 m; at 1.8 m a still open
+palm's reading wobbles ±15 cm, too much to be sure it isn't pushing too, so it may read as a wall
+push there.

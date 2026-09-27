@@ -62,6 +62,18 @@ describe('two-hand casts on a simulated webcam', () => {
     eachCase((d, seed) => expect(castsIn(perform(twoHands(d, LOW, HIGH, 2, 0.2), 3, { seed })), `${d} m seed ${seed}`).toEqual(['wall']));
   });
 
+  // at 1.8 m a still open palm's reading wobbles ±15 cm, too much to be sure it isn't pushing too
+  it('with both palms open, pushing just one sends a single pillar (not a wall push), up to 1.5 m', () => {
+    for (const d of [1.2, 1.5]) for (const seed of SEEDS) {
+      const out = perform(t => guardState(d, {
+        l: { reach: SHIELD, open: t >= 1.2 },
+        r: { reach: lerpReach(SHIELD, SHIELD_OUT, (t - 2) / 0.18), open: t >= 1.2 },
+      }), 3, { seed });
+      expect(palmsIn(out).map(p => `${p.hand}:${p.kind}`), `${d} m seed ${seed}`).toEqual(['r:push']);
+      expect(castsIn(out), `${d} m seed ${seed}`).toEqual([]);
+    }
+  });
+
   it('holding the shield still casts nothing', () => {
     eachCase((d, seed) => expect(castsIn(perform(twoHands(d, SHIELD, SHIELD, 2, 1), 4, { seed })), `${d} m seed ${seed}`).toEqual([]));
   });

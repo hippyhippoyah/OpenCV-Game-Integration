@@ -191,14 +191,17 @@ export const TUNING = {
   ultimateStartM: 0.4, ultimateSpreadM: 0.3, ultimateStartSw: 0.9, twoPushShare: 0.8,
   /**
    * Palm push (fist-punch mode only; the open-hand punch style already uses opening hands): one hand
-   * open, the other not, shoved toward the camera — it may open on the way. The reach, averaged
+   * open, shoved toward the camera — it may open on the way. The other hand is a fist, or open but
+   * held still (it came forward less than palmOtherStill as far; both pushing is a wall push). With
+   * both hands open it needs the threshold at sensitivity 1 (like the wall push) and waits
+   * palmBothOpenConfirmS instead, dropped if the other hand starts pushing too or a wall push goes off. The reach, averaged
    * over 3 frames, rises palmPushRise within palmPushWindowS (more with a wobbly reading:
    * palmNoise × wobble, up to palmPushCap; an open hand's reading wobbles more than a fist's),
    * leading the other hand like a fist punch. Like punches, thresholds divide by punchSensitivity.
    * It waits palmConfirmS (a second hand opening means shield or cast instead); the hand rests
    * palmRefractoryS afterwards. A fist punch whose hand opens while it is confirming becomes a push.
    */
-  palmPushRise: 0.08, palmPushWindowS: 0.35, palmNoise: 8, palmPushCap: 0.15, palmConfirmS: 0.08, palmRefractoryS: 0.5,
+  palmPushRise: 0.08, palmPushWindowS: 0.35, palmNoise: 8, palmPushCap: 0.15, palmConfirmS: 0.08, palmRefractoryS: 0.5, palmOtherStill: 0.5, palmBothOpenConfirmS: 0.15,
   /** Experimental: only count palms facing each other (edge-on to the camera) as a shield. */
   shieldNeedsEdgeOnPalms: false, edgeOnBelow: 0.5,
   /** Pose wrists below this confidence are treated as guesses. */
@@ -424,7 +427,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         fire = jolt && tr.openness < TUNING.clearlyOpen;
         // only movement since this hand's last punch or push counts (not the tail of that one)
         const push = palmPushRise(tr.hist, TUNING.palmPushWindowS, tr.lastPunchT);
-        shove = settled && tr.armed && f.t - tr.lastPunchT >= TUNING.refireS && push >= pushThreshold(tr.reachNoise ?? 0) && push - otherRise >= need.lead;
+        // with the other hand open too (shield territory) a stray push costs more: no sensitivity boost
+        const pushNeed = pushThreshold(tr.reachNoise ?? 0) * (o?.open ? TUNING.punchSensitivity : 1);
+        shove = settled && tr.armed && f.t - tr.lastPunchT >= TUNING.refireS && push >= pushNeed && push - otherRise >= need.lead;
         if (fire) tr.peakReach = tr.reach;
       } else if (tr.extension !== null) {
         // no 3D hand data: fall back to the arm straightening
@@ -437,8 +442,8 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t });
         continue;
       }
-      // One open palm shoved forward, the other hand not open: a pillar.
-      if (shove && tr.open && !o?.open && f.t >= tr.palmReadyAt && tr.pos.y < TUNING.raisedAboveY && !s.palmPending.some(p => p.hand === side)) {
+      // One open palm shoved forward, the other hand a fist or an open palm held still: a pillar.
+      if (shove && tr.open && (!o || !o.open || heldStill(o, tr)) && f.t >= tr.palmReadyAt && tr.pos.y < TUNING.raisedAboveY && !s.palmPending.some(p => p.hand === side)) {
         startPush(s, side, f.t, shoulders[side]);
       }
     }
@@ -470,8 +475,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
   const palms: Palm[] = [];
   s.palmPending = s.palmPending.filter(p => {
     const tr = s[p.hand], o = s[other(p.hand)];
-    if (!tr || !tr.open || o?.open) return false;
-    if (f.t - p.t < TUNING.palmConfirmS) return true;
+    // the other hand opening and pushing too makes it a wall push instead
+    if (!tr || !tr.open || (o?.open && !heldStill(o, tr))) return false;
+    if (f.t - p.t < (o?.open ? TUNING.palmBothOpenConfirmS : TUNING.palmConfirmS)) return true;
     palms.push({ ...p, at: { ...tr.pos }, dir: tr.aimDir && { ...tr.aimDir } });
     return false;
   });
@@ -488,6 +494,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     const kind = f.t >= s.castReadyAt ? twoHandGesture(l, r, Math.max(s.bothOpenAt, f.t - TUNING.castWindowS), s.lastCastT) : null;
     if (kind) {
       casts.push({ kind, at: { x: (l.pos.x + r.pos.x) / 2, y: (l.pos.y + r.pos.y) / 2 } });
+      if (kind === 'push') s.palmPending = []; // it was both palms, not one
       s.castReadyAt = f.t + TUNING.castRefractoryS;
       s.lastCastT = f.t;
       s.shieldOn = false;
@@ -506,6 +513,12 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, palms, shield, xBlock, casts,
     face: f.face, bodyTilt: Math.atan2(f.shoulderR.y - f.shoulderL.y, f.shoulderR.x - f.shoulderL.x),
   };
+}
+
+/** The other open hand isn't pushing too: it came forward much less than the pushing hand did. */
+function heldStill(o: Track, pushing: Track): boolean {
+  const w = TUNING.palmPushWindowS;
+  return palmPushRise(o.hist, w, o.lastPunchT) < TUNING.palmOtherStill * palmPushRise(pushing.hist, w);
 }
 
 /** Queue a palm push from this hand (it confirms after palmConfirmS). */
