@@ -24,7 +24,7 @@ describe('Recorder', () => {
     expect(r.samples.length).toBeLessThanOrEqual(32);
     expect(r.samples[0].raw).not.toBeNull();
     expect(r.samples[0].intent.present).toBe(true);
-    expect(r.tuning.punchTrigger).toBe('extend');
+    expect(r.tuning.punchTrigger).toBe('open');
     expect(() => JSON.stringify(r)).not.toThrow();
   });
 

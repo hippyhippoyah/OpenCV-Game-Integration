@@ -40,6 +40,15 @@ export interface Punch {
   dir: Vec2 | null;
 }
 
+export type CastKind = 'wall' | 'ultimate';
+
+/** A two-hand move: fire wall (open hands sweep up) or ultimate (open hands spread apart). */
+export interface Cast {
+  kind: CastKind;
+  /** View-space point between the hands when it was cast. */
+  at: Vec2;
+}
+
 export interface Intent {
   /** A head and shoulders are visible. */
   present: boolean;
@@ -50,6 +59,7 @@ export interface Intent {
   punches: Punch[];
   /** Both hands held open. */
   shield: boolean;
+  casts: Cast[];
   /** Head turn/tilt, when the face is clearly visible. */
   face: TrackingFrame['face'];
   /** Shoulder line angle in radians (+ = right shoulder lower). */
@@ -61,7 +71,7 @@ export const TUNING = {
    * What fires a punch. 'extend': a fist driven out by a fast-straightening arm (the hand stays
    * closed). 'open': a fist that opens at the end of a fast move.
    */
-  punchTrigger: 'extend' as PunchTrigger,
+  punchTrigger: 'open' as PunchTrigger,
   /** 'extend': fire once the arm straightens past extendFireAbove (after rising by punchExtendRise); re-arm below extendRearmBelow. */
   extendFireAbove: 0.75, extendRearmBelow: 0.5, extendConfirmS: 0.05,
   leanUnitsPerSw: 40, maxLean: 30,
@@ -82,7 +92,13 @@ export const TUNING = {
   punchWindowS: 0.35, punchSpeed: 60, punchGrowth: 1.12, punchExtendRise: 0.3,
   /** Wait this long before firing, so opening both hands for a shield doesn't also punch. */
   punchConfirmS: 0.08,
-  shieldHoldS: 0.15,
+  /** Shield: both hands open and held (nearly) still for shieldHoldS; then it stays up while both are open. */
+  shieldHoldS: 0.15, shieldMaxSpeed: 35,
+  /**
+   * Two-hand casts, judged on movement since both hands opened (at most castWindowS ago):
+   * rising by wallRise view units = fire wall; spreading apart by ultimateSpread = ultimate.
+   */
+  castWindowS: 0.4, wallRise: 14, ultimateSpread: 24, castRefractoryS: 0.6,
   /** Experimental: only count palms facing each other (edge-on to the camera) as a shield. */
   shieldNeedsEdgeOnPalms: false, edgeOnBelow: 0.5,
   /** Pose wrists below this confidence are treated as guesses. */
@@ -94,7 +110,7 @@ export const TUNING = {
 interface Track extends HandState {
   armed: boolean;
   lastSeen: number;
-  hist: { t: number; speed: number; size: number | null; ext: number | null }[];
+  hist: { t: number; x: number; y: number; speed: number; size: number | null; ext: number | null }[];
 }
 
 export interface InterpretState {
@@ -103,10 +119,17 @@ export interface InterpretState {
   r: Track | null;
   lastT: number | null;
   pending: (Punch & { t: number })[];
-  bothOpenSince: number | null;
+  /** When both hands were first seen open together (null if they aren't). */
+  bothOpenAt: number | null;
+  /** When both open hands have been still since, working toward the shield. */
+  stillSince: number | null;
+  shieldOn: boolean;
+  castReadyAt: number;
 }
 
-export const initialState = (): InterpretState => ({ head: null, l: null, r: null, lastT: null, pending: [], bothOpenSince: null });
+export const initialState = (): InterpretState => ({
+  head: null, l: null, r: null, lastT: null, pending: [], bothOpenAt: null, stillSince: null, shieldOn: false, castReadyAt: -Infinity,
+});
 
 const SIDES = ['l', 'r'] as const;
 const other = (s: Side): Side => (s === 'l' ? 'r' : 'l');
@@ -129,10 +152,11 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
 
   if (!f.head || !f.shoulderL || !f.shoulderR) {
     s.pending = [];
-    s.bothOpenSince = null;
+    s.bothOpenAt = s.stillSince = null;
+    s.shieldOn = false;
     return {
       present: false, head: s.head ? { ...s.head } : { x: 0, y: 0 }, hands: { l: null, r: null },
-      shoulders: null, punches: [], shield: false, face: null, bodyTilt: 0,
+      shoulders: null, punches: [], shield: false, casts: [], face: null, bodyTilt: 0,
     };
   }
   const sw = dist(f.shoulderL, f.shoulderR) || cal.sw;
@@ -210,16 +234,46 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     return false;
   });
 
-  const edgeOn = (t: Track) => !TUNING.shieldNeedsEdgeOnPalms || t.facing < TUNING.edgeOnBelow;
-  const bothOpen = !!s.l && !!s.r && s.l.inView && s.r.inView && s.l.open && s.r.open && edgeOn(s.l) && edgeOn(s.r);
-  if (!bothOpen) s.bothOpenSince = null;
-  else if (s.bothOpenSince === null) s.bothOpenSince = f.t;
-  const shield = s.bothOpenSince !== null && f.t - s.bothOpenSince >= TUNING.shieldHoldS;
+  // Two open hands: a quick sweep up is a fire wall, a quick spread is the ultimate, held still is the shield.
+  const casts: Cast[] = [];
+  const l = s.l, r = s.r;
+  const bothOpen = !!l && !!r && l.inView && r.inView && l.open && r.open;
+  if (!bothOpen) {
+    s.bothOpenAt = s.stillSince = null;
+    s.shieldOn = false;
+  } else {
+    if (s.bothOpenAt === null) s.bothOpenAt = f.t;
+    const kind = f.t >= s.castReadyAt ? twoHandGesture(l, r, Math.max(s.bothOpenAt, f.t - TUNING.castWindowS)) : null;
+    if (kind) {
+      casts.push({ kind, at: { x: (l.pos.x + r.pos.x) / 2, y: (l.pos.y + r.pos.y) / 2 } });
+      s.castReadyAt = f.t + TUNING.castRefractoryS;
+      s.shieldOn = false;
+      s.stillSince = null;
+    } else if (!s.shieldOn) {
+      const edgeOn = (t: Track) => !TUNING.shieldNeedsEdgeOnPalms || t.facing < TUNING.edgeOnBelow;
+      const still = (t: Track) => Math.hypot(t.vel.x, t.vel.y) < TUNING.shieldMaxSpeed;
+      if (!still(l) || !still(r) || !edgeOn(l) || !edgeOn(r)) s.stillSince = null;
+      else if (s.stillSince === null) s.stillSince = f.t;
+      else if (f.t - s.stillSince >= TUNING.shieldHoldS) s.shieldOn = true;
+    }
+  }
+  const shield = s.shieldOn;
 
   return {
-    present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, shield,
+    present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, shield, casts,
     face: f.face, bodyTilt: Math.atan2(f.shoulderR.y - f.shoulderL.y, f.shoulderR.x - f.shoulderL.x),
   };
+}
+
+/** How the two hands moved since `from`: mostly up → wall, mostly apart → ultimate. */
+function twoHandGesture(l: Track, r: Track, from: number): CastKind | null {
+  const l0 = l.hist.find(h => h.t >= from), r0 = r.hist.find(h => h.t >= from);
+  if (!l0 || !r0) return null;
+  const rise = Math.min(l0.y - l.pos.y, r0.y - r.pos.y);
+  const spread = Math.hypot(l.pos.x - r.pos.x, l.pos.y - r.pos.y) - Math.hypot(l0.x - r0.x, l0.y - r0.y);
+  if (rise >= TUNING.wallRise && rise > spread) return 'wall';
+  if (spread >= TUNING.ultimateSpread && spread > rise) return 'ultimate';
+  return null;
 }
 
 /** Sideways/vertical tangent of the punch angle from the 3D shoulder → wrist direction. */
@@ -273,7 +327,7 @@ function updateTrack(
     const track: Track = {
       pos: { ...pos }, vel: { x: 0, y: 0 }, openness: open, open: open >= 0.5, facing: h ? h.facing : 1,
       source: 'hand', inView: true, elbow: null, extension: ext, punchReady: true, armed: true, lastSeen: t,
-      hist: [{ t, speed: 0, size, ext }],
+      hist: [{ t, x: pos.x, y: pos.y, speed: 0, size, ext }],
     };
     return { track, opened: false };
   }
@@ -292,15 +346,22 @@ function updateTrack(
     else if (tr.open && tr.openness < TUNING.fistBelow) tr.open = false;
   }
   tr.lastSeen = t;
-  tr.hist.push({ t, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension });
-  while (tr.hist.length && t - tr.hist[0].t > TUNING.punchWindowS) tr.hist.shift();
+  tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension });
+  const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS);
+  while (tr.hist.length && t - tr.hist[0].t > keepS) tr.hist.shift();
   return { track: tr, opened };
+}
+
+/** History samples within the punch window (the history itself is kept longer, for casts). */
+function punchWindow(tr: Track): Track['hist'] {
+  const now = tr.hist[tr.hist.length - 1]?.t ?? 0;
+  return tr.hist.filter(h => now - h.t <= TUNING.punchWindowS);
 }
 
 /** How much the arm straightened within the recent window (largest rise from an earlier low). */
 function extensionRise(tr: Track): number {
   let minExt = Infinity, rise = 0;
-  for (const h of tr.hist) {
+  for (const h of punchWindow(tr)) {
     if (h.ext === null) continue;
     minExt = Math.min(minExt, h.ext);
     rise = Math.max(rise, h.ext - minExt);
@@ -311,7 +372,7 @@ function extensionRise(tr: Track): number {
 /** Fast across the screen, quickly growing (moving toward the camera), or the arm quickly straightening. */
 function movedRecently(tr: Track): boolean {
   let minSize = Infinity, growth = 1, minExt = Infinity, rise = 0;
-  for (const h of tr.hist) {
+  for (const h of punchWindow(tr)) {
     if (h.speed > TUNING.punchSpeed) return true;
     if (h.size !== null) {
       minSize = Math.min(minSize, h.size);

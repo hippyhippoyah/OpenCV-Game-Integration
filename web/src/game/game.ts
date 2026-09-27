@@ -1,4 +1,4 @@
-import type { Intent, Punch, Side } from '../intent/interpret';
+import type { Cast, Intent, Punch, Side } from '../intent/interpret';
 import { distToSeg, lerp, type Vec2 } from '../math';
 
 /** An object at depth z appears at scale FOCAL / (FOCAL + z). */
@@ -22,6 +22,10 @@ export const TUNE = {
   aimDirScale: 40, aimDirWeight: 0.6,
   /** Shots snap (by aimAssist) onto a target within assistRadius view units of the aim point. */
   aimAssist: 1, assistRadius: 22,
+  /** Fire wall: stands at wallDepth where your hands were, blocks attacks crossing it, burns for wallLifeS. */
+  wallDepth: 2.5, wallHalfWidth: 55, wallLifeS: 4, wallCooldownS: 1,
+  /** Ultimate: clears every enemy and incoming attack, then recharges. */
+  ultimateCooldownS: 12,
   /** Testing: the shield never drains or breaks. */
   shieldInfinite: true,
   shieldDrainPerS: 0.33, shieldRegenPerS: 0.22, shieldBlockCost: 0.18, shieldBrokenS: 1.2, shieldReach: 8,
@@ -43,13 +47,17 @@ export interface Proj {
   resolved: boolean;
 }
 
-type PositionedType = 'punch' | 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash';
+type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
+  | { type: 'punch'; x: number; y: number; z: number; side: Side }
   | { type: 'shieldBroken' | 'gameOver' }
   | { type: 'wave'; wave: number };
 
 export type Rand = () => number;
+
+/** A standing wall of fire across the courtyard. */
+export interface Wall { id: number; x: number; z: number; halfW: number; life: number }
 
 /** Where practice dummies stand (world x, depth). */
 const DUMMY_SLOTS = [{ x: -45, z: 6 }, { x: 0, z: 9 }, { x: 45, z: 6 }];
@@ -78,6 +86,9 @@ export class Game {
   inv = 0;
   enemies: Enemy[] = [];
   projs: Proj[] = [];
+  walls: Wall[] = [];
+  /** Seconds until the ultimate is ready again. */
+  ultimateIn = 0;
   /** Tests turn this off to control enemies by hand. */
   spawning = true;
   /** Dummies instead of attacking spirits. */
@@ -90,6 +101,7 @@ export class Game {
   private nextId = 1;
   private dummyTimers = DUMMY_SLOTS.map(() => 0);
   private punchCool: Record<Side, number> = { l: 0, r: 0 };
+  private wallCool = 0;
 
   constructor(private rand: Rand = Math.random, public viewHalfW = 70, practice = false) {
     if (practice) this.setPractice(true);
@@ -116,9 +128,14 @@ export class Game {
     this.hands = intent.hands;
     this.inv = Math.max(0, this.inv - dt);
     this.punchCool = { l: Math.max(0, this.punchCool.l - dt), r: Math.max(0, this.punchCool.r - dt) };
+    this.wallCool = Math.max(0, this.wallCool - dt);
+    this.ultimateIn = Math.max(0, this.ultimateIn - dt);
     this.updateShield(dt, intent.shield);
     if (this.state !== 'play') return;
     for (const p of intent.punches) this.punch(p);
+    for (const c of intent.casts) this.cast(c);
+    for (const w of this.walls) w.life -= dt;
+    this.walls = this.walls.filter(w => w.life > 0);
     this.updateWaves(dt);
     this.updateEnemies(dt);
     this.updateProjs(dt);
@@ -194,7 +211,36 @@ export class Game {
       id: this.nextId++, kind: 'player', x: start.x, y: start.y, z: TUNE.launchZ,
       vx: (target.x - start.x) / T, vy: (target.y - start.y) / T, vz: TUNE.fireballSpeed, r: TUNE.fireballRadius, resolved: false,
     });
-    this.emit('punch', start.x, start.y, TUNE.launchZ);
+    this.events.push({ type: 'punch', x: start.x, y: start.y, z: TUNE.launchZ, side: p.hand });
+  }
+
+  /** 0 = just used … 1 = ready. */
+  get ultimateCharge(): number {
+    return 1 - this.ultimateIn / TUNE.ultimateCooldownS;
+  }
+
+  private cast(c: Cast): void {
+    if (c.kind === 'wall') {
+      if (this.wallCool > 0) return;
+      this.wallCool = TUNE.wallCooldownS;
+      // stand the wall where the hands appear on screen, at its depth
+      const x = this.cam.x + c.at.x / depthScale(TUNE.wallDepth);
+      this.walls.push({ id: this.nextId++, x, z: TUNE.wallDepth, halfW: TUNE.wallHalfWidth, life: TUNE.wallLifeS });
+      this.emit('wall', x, FLOOR_Y, TUNE.wallDepth);
+      return;
+    }
+    if (this.ultimateIn > 0) return;
+    this.ultimateIn = TUNE.ultimateCooldownS;
+    for (const e of this.enemies) {
+      if (e.hp <= 0) continue;
+      e.hp = 0;
+      e.flash = 1;
+      this.score += 100;
+      this.emit('killEnemy', e.x, e.y, e.z);
+    }
+    this.projs = this.projs.filter(p => p.kind === 'player');
+    const at = this.handWorld(c.at);
+    this.emit('ultimate', at.x, at.y, 0);
   }
 
   /** The living enemy that appears closest to `aim` on screen, if within assist range. */
@@ -334,6 +380,14 @@ export class Game {
         }
         if (p.z > 14) dead.add(p.id);
       } else {
+        const z0 = p.z - p.vz * dt;
+        const wall = this.walls.find(w => z0 > w.z && p.z <= w.z && Math.abs(p.x - w.x) <= w.halfW + p.r);
+        if (wall) {
+          dead.add(p.id);
+          this.score += 15;
+          this.emit('blocked', p.x, p.y, wall.z);
+          continue;
+        }
         if (!p.resolved && p.z <= 0.2) {
           p.resolved = true;
           if (this.resolveIncoming(p)) dead.add(p.id);

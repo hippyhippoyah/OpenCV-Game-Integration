@@ -37,6 +37,8 @@ canvas#game { display: block; width: 100vw; height: 100vh; cursor: none; }
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(6px); }
 #shieldBar > i { background: linear-gradient(90deg, #ff8a3d, #ffe08a); }
 #shieldBar.broken > i { background: #6b4a3a; }
+#ultBar > i { background: linear-gradient(90deg, #b8325a, #ff6a3d 60%, #ffd27a); }
+#ultBar.ready { box-shadow: 0 0 12px rgba(255,140,60,.6); }
 .state { float: right; letter-spacing: .1em; }
 
 .br { position: absolute; right: 16px; bottom: 16px; width: min(220px, 40vw); padding: 8px;

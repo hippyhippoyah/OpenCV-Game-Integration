@@ -1,6 +1,6 @@
 import type { ArmObs, HandObs, Side, Tracker, TrackingFrame } from './types';
 import type { Calibration } from '../intent/calibration';
-import { TUNING } from '../intent/interpret';
+import { TUNING, type CastKind } from '../intent/interpret';
 import { clamp, lerp, type Vec2 } from '../math';
 
 /** The body the mock pretends to see, which is also its calibration. */
@@ -9,6 +9,8 @@ const MID = { x: 0.5, y: 0.5 }, SW = 0.2, HAND_SIZE = 0.08;
 /** Fists up at chest height, in view units. */
 const GUARD: Record<Side, Vec2> = { l: { x: -12, y: 22 }, r: { x: 12, y: 22 } };
 const EXTEND_S = 0.12, OPEN_HOLD_S = 0.25, SHIELD_HALF_WIDTH = 16;
+/** Two-hand casts: open hands move for CAST_MOVE_S, then stay open for CAST_HOLD_S. */
+const CAST_MOVE_S = 0.25, CAST_HOLD_S = 0.3;
 /** Where the right hand goes while O is held: out past the right edge of the picture. */
 const OUT_OF_VIEW: Vec2 = { x: 140, y: 10 };
 
@@ -17,6 +19,7 @@ export interface ViewMapper { screenToView(x: number, y: number): Vec2 }
 /**
  * Pretends to be the camera. The mouse is where you aim; a punch drives that fist to the mouse
  * (opening it at the end in the open-hand punch style); holding Space opens both hands around the mouse (shield); A/D/S lean and duck;
+ * W sweeps open hands up (fire wall); U spreads open hands apart (ultimate);
  * holding O swings the right hand out of the picture (only its arm is still tracked).
  */
 export class MockTracker implements Tracker {
@@ -27,12 +30,15 @@ export class MockTracker implements Tracker {
   private lastT: number | null = null;
   private punchStart: Record<Side, number | null> = { l: null, r: null };
   private requested: Side[] = [];
+  private castReq: CastKind | null = null;
+  private casting: { kind: CastKind; t: number } | null = null;
 
   constructor(private view: ViewMapper) {}
 
   setMouse(x: number, y: number): void { this.mouse = { x, y }; }
   setKey(key: string, down: boolean): void { if (down) this.keys.add(key); else this.keys.delete(key); }
   punch(side: Side): void { this.requested.push(side); }
+  cast(kind: CastKind): void { this.castReq = kind; }
 
   poll(now: number): TrackingFrame {
     const t = now / 1000, dt = this.lastT === null ? 0 : clamp(t - this.lastT, 0, 0.05);
@@ -48,6 +54,9 @@ export class MockTracker implements Tracker {
     const head = { x: MOCK_CALIBRATION.head.x + mid.x - MID.x, y: MOCK_CALIBRATION.head.y + mid.y - MID.y };
     const aim = this.view.screenToView(this.mouse.x, this.mouse.y);
     const shield = this.keys.has(' ');
+    if (this.castReq && !this.casting) this.casting = { kind: this.castReq, t };
+    this.castReq = null;
+    if (this.casting && t - this.casting.t > CAST_MOVE_S + CAST_HOLD_S) this.casting = null;
 
     const toNorm = (p: Vec2): Vec2 => ({
       x: mid.x + (p.x / TUNING.handScaleX) * SW,
@@ -61,7 +70,14 @@ export class MockTracker implements Tracker {
       const start = this.punchStart[side];
       const since = start === null ? null : t - start;
       if (since !== null && since > EXTEND_S + OPEN_HOLD_S) this.punchStart[side] = null;
-      if (shield) {
+      if (this.casting) {
+        const e = clamp((t - this.casting.t) / CAST_MOVE_S, 0, 1);
+        pos = this.casting.kind === 'wall'
+          ? { x: aim.x + sign * 14, y: lerp(40, aim.y - 10, e) } // from low, sweeping up
+          : { x: aim.x + sign * lerp(4, 34, e), y: aim.y };      // from together, spreading apart
+        open = 1;
+        ext = 0.6;
+      } else if (shield) {
         pos = { x: aim.x + sign * SHIELD_HALF_WIDTH, y: aim.y };
         open = 1;
         facing = 0.2;
@@ -113,7 +129,10 @@ export function bindMockControls(m: MockTracker, canvas: HTMLElement): () => voi
   const onMenu = (e: Event) => e.preventDefault();
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === ' ') e.preventDefault();
-    m.setKey(e.key.toLowerCase(), true);
+    const k = e.key.toLowerCase();
+    if (!e.repeat && k === 'w') m.cast('wall');
+    if (!e.repeat && k === 'u') m.cast('ultimate');
+    m.setKey(k, true);
   };
   const onKeyUp = (e: KeyboardEvent) => m.setKey(e.key.toLowerCase(), false);
   addEventListener('mousemove', onMove);

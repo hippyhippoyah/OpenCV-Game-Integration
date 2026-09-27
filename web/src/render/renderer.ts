@@ -1,4 +1,5 @@
-import { arrival, FLOOR_Y, FOCAL, type Enemy, type Game, type GameEvent } from '../game/game';
+import { arrival, FLOOR_Y, FOCAL, type Enemy, type Game, type GameEvent, type Wall } from '../game/game';
+import type { Side } from '../input/types';
 import { clamp, lerp, mulberry32, type Vec2 } from '../math';
 
 type Pal = 'fire' | 'spirit';
@@ -9,7 +10,9 @@ interface Particle {
 
 /** How far each background layer shifts when your head moves (1 = as much as the floor at your feet). */
 const PAR_SKY = 0.03, PAR_MID = 0.16;
-const MAX_PARTICLES = 2600;
+const MAX_PARTICLES = 3200;
+/** How long a hand keeps burning after it attacks; how long the ultimate's shockwave lasts. */
+const FLARE_S = 0.35, NOVA_S = 0.9;
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const nOf = (rate: number, dt: number) => { const x = rate * dt; return Math.floor(x) + (Math.random() < x % 1 ? 1 : 0); };
 
@@ -50,6 +53,10 @@ export class Renderer {
   private t = 0;
   private shake = 0;
   private flash = 0;
+  /** Seconds of fire left in each hand after it attacks (hands only burn while doing something). */
+  private flare: Record<Side, number> = { l: 0, r: 0 };
+  /** The ultimate's shockwave: screen origin and age in seconds. */
+  private nova: { x: number; y: number; t: number } | null = null;
   private cam: Vec2 = { x: 0, y: 0 };
   private sky = document.createElement('canvas');
   private mid = document.createElement('canvas');
@@ -97,7 +104,24 @@ export class Renderer {
 
   onEvent(e: GameEvent): void {
     switch (e.type) {
-      case 'punch': this.burst(e.x, e.y, e.z, 'fire', 26, 30); this.shake = Math.max(this.shake, 0.12); break;
+      case 'punch':
+        this.burst(e.x, e.y, e.z, 'fire', 26, 30);
+        this.shake = Math.max(this.shake, 0.12);
+        this.flare[e.side] = FLARE_S;
+        break;
+      case 'wall':
+        for (let i = 0; i < 80; i++) this.emit(e.x + rnd(-30, 30), e.y - rnd(0, 4), e.z, rnd(-8, 8), rnd(-70, -30), 0, rnd(0.4, 0.8), rnd(4, 8));
+        this.shake = Math.max(this.shake, 0.3);
+        this.flare = { l: FLARE_S * 1.5, r: FLARE_S * 1.5 };
+        break;
+      case 'ultimate': {
+        const p = this.project(e.x, e.y, 0);
+        this.nova = { x: p.x, y: p.y, t: 0 };
+        this.burst(e.x, e.y, 0.5, 'fire', 160, 110);
+        this.shake = 1;
+        this.flare = { l: FLARE_S * 3, r: FLARE_S * 3 };
+        break;
+      }
       case 'hitEnemy':
       case 'killEnemy': this.burst(e.x, e.y, e.z, 'fire', 30, 40); break;
       case 'clash': this.burst(e.x, e.y, e.z, 'spirit', 24, 34); break;
@@ -117,6 +141,8 @@ export class Renderer {
     this.updateParticles(dt);
     this.shake = Math.max(0, this.shake - dt * 2.5);
     this.flash = Math.max(0, this.flash - dt * 2);
+    this.flare = { l: Math.max(0, this.flare.l - dt), r: Math.max(0, this.flare.r - dt) };
+    if (this.nova && (this.nova.t += dt) > NOVA_S) this.nova = null;
 
     const c = this.ctx, { W, H, M, u } = this;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -130,6 +156,7 @@ export class Renderer {
     this.drawLanterns(mx + M, my + M);
 
     if (g) [...g.enemies].sort((a, b) => b.z - a.z).forEach(e => this.drawEnemy(e));
+    if (g) g.walls.forEach(w => this.drawWall(w));
     this.drawParticles(true);
     if (g) {
       this.drawProjectiles(g, true);
@@ -140,16 +167,18 @@ export class Renderer {
       this.drawOffscreenHands(g);
     }
     this.drawParticles(false);
-    if (g && !g.shield.on) {
-      // a bright core in each open palm
+    if (g) {
+      // a bright core in a hand that is releasing fire
       c.globalCompositeOperation = 'lighter';
-      for (const h of [g.hands.l, g.hands.r]) {
-        if (!h?.open || !h.inView) continue;
-        const p = this.viewToScreen(h.pos), r = 3 * u * (0.95 + 0.08 * Math.sin(this.t * 25));
+      for (const side of ['l', 'r'] as const) {
+        const h = g.hands[side];
+        if (!h?.inView || this.flare[side] <= 0) continue;
+        const p = this.viewToScreen(h.pos), r = 3 * u * (this.flare[side] / FLARE_S) ** 0.5;
         c.drawImage(SPR.fire[0], p.x - r, p.y - r, r * 2, r * 2);
       }
       c.globalCompositeOperation = 'source-over';
     }
+    if (this.nova) this.drawNova(this.nova);
 
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.drawImage(this.vig, 0, 0, W, H);
@@ -409,15 +438,21 @@ export class Renderer {
     }
   }
 
-  /** Warm light around each hand (small for embers in a fist, big for open flame) and the shield's flame sheet. */
+  /** How strongly a hand burns right now: attacking or shielding, else not at all. */
+  private burning(g: Game, side: Side): number {
+    return Math.max(g.shield.on ? 1 : 0, Math.min(1, this.flare[side] / FLARE_S));
+  }
+
+  /** Warm light around a hand that is releasing fire, and the shield's flame sheet. */
   private drawHandLight(g: Game): void {
     const c = this.ctx, u = this.u, flicker = 0.9 + 0.1 * Math.sin(this.t * 20);
     c.globalCompositeOperation = 'lighter';
-    for (const h of [g.hands.l, g.hands.r]) {
-      if (!h?.inView) continue;
-      const C = this.viewToScreen(h.pos), r = (h.open ? 32 : 12) * u;
+    for (const side of ['l', 'r'] as const) {
+      const h = g.hands[side], burn = this.burning(g, side);
+      if (!h?.inView || burn <= 0) continue;
+      const C = this.viewToScreen(h.pos), r = 32 * u;
       const gr = c.createRadialGradient(C.x, C.y, 0, C.x, C.y, r);
-      gr.addColorStop(0, `rgba(255,140,60,${(h.open ? 0.26 : 0.14) * flicker})`); gr.addColorStop(1, 'rgba(255,120,40,0)');
+      gr.addColorStop(0, `rgba(255,140,60,${0.26 * burn * flicker})`); gr.addColorStop(1, 'rgba(255,120,40,0)');
       c.fillStyle = gr;
       c.fillRect(C.x - r, C.y - r, r * 2, r * 2);
     }
@@ -479,13 +514,14 @@ export class Renderer {
 
   private drawHands(g: Game): void {
     const hands = ([['l', -1], ['r', 1]] as const)
-      .map(([side, sign]) => ({ h: g.hands[side], sign }))
-      .filter((x): x is { h: NonNullable<typeof x.h>; sign: -1 | 1 } => x.h !== null && x.h.inView);
+      .map(([side, sign]) => ({ h: g.hands[side], sign, burn: this.burning(g, side) }))
+      .filter((x): x is { h: NonNullable<typeof x.h>; sign: -1 | 1; burn: number } => x.h !== null && x.h.inView);
     if (!hands.length) return;
     const c = this.ctx, u = this.u, flicker = 0.9 + 0.1 * Math.sin(this.t * 20);
     // rim glow first, then the dark hands, lit on top by their own fire
-    for (const { h, sign } of hands) {
-      c.strokeStyle = c.fillStyle = `rgba(255,130,60,${(h.open ? 0.4 : 0.18) * flicker})`;
+    // idle hands keep only a faint warm rim so you can see them; burning hands glow
+    for (const { h, sign, burn } of hands) {
+      c.strokeStyle = c.fillStyle = `rgba(255,130,60,${(0.12 + 0.3 * burn) * flicker})`;
       this.handShape(c, this.viewToScreen(h.pos), sign, 0.9 * u, h.open, h.elbow && this.viewToScreen(h.elbow));
     }
     const hl = this.handLayer.getContext('2d')!;
@@ -495,13 +531,51 @@ export class Renderer {
     hl.strokeStyle = hl.fillStyle = g.inv > 0 && Math.sin(this.t * 40) > 0 ? '#3a1216' : '#150f19';
     for (const { h, sign } of hands) this.handShape(hl, this.viewToScreen(h.pos), sign, 0, h.open, h.elbow && this.viewToScreen(h.elbow));
     hl.globalCompositeOperation = 'source-atop';
-    for (const { h } of hands) {
+    for (const { h, burn } of hands) {
       const C = this.viewToScreen(h.pos), gr = hl.createRadialGradient(C.x, C.y - 3 * u, 0, C.x, C.y, 30 * u);
-      gr.addColorStop(0, `rgba(255,160,80,${(h.open ? 0.8 : 0.4) * flicker})`); gr.addColorStop(1, 'rgba(255,90,30,0)');
+      gr.addColorStop(0, `rgba(255,160,80,${(0.18 + 0.62 * burn) * flicker})`); gr.addColorStop(1, 'rgba(255,90,30,0)');
       hl.fillStyle = gr;
       hl.fillRect(0, 0, this.W, this.H);
     }
     c.drawImage(this.handLayer, 0, 0, this.W, this.H);
+  }
+
+  /** A glowing curtain behind a fire wall's flames, fading as it burns out. */
+  private drawWall(w: Wall): void {
+    const c = this.ctx, fade = Math.min(1, w.life / 0.6), top = FLOOR_Y - 75;
+    const a = this.project(w.x - w.halfW, FLOOR_Y, w.z), b = this.project(w.x + w.halfW, FLOOR_Y, w.z);
+    const at = this.project(w.x - w.halfW, top, w.z), bt = this.project(w.x + w.halfW, top, w.z);
+    const gr = c.createLinearGradient(0, a.y, 0, at.y);
+    gr.addColorStop(0, `rgba(255,140,50,${0.45 * fade})`);
+    gr.addColorStop(0.6, `rgba(255,90,30,${0.18 * fade})`);
+    gr.addColorStop(1, 'rgba(255,60,20,0)');
+    c.globalCompositeOperation = 'lighter';
+    c.fillStyle = gr;
+    c.beginPath();
+    c.moveTo(a.x, a.y);
+    c.lineTo(b.x, b.y);
+    for (let i = 0; i <= 12; i++) {
+      const k = 1 - i / 12, x = lerp(at.x, bt.x, k);
+      c.lineTo(x, lerp(at.y, bt.y, k) + (a.y - at.y) * 0.25 * (1 + Math.sin(k * 17 + this.t * 9)));
+    }
+    c.closePath();
+    c.fill();
+    c.globalCompositeOperation = 'source-over';
+  }
+
+  /** The ultimate: a ring of fire racing out from your hands across the whole screen. */
+  private drawNova(n: { x: number; y: number; t: number }): void {
+    const c = this.ctx, k = n.t / NOVA_S, r = k * Math.hypot(this.W, this.H), alpha = 1 - k;
+    c.globalCompositeOperation = 'lighter';
+    const gr = c.createRadialGradient(n.x, n.y, Math.max(0, r - 40 * this.u), n.x, n.y, r);
+    gr.addColorStop(0, 'rgba(255,120,40,0)');
+    gr.addColorStop(0.8, `rgba(255,170,80,${0.55 * alpha})`);
+    gr.addColorStop(1, 'rgba(255,230,160,0)');
+    c.fillStyle = gr;
+    c.fillRect(0, 0, this.W, this.H);
+    c.fillStyle = `rgba(255,120,40,${0.25 * alpha * alpha})`;
+    c.fillRect(0, 0, this.W, this.H);
+    c.globalCompositeOperation = 'source-over';
   }
 
   /** A hand outside the camera picture: a marker at the nearest screen edge, pointing toward it. */
@@ -550,19 +624,21 @@ export class Renderer {
   }
 
   private emitFromState(g: Game, dt: number): void {
-    // embers smoulder in closed fists; open hands pour out flame
-    for (const h of [g.hands.l, g.hands.r]) {
-      if (!h?.inView || (h.open && g.shield.on)) continue;
+    // hands only pour out flame just after they attack (the shield has its own flames below)
+    for (const side of ['l', 'r'] as const) {
+      const h = g.hands[side], flare = this.flare[side] / FLARE_S;
+      if (!h?.inView || flare <= 0 || g.shield.on) continue;
       const w = g.handWorld(h.pos), vx0 = h.vel.x * 0.3, vy0 = h.vel.y * 0.3;
-      if (h.open) {
-        for (let i = nOf(110, dt); i > 0; i--) {
-          const a = Math.random() * 6.283, d = Math.sqrt(Math.random()) * 1.8;
-          this.emit(w.x + Math.cos(a) * d, w.y - 2 + Math.sin(a) * d, 0, rnd(-5, 5) + vx0, rnd(-18, -6) + vy0, 0, rnd(0.3, 0.55), rnd(2.2, 3.6));
-        }
-      } else {
-        for (let i = nOf(24, dt); i > 0; i--) {
-          this.emit(w.x + rnd(-2.5, 2.5), w.y - 3 + rnd(-1, 1), 0, rnd(-3, 3) + vx0, rnd(-14, -6) + vy0, 0, rnd(0.3, 0.7), rnd(0.6, 1.4));
-        }
+      for (let i = nOf(140 * Math.min(1, flare), dt); i > 0; i--) {
+        const a = Math.random() * 6.283, d = Math.sqrt(Math.random()) * 1.8;
+        this.emit(w.x + Math.cos(a) * d, w.y - 2 + Math.sin(a) * d, 0, rnd(-5, 5) + vx0, rnd(-18, -6) + vy0, 0, rnd(0.3, 0.55), rnd(2.2, 3.6));
+      }
+    }
+    // standing fire walls
+    for (const wall of g.walls) {
+      const fade = Math.min(1, wall.life / 0.6);
+      for (let i = nOf(520 * fade, dt); i > 0; i--) {
+        this.emit(wall.x + rnd(-wall.halfW, wall.halfW), FLOOR_Y - rnd(0, 6), wall.z, rnd(-4, 4), rnd(-110, -55), 0, rnd(0.55, 1.05), rnd(5, 9));
       }
     }
     const { l, r } = g.hands;

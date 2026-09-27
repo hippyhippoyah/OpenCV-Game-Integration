@@ -8,7 +8,7 @@ const hs = (x: number, y: number, open = false): HandState =>
   ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true });
 const guard = () => ({ l: hs(-12, 22), r: hs(12, 22) });
 const intent = (o: Partial<Intent> = {}): Intent =>
-  ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], shield: false, face: null, bodyTilt: 0, ...o });
+  ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], shield: false, casts: [], face: null, bodyTilt: 0, ...o });
 const punch = (hand: Side, x: number, y: number, dir: Punch['dir'] = null): Punch => ({ hand, at: { x, y }, shoulder: SHOULDERS[hand], dir });
 const shieldUp = (y = 0) => intent({ hands: { l: hs(-15, y, true), r: hs(15, y, true) }, shield: true });
 const incoming = (x: number, y: number, id = 999): Proj =>
@@ -30,7 +30,7 @@ describe('Game', () => {
       g.step(1 / 60, intent({ punches: [punch('r', 10, 5)] }));
       expect(g.projs).toHaveLength(1);
       expect(g.projs[0].kind).toBe('player');
-      expect(g.drainEvents()).toContainEqual({ type: 'punch', x: 10, y: 5, z: TUNE.launchZ });
+      expect(g.drainEvents()).toContainEqual({ type: 'punch', x: 10, y: 5, z: TUNE.launchZ, side: 'r' });
     });
 
     it('each hand has its own short cooldown', () => {
@@ -96,6 +96,76 @@ describe('Game', () => {
       run(g, 0.2, shieldUp(0));
       expect(g.hp).toBe(TUNE.maxHp);
       expect(g.drainEvents().some(e => e.type === 'blocked')).toBe(true);
+    });
+  });
+
+  describe('fire wall', () => {
+    const wall = (x = 0) => intent({ casts: [{ kind: 'wall', at: { x, y: 10 } }] });
+
+    it('rises in front of you where your hands are and blocks attacks', () => {
+      const g = quietGame();
+      g.step(1 / 60, wall());
+      expect(g.walls).toHaveLength(1);
+      expect(g.walls[0].z).toBe(TUNE.wallDepth);
+      g.projs.push({ ...incoming(0, 0), z: TUNE.wallDepth + 0.5 });
+      run(g, 0.5, intent());
+      expect(g.hp).toBe(TUNE.maxHp);
+      expect(g.drainEvents().some(e => e.type === 'blocked')).toBe(true);
+    });
+
+    it('only covers its own width', () => {
+      const g = quietGame();
+      g.step(1 / 60, wall(-60));
+      g.projs.push({ ...incoming(0, 0), z: TUNE.wallDepth + 0.5 });
+      run(g, 0.8, intent()); // long enough to reach you
+      expect(g.hp).toBe(TUNE.maxHp - TUNE.hitDamage);
+    });
+
+    it('lets your own fireballs through', () => {
+      const g = quietGame();
+      g.step(1 / 60, wall());
+      g.step(1 / 60, intent({ punches: [punch('r', 0, 0)] }));
+      run(g, 0.4, intent());
+      expect(g.projs[0].z).toBeGreaterThan(TUNE.wallDepth);
+    });
+
+    it('burns out after a few seconds and has a short cooldown', () => {
+      const g = quietGame();
+      g.step(1 / 60, wall());
+      g.step(1 / 60, wall());
+      expect(g.walls).toHaveLength(1);
+      run(g, TUNE.wallLifeS, intent());
+      expect(g.walls).toHaveLength(0);
+    });
+  });
+
+  describe('ultimate', () => {
+    const ultimate = intent({ casts: [{ kind: 'ultimate', at: { x: 0, y: 0 } }] });
+
+    it('clears every enemy and every incoming attack', () => {
+      const g = new Game(mulberry32(2));
+      run(g, 4, intent());
+      expect(g.enemies.filter(e => e.hp > 0).length).toBeGreaterThan(0);
+      g.projs.push(incoming(0, 0));
+      g.drainEvents();
+      g.step(1 / 60, ultimate);
+      expect(g.enemies.every(e => e.hp <= 0)).toBe(true);
+      expect(g.projs.filter(p => p.kind === 'enemy')).toHaveLength(0);
+      expect(g.drainEvents().some(e => e.type === 'ultimate')).toBe(true);
+    });
+
+    it('has to recharge before it can be used again', () => {
+      const g = new Game(mulberry32(3), 70, true);
+      expect(g.ultimateCharge).toBe(1);
+      g.step(1 / 60, ultimate);
+      expect(g.ultimateCharge).toBeLessThan(0.01);
+      run(g, 2, intent()); // dummies are back
+      g.step(1 / 60, ultimate);
+      expect(g.enemies.every(e => e.hp > 0)).toBe(true);
+      run(g, TUNE.ultimateCooldownS, intent());
+      expect(g.ultimateCharge).toBe(1);
+      g.step(1 / 60, ultimate);
+      expect(g.enemies.every(e => e.hp <= 0)).toBe(true);
     });
   });
 

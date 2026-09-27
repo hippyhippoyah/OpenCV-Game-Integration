@@ -36,10 +36,20 @@ describe('MockTracker', () => {
         expect(Math.abs(punches[0].at.y - 5)).toBeLessThan(6);
         expect(out.some(o => o.hands.r!.open)).toBe(style === 'open');
       } finally {
-        TUNING.punchTrigger = 'extend';
+        TUNING.punchTrigger = 'open';
       }
     });
   }
+
+  it('W sweeps open hands up into a fire wall, U spreads them into the ultimate', () => {
+    for (const [key, kind] of [['w', 'wall'], ['u', 'ultimate']] as const) {
+      const m = new MockTracker(identity);
+      m.setMouse(0, 5);
+      const out = run(m, 60, i => { if (i === 5) m.cast(kind); });
+      expect(out.flatMap(o => o.casts.map(c => c.kind)), key).toEqual([kind]);
+      expect(out.flatMap(o => o.punches), key).toHaveLength(0);
+    }
+  });
 
   it('holding Space opens both hands into a shield without punching', () => {
     const m = new MockTracker(identity);

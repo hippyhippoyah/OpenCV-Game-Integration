@@ -16,9 +16,7 @@ export class Hud {
     pill.classList.toggle('shield', g.shield.on);
     const [name, hint] = g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
       : noHands ? ['NO HANDS', 'raise your fists into view']
-        : ['GUARD', TUNING.punchTrigger === 'extend'
-          ? 'punch to shoot · open both hands to shield'
-          : 'punch, then open your hand to shoot · open both hands to shield'];
+        : ['GUARD', `${TUNING.punchTrigger === 'extend' ? 'punch' : 'punch & open'}: shoot · still open hands: shield · sweep up: wall · spread: ultimate`];
     const lost = (['l', 'r'] as const).filter(side => hands[side] && !hands[side]!.inView);
     $('modeName').textContent = name;
     $('modeHint').textContent = lost.length
@@ -26,6 +24,10 @@ export class Hud {
       : hint;
     $('shieldFill').style.width = `${Math.round(g.shield.energy * 100)}%`;
     $('shieldBar').classList.toggle('broken', g.shield.broken > 0);
+    const ready = g.ultimateCharge >= 1;
+    $('ultFill').style.width = `${Math.round(g.ultimateCharge * 100)}%`;
+    $('ultBar').classList.toggle('ready', ready);
+    $('ultState').textContent = ready ? 'ready' : `${Math.ceil(g.ultimateIn)}s`;
     $('shieldState').textContent = g.shield.broken > 0 ? 'broken' : g.shield.on ? (TUNE.shieldInfinite ? 'holding · unlimited' : 'holding')
       : g.shield.energy < 1 ? 'recharging' : 'ready';
   }
@@ -38,6 +40,8 @@ export class Hud {
       case 'playerHit': this.toast('HIT', 'bad'); break;
       case 'shieldBroken': this.toast('SHIELD BROKEN', 'bad'); break;
       case 'killEnemy': this.toast('+100'); break;
+      case 'wall': this.toast('FIRE WALL'); break;
+      case 'ultimate': this.banner('ULTIMATE'); break;
       case 'wave': this.banner(`WAVE ${e.wave}`); break;
     }
   }

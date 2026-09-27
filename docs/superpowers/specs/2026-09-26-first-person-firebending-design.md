@@ -123,3 +123,17 @@ Replaces the palms-together summon and push-throw, which depended on weak depth 
   blended 60% with the 2D aim), then snaps to a nearby target.
 - **Debug panel** shows per-arm extension bars with the fire (orange) and re-arm (green) marks and
   a ready dot, plus the current punch style.
+
+## Revision 2026-09-27: back to open-hand punches; fire wall and ultimate
+
+- **Default punch = open-hand release** again (`punchTrigger: 'open'`). Fist punches stay behind `P`
+  until a tracking recording (`K`) shows why arm extension didn't fire on a real camera.
+- **Fire wall:** both hands open, then both rise ≥ 14 view units within 0.4 s (measured only after
+  both are open) → a wall at depth 2.5 where the hands are, ±55 world units wide, for 4 s. It
+  blocks enemy attacks crossing it; your fireballs pass through. 1 s cooldown.
+- **Ultimate:** both hands open, then spread apart ≥ 24 view units within 0.4 s → every enemy
+  destroyed (+100 each) and every incoming attack cleared. 12 s recharge (HUD meter).
+- **Shield** now needs both open hands held still (< 35 view units/s) for 0.15 s to come up, so a
+  sweep or spread doesn't raise it; once up it stays while both hands are open.
+- **Fire only when doing something:** idle fists and open hands stay dark (faint rim only). Hands
+  burn for 0.35 s after a punch, while shielding, and after a cast.

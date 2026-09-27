@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initialState, interpret, TUNING, type Intent } from './interpret';
 import type { Calibration } from './calibration';
 import { arm, bodyFrame, hand, type HandSpec } from '../test/frames';
@@ -29,7 +29,7 @@ function rightPunch(to: HandSpec): Pair[] {
 }
 
 describe('interpret', () => {
-  afterEach(() => { TUNING.punchTrigger = 'extend'; });
+  afterEach(() => { TUNING.punchTrigger = 'open'; });
 
   it('maps hands relative to the shoulders, independent of distance to the camera', () => {
     const at = (mid: Vec2, sw: number) =>
@@ -88,9 +88,10 @@ describe('interpret', () => {
       ...repeat(6, () => [GUARD_L, GUARD_R]),
       ...repeat(3, i => [{ x: -0.3 - 0.15 * (i + 1), y: 0.1 - 0.2 * (i + 1) }, { x: 0.3 + 0.15 * (i + 1), y: 0.1 - 0.2 * (i + 1) }]),
       [{ x: -0.75, y: -0.5 }, { x: 0.75, y: -0.5, open: 1 }],
-      ...repeat(10, () => [{ x: -0.75, y: -0.5, open: 1 }, { x: 0.75, y: -0.5, open: 1 }]),
+      ...repeat(16, () => [{ x: -0.75, y: -0.5, open: 1 }, { x: 0.75, y: -0.5, open: 1 }]),
     ]);
     expect(punchesIn(out)).toHaveLength(0);
+    expect(out.flatMap(o => o.casts)).toHaveLength(0); // spreading before opening is not an ultimate
     expect(out[11].shield).toBe(false);
     expect(out[out.length - 1].shield).toBe(true);
   });
@@ -118,6 +119,7 @@ describe('interpret', () => {
   });
 
   describe('fist punches (arm extension)', () => {
+    beforeEach(() => { TUNING.punchTrigger = 'extend'; });
     const armFrame = (i: number, extR: number, o: { openR?: number; openL?: number; reachR?: { x: number; y: number; z: number }; at?: HandSpec } = {}) => {
       const at = o.at ?? { x: 0.2, y: -0.2 };
       return bodyFrame(i / FPS, {
@@ -166,6 +168,49 @@ describe('interpret', () => {
       const out = runExt(punchExt);
       expect(out[3].hands.r!.punchReady).toBe(true);
       expect(out.at(-1)!.hands.r!.punchReady).toBe(false);
+    });
+  });
+
+  describe('two-hand casts', () => {
+    const OPEN = 1;
+    /** Fists at the start of `path`, then hands open as they move along it over `frames` frames (k: 0 → 1), then held open. */
+    function cast(path: (k: number) => [HandSpec, HandSpec], frames: number): Intent[] {
+      const [l0, r0] = path(0);
+      return play([
+        ...repeat(8, () => [l0, r0]),
+        ...repeat(frames, i => path((i + 1) / frames).map(h => ({ ...h, open: OPEN }))),
+        ...repeat(10, () => path(1).map(h => ({ ...h, open: OPEN }))),
+      ]);
+    }
+    const kinds = (out: Intent[]) => out.flatMap(o => o.casts.map(c => c.kind));
+    const sweepUp = (k: number): [HandSpec, HandSpec] => [{ x: -0.35, y: 0.6 - 1.2 * k }, { x: 0.35, y: 0.6 - 1.2 * k }];
+    const spread = (k: number): [HandSpec, HandSpec] => [{ x: -0.1 - 0.9 * k, y: -0.3 }, { x: 0.1 + 0.9 * k, y: -0.3 }];
+
+    it('open hands sweeping up quickly make a fire wall, where the hands are', () => {
+      const out = cast(sweepUp, 6);
+      expect(kinds(out)).toEqual(['wall']);
+      const wall = out.flatMap(o => o.casts)[0];
+      expect(Math.abs(wall.at.x)).toBeLessThan(2);
+    });
+
+    it('open hands spreading apart quickly make the ultimate', () => {
+      expect(kinds(cast(spread, 6))).toEqual(['ultimate']);
+    });
+
+    it('slow movements cast nothing', () => {
+      expect(kinds(cast(sweepUp, 60))).toEqual([]);
+      expect(kinds(cast(spread, 60))).toEqual([]);
+    });
+
+    it('casting neither punches nor raises the shield mid-gesture', () => {
+      const out = cast(sweepUp, 6);
+      expect(punchesIn(out)).toHaveLength(0);
+      expect(out.slice(8, 14).some(o => o.shield)).toBe(false);
+    });
+
+    it('the shield needs both open hands held still', () => {
+      const still = cast(() => [{ x: -0.5, y: -0.2 }, { x: 0.5, y: -0.2 }], 1);
+      expect(still.at(-1)!.shield).toBe(true);
     });
   });
 

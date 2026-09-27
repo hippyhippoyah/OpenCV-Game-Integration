@@ -5,7 +5,7 @@ import { CameraError, CameraTracker } from './input/camera';
 import { bindMockControls, MOCK_CALIBRATION, MockTracker } from './input/mock';
 import type { Tracker, TrackingFrame } from './input/types';
 import { Calibrator, type Calibration } from './intent/calibration';
-import { initialState, interpret, TUNING, type Intent, type InterpretState, type Punch } from './intent/interpret';
+import { initialState, interpret, TUNING, type Cast, type Intent, type InterpretState, type Punch } from './intent/interpret';
 import { DebugView } from './render/debug';
 import { Hud } from './render/hud';
 import { Renderer } from './render/renderer';
@@ -25,8 +25,9 @@ let calibrator = new Calibrator();
 let calibration: Calibration | null = null;
 let istate: InterpretState = initialState();
 let intent: Intent | null = null;
-/** Punches seen since the last fixed game step. */
+/** Punches and casts seen since the last fixed game step. */
 let pendingPunches: Punch[] = [];
+let pendingCasts: Cast[] = [];
 let lastFrame: TrackingFrame | null = null;
 let game: Game | null = null;
 const params = new URLSearchParams(location.search);
@@ -87,6 +88,7 @@ function beginPlay(): void {
   istate = initialState();
   intent = null;
   pendingPunches = [];
+  pendingCasts = [];
   acc = 0;
   game = new Game(Math.random, renderer.viewHalfW, practice);
   phase = 'play';
@@ -106,6 +108,7 @@ function onFrame(f: TrackingFrame): void {
   } else if (phase === 'play' && calibration) {
     intent = interpret(f, calibration, istate);
     pendingPunches.push(...intent.punches); // held until the next fixed step consumes them
+    pendingCasts.push(...intent.casts);
     recorder.push(f, camera?.lastRaw ?? null, intent);
   }
 }
@@ -118,8 +121,9 @@ function stepGame(dt: number): void {
   if (!intent.present || paused) { acc = 0; return; }
   acc += dt;
   while (acc >= STEP) {
-    game.step(STEP, { ...intent, punches: pendingPunches });
+    game.step(STEP, { ...intent, punches: pendingPunches, casts: pendingCasts });
     pendingPunches = [];
+    pendingCasts = [];
     acc -= STEP;
   }
   for (const e of game.drainEvents()) {
