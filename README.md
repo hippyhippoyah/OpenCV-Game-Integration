@@ -60,3 +60,16 @@ This project is a good step toward integrating pose detection with more advanced
 ## Contributing
 
 This is a personal project, but if you have ideas or improvements, feel free to fork the repository and submit a pull request.
+
+## Web game: first-person firebending (`web/`)
+
+A browser version played with just your webcam: your head moves the camera, your hands make, throw and shield with fire.
+
+```bash
+cd web
+npm install
+npm run dev        # http://localhost:5173 (add ?input=mock to play with mouse & keys)
+npm test
+```
+
+Design: `docs/superpowers/specs/2026-09-26-first-person-firebending-design.md` · visual mockup: `mockup/index.html`
