@@ -20,7 +20,7 @@ export const COUNTDOWN_S = 3;
 export class CampaignRunner {
   state: CampaignState = 'walk';
   stop = 0;
-  rail: Rail;
+  rail!: Rail;
   game: Game | null = null;
   practice: Tutorial | null = null;
   fight: FightRunner | null = null;
@@ -34,13 +34,20 @@ export class CampaignRunner {
   private usedNew = false;
   /** After Daro: the Final Flame and a finisher practice. */
   private epilogue = false;
+  /** Set by `replay()`: the next `walkOn()` returns to your real progress instead of walking on from here. */
+  private replaying = false;
 
   constructor(private progress: Progress, private makeGame: () => Game) {
-    // resume at the first stop not yet done
-    const next = STOPS.findIndex(s => !progress.isDone(s.id));
+    this.resume();
+  }
+
+  /** Put `stop`/`rail` at the first stop not yet done (or the last, if every stop is). Returns true if every stop is done. */
+  private resume(): boolean {
+    const next = STOPS.findIndex(s => !this.progress.isDone(s.id));
     this.stop = next < 0 ? STOPS.length - 1 : next;
     const prev = this.stop > 0 ? STOPS[this.stop - 1].pathAt : 0;
     this.rail = new Rail(prev + (this.stop > 0 ? 0.02 : 0));
+    return next < 0;
   }
 
   get allowed(): Set<MoveName> { return movesFor(this.progress.data.scrolls); }
@@ -59,6 +66,8 @@ export class CampaignRunner {
         // a scroll you already have (replaying) doesn't stop you
         const sc = STOPS[hit.stop].scroll;
         if (hit.kind === 'scroll' && sc && this.progress.hasScroll(sc)) { this.rail.leave(); break; }
+        // an arena you've already cleared (replaying) doesn't stop you either
+        if (hit.kind === 'arena' && this.progress.isDone(STOPS[hit.stop].id)) { this.rail.leave(); break; }
         this.state = hit.kind;
         break;
       }
@@ -132,6 +141,11 @@ export class CampaignRunner {
       this.state = 'scroll';
       return;
     }
+    if (this.replaying) {
+      this.replaying = false;
+      this.state = this.resume() ? 'end' : 'walk';
+      return;
+    }
     this.rail.leave();
     this.state = this.stop === STOPS.length - 1 ? 'end' : 'walk';
   }
@@ -142,6 +156,7 @@ export class CampaignRunner {
     this.ren = STOPS[stop].ren;
     this.state = 'arena';
     this.epilogue = false;
+    this.replaying = true;
   }
 
   private startStop(): void {

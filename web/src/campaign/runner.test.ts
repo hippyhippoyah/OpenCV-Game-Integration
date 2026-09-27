@@ -87,6 +87,28 @@ describe('CampaignRunner', () => {
     expect(r.state).toBe('arena');
   });
 
+  it('replaying a finished stop returns to your real progress after winning it again', () => {
+    const p = Progress.load(null);
+    for (const s of STOPS.slice(0, 3)) {
+      p.completeStop(s.id, 1);
+      if (s.scroll) p.addScroll(s.scroll);
+    }
+    const r = new CampaignRunner(p, make);
+    r.replay(0);
+    expect(r.state).toBe('arena');
+    r.interact();
+    until(r, 'countdown');
+    until(r, 'practice');
+    winFight(r);
+    expect(r.state).toBe('result');
+    r.walkOn();
+    // back to where the campaign really is (past stops 1 and 2, at the resume point), not re-stopping at them
+    expect(r.state).toBe('walk');
+    expect(r.rail.d).toBeCloseTo(STOPS[2].pathAt + 0.02, 5);
+    expect(until(r, 'scroll')).toBe('scroll');
+    expect(r.stop).toBe(3);
+  });
+
   it('beating Daro gives the Final Flame, a finisher practice, then the end of the chapter', () => {
     const p = Progress.load(null);
     for (const s of STOPS.slice(0, -1)) p.completeStop(s.id, 1);
