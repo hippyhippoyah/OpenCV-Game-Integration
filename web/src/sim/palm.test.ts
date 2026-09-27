@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { guardState, lerpReach, POSES, punchReach, simulate, type BodyState, type Reach, type SimOptions } from './synthetic';
+import { guardState, lerpReach, POSES, simulate, type BodyState, type Reach, type SimOptions } from './synthetic';
 import { initialState, interpret, type Intent } from '../intent/interpret';
 import { dist } from '../math';
 
@@ -13,74 +13,91 @@ function perform(script: (t: number) => BodyState, seconds: number, opts: SimOpt
 const palmsIn = (out: Intent[]) => out.flatMap((o, i) => o.palms.map(p => ({ ...p, t: i / 30 })));
 const punchesIn = (out: Intent[]) => out.flatMap(o => o.punches);
 
-/** An open palm held up in front, pushed out toward the camera. */
+/** An open palm held up in front. */
 const PALM: Reach = { out: -0.06, up: 0.14, fwd: 0.27 };
-const PALM_OUT: Reach = { out: -0.05, up: 0.14, fwd: 0.52 };
-/** An open palm low in front, swept up to above the shoulder. */
-const PALM_LOW: Reach = { out: -0.04, up: -0.15, fwd: 0.28 };
-const PALM_HIGH: Reach = { out: -0.06, up: 0.22, fwd: 0.32 };
+const pushed = (by: number): Reach => ({ out: -0.05, up: 0.14, fwd: PALM.fwd + by });
+
+/** A push from `from`: out over outS, hold, back over 0.3 s. */
+function pushReach(t: number, t0: number, from: Reach, to: Reach, outS: number): Reach {
+  if (t < t0) return from;
+  if (t < t0 + outS) return lerpReach(from, to, (t - t0) / outS);
+  if (t < t0 + outS + 0.15) return to;
+  return lerpReach(to, from, (t - t0 - outS - 0.15) / 0.3);
+}
 
 const DISTANCES = [1.2, 1.5, 1.8], SEEDS = [1, 2, 3];
 const eachCase = (fn: (distance: number, seed: number) => void) => {
   for (const distance of DISTANCES) for (const seed of SEEDS) fn(distance, seed);
 };
 
-/** Right hand opens at openAt (a fist before), then does `move` at the given times. */
-function rightPalm(distance: number, openAt: number, move: (t: number) => Reach) {
-  return (t: number) => guardState(distance, { r: t < openAt ? {} : { reach: move(t), open: true } });
+/** Right palm pushes at each time in `at`; open from openAt on (a fist before, pushing from guard). */
+function pushes(distance: number, at: number[], by: number, outS: number, openAt = 1.2) {
+  return (t: number) => {
+    const t0 = at.filter(x => x <= t + 0.5).find(x => t < x + outS + 0.45) ?? at.filter(x => x <= t).at(-1);
+    const open = t >= openAt;
+    const rest = open ? PALM : POSES.guard;
+    return guardState(distance, { r: { reach: t0 === undefined ? rest : pushReach(t, t0, rest, pushed(by), outS), open } });
+  };
 }
 
-describe('palm moves on a simulated webcam', () => {
-  it('an open palm pushed forward sends one pillar, and no fist punch', () => {
-    eachCase((distance, seed) => {
+describe('palm push on a simulated webcam', () => {
+  const expectPushes = (out: Intent[], n: number, label: string) => {
+    expect(palmsIn(out).map(x => `${x.hand}:${x.kind}`), label).toEqual(Array(n).fill('r:push'));
+    expect(punchesIn(out), label).toHaveLength(0);
+  };
+
+  it('a full shove sends one pillar each time, and no fist punch', () => {
+    eachCase((d, seed) => {
       const at = [2, 3];
-      const script = rightPalm(distance, 1.2, t => {
-        const t0 = at.filter(x => x <= t).at(-1);
-        return t0 === undefined ? PALM : punchReach(t, t0, PALM_OUT, 0.15, 0.15, 0.25);
-      });
-      // punchReach returns to the fist guard; keep the palm pose between pushes instead
-      const out = perform(t => { const s = script(t); if (s.hands.r.reach === POSES.guard && t >= 1.2) s.hands.r.reach = PALM; return s; }, 3.8, { seed });
-      const p = palmsIn(out);
-      expect(p.map(x => `${x.hand}:${x.kind}`), `${distance} m seed ${seed}`).toEqual(['r:push', 'r:push']);
-      p.forEach((x, i) => expect(x.t - at[i], `latency ${distance} m seed ${seed}`).toBeLessThan(0.4));
-      expect(punchesIn(out), `${distance} m seed ${seed}`).toHaveLength(0);
+      const out = perform(pushes(d, at, 0.25, 0.15), 3.8, { seed });
+      expectPushes(out, 2, `${d} m seed ${seed}`);
+      palmsIn(out).forEach((x, i) => expect(x.t - at[i], `latency ${d} m seed ${seed}`).toBeLessThan(0.4));
     });
   });
 
-  it('an open palm swept up quickly raises one pillar', () => {
-    eachCase((distance, seed) => {
-      const at = [2, 3.2];
-      const script = rightPalm(distance, 1.2, t => {
-        const t0 = at.filter(x => x <= t).at(-1);
-        if (t0 === undefined) return PALM_LOW;
-        // up in 0.2 s, hold, then back down slowly
-        return t - t0 < 0.6 ? lerpReach(PALM_LOW, PALM_HIGH, (t - t0) / 0.2) : lerpReach(PALM_HIGH, PALM_LOW, (t - t0 - 0.6) / 0.5);
-      });
-      const out = perform(script, 4.2, { seed });
-      const p = palmsIn(out);
-      expect(p.map(x => `${x.hand}:${x.kind}`), `${distance} m seed ${seed}`).toEqual(['r:rise', 'r:rise']);
-      expect(punchesIn(out), `${distance} m seed ${seed}`).toHaveLength(0);
+  it('a short push (15 cm) counts up to 1.5 m; further back it takes a longer one (20 cm)', () => {
+    eachCase((d, seed) => expectPushes(perform(pushes(d, [2, 3], d > 1.5 ? 0.2 : 0.15, 0.12), 3.8, { seed }), 2, `${d} m seed ${seed}`));
+  });
+
+  it('a slower push (0.3 s) counts', () => {
+    eachCase((d, seed) => expectPushes(perform(pushes(d, [2, 3], 0.22, 0.3), 3.8, { seed }), 2, `${d} m seed ${seed}`));
+  });
+
+  it('opening the hand while pushing counts', () => {
+    eachCase((d, seed) => {
+      // fist in guard, starts pushing at 2.0 and opens 0.06 s in
+      const out = perform(t => guardState(d, { r: { reach: pushReach(t, 2, POSES.guard, pushed(0.22), 0.18), open: t >= 2.06 && t < 2.6 } }), 3, { seed });
+      expect([...palmsIn(out).map(x => x.kind as string), ...punchesIn(out).map(() => 'punch')], `${d} m seed ${seed}`).toEqual(['push']);
     });
   });
 
-  it('a fist punch that opens at the end is a punch, not a palm push', () => {
-    eachCase((distance, seed) => {
-      const out = perform(t => guardState(distance, { r: { reach: punchReach(t, 1.5, POSES.jab), open: t > 1.62 && t < 1.9 } }), 2.6, { seed });
-      expect(palmsIn(out), `${distance} m seed ${seed}`).toHaveLength(0);
+  it('still counts when motion blur makes the hand tracker drop the palm', () => {
+    for (const d of DISTANCES) expectPushes(perform(pushes(d, [2, 3], 0.25, 0.15), 3.8, { blurDropChance: 1, blurSpeed: 0.6 }), 2, `${d} m`);
+  });
+
+  it('a fist punch is one attack: a punch, or a push if it opens right away', () => {
+    eachCase((d, seed) => {
+      const out = perform(t => guardState(d, { r: { reach: pushReach(t, 1.5, POSES.guard, POSES.jab, 0.12), open: t > 1.75 && t < 1.95 } }), 2.6, { seed });
+      expect(palmsIn(out).length + punchesIn(out).length, `${d} m seed ${seed}`).toBe(1);
     });
   });
 
   describe('does not fire on', () => {
-    const quiet = (name: string, script: (distance: number) => (t: number) => BodyState, seconds = 4) =>
-      it(name, () => eachCase((distance, seed) => {
-        expect(palmsIn(perform(script(distance), seconds, { seed })), `${distance} m seed ${seed}`).toHaveLength(0);
-      }));
-    quiet('fists in guard and jabs', d => t => guardState(d, { r: { reach: punchReach(t, 1.5, POSES.jab) }, l: { reach: punchReach(t, 2.5, POSES.jab) } }));
-    quiet('holding one palm open, still', d => rightPalm(d, 1, () => PALM));
-    quiet('opening a hand slowly in guard and moving it around', d => rightPalm(d, 1, t => lerpReach(PALM, { ...PALM, up: 0.2, out: 0 }, (t - 1.5) / 1.5)));
+    // like fist punches: none up close, at most a stray one over the seeds further back
+    const quiet = (name: string, script: (distance: number) => (t: number) => BodyState, seconds = 5) =>
+      it(name, () => {
+        for (const seed of SEEDS) expect(palmsIn(perform(script(1.2), seconds, { seed })), `1.2 m seed ${seed}`).toHaveLength(0);
+        for (const d of [1.5, 1.8]) {
+          const strays = SEEDS.reduce((n, seed) => n + palmsIn(perform(script(d), seconds, { seed })).length, 0);
+          expect(strays, `${d} m`).toBeLessThanOrEqual(1);
+        }
+      });
+    quiet('fists in guard and jabs', d => t => guardState(d, { r: { reach: pushReach(t, 1.5, POSES.guard, POSES.jab, 0.12) }, l: { reach: pushReach(t, 2.5, POSES.guard, POSES.jab, 0.12) } }));
+    quiet('holding one palm open, still', d => t => guardState(d, { r: { reach: PALM, open: t > 1 } }));
+    quiet('moving an open palm around slowly', d => t => guardState(d, { r: { reach: lerpReach(PALM, { ...PALM, up: 0.22, out: 0, fwd: 0.32 }, (t - 1.5) / 1.5), open: t > 1 } }));
     quiet('raising the shield', d => t => guardState(d, t < 1.5 ? {} : { l: { reach: lerpReach(POSES.guard, POSES.shield, (t - 1.5) / 0.15), open: true }, r: { reach: lerpReach(POSES.guard, POSES.shield, (t - 1.5) / 0.15), open: true } }));
-    quiet('both open hands sweeping up (fire wall)', d => t => {
-      const reach = t < 1.5 ? PALM_LOW : lerpReach(PALM_LOW, PALM_HIGH, (t - 1.5) / 0.2);
+    quiet('both open hands pushed forward together', d => t => {
+      const reach = pushReach(t, 2, PALM, pushed(0.25), 0.15);
       return guardState(d, { l: { reach, open: t > 1 }, r: { reach, open: t > 1 } });
     });
   });

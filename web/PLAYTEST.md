@@ -18,9 +18,7 @@ Run `npm run dev`, play with the camera in Chrome. Note the result of each item.
 - [ ] Sweeping both open hands up quickly raises a fire wall where they are; slow raises don't.
 - [ ] Spreading both open hands apart quickly fires the ultimate; opening while already apart doesn't.
 - [ ] Pushing one open palm at the camera (other hand a fist) rolls a pillar of fire forward — every time,
-      and never a fist punch. A punch that opens at the end is still just a punch.
-- [ ] Sweeping one open palm up quickly erupts a pillar under the target you point at; slowly raising
-      an open hand, or holding one open, fires nothing.
+      including short pushes and pushes where the hand opens on the way. Holding a palm open fires nothing.
 - [ ] Open hands at rest show no fire; fire appears only on punches, shield and casts.
 - [ ] Palm "face" reads high with palms toward the camera and low with palms facing each other.
 - [ ] Leaning and ducking dodge attacks aimed at your head.

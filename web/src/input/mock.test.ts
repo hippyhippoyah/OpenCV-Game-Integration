@@ -51,15 +51,13 @@ describe('MockTracker', () => {
     }
   });
 
-  it('E pushes an open right palm (pillar), Q sweeps it up (eruption)', () => {
-    for (const kind of ['push', 'rise'] as const) {
-      const m = new MockTracker(identity);
-      m.setMouse(5, 5);
-      const out = run(m, 90, i => { if (i === 45) m.palm(kind); });
-      expect(out.flatMap(o => o.palms.map(p => `${p.hand}:${p.kind}`)), kind).toEqual([`r:${kind}`]);
-      expect(out.flatMap(o => o.punches), kind).toHaveLength(0);
-      expect(out.flatMap(o => o.casts), kind).toHaveLength(0);
-    }
+  it('E pushes an open right palm (pillar)', () => {
+    const m = new MockTracker(identity);
+    m.setMouse(5, 5);
+    const out = run(m, 90, i => { if (i === 45) m.palm('push'); });
+    expect(out.flatMap(o => o.palms.map(p => `${p.hand}:${p.kind}`))).toEqual(['r:push']);
+    expect(out.flatMap(o => o.punches)).toHaveLength(0);
+    expect(out.flatMap(o => o.casts)).toHaveLength(0);
   });
 
   it('holding Space opens both hands into a shield without punching', () => {

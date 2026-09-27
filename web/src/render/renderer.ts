@@ -123,10 +123,6 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.35);
         this.flare[e.side] = FLARE_S * 2;
         break;
-      case 'erupt':
-        this.shake = Math.max(this.shake, 0.15);
-        this.flare[e.side] = FLARE_S * 2;
-        break;
       case 'cut': this.burst(e.x, e.y, e.z, 'fire', 16, 30); break;
       case 'hitEnemy':
       case 'killEnemy': this.burst(e.x, e.y, e.z, 'fire', 30, 40); break;
@@ -165,12 +161,7 @@ export class Renderer {
     if (g) {
       g.walls.forEach(w => this.drawWall(w));
       // far pillars first, so nearer ones glow over them
-      const cols = [
-        ...g.pillars.map(p => ({ x: p.x, z: p.z, halfW: TUNE.pillarHalfW, glow: Math.min(1, p.age / 0.1) })),
-        ...g.eruptions.filter(u => u.erupted).map(u => ({ x: u.x, z: u.z, halfW: TUNE.eruptRadius * 0.8, glow: 1 - (u.t - TUNE.eruptDelayS) / TUNE.eruptLifeS })),
-      ].sort((a, b) => b.z - a.z);
-      g.eruptions.filter(u => !u.erupted).forEach(u => this.drawEruptionMark(u.x, u.z, u.t / TUNE.eruptDelayS));
-      cols.forEach(col => this.drawColumn(col.x, col.z, col.halfW, col.glow));
+      [...g.pillars].sort((a, b) => b.z - a.z).forEach(p => this.drawColumn(p.x, p.z, TUNE.pillarHalfW, Math.min(1, p.age / 0.1)));
     }
     this.drawParticles(true);
     if (g) {
@@ -660,17 +651,6 @@ export class Renderer {
     c.globalCompositeOperation = 'source-over';
   }
 
-  /** Where a rising palm's pillar is about to burst out: a glowing crack on the floor, brightening. */
-  private drawEruptionMark(x: number, z: number, k: number): void {
-    const c = this.ctx, p = this.project(x, FLOOR_Y, z), rx = TUNE.eruptRadius * p.s * this.u, ry = rx * 0.25;
-    c.globalCompositeOperation = 'lighter';
-    c.fillStyle = `rgba(255,140,50,${0.25 + 0.5 * Math.min(1, k)})`;
-    c.beginPath();
-    c.ellipse(p.x, p.y, rx * (0.4 + 0.6 * Math.min(1, k)), ry, 0, 0, Math.PI * 2);
-    c.fill();
-    c.globalCompositeOperation = 'source-over';
-  }
-
   /** A point on a blade's rim: angle 0 = your right, π/2 = straight ahead, π = your left. */
   private bladePoint(b: Blade, angle: number, r = b.r): { x: number; y: number } {
     return this.project(b.x + Math.cos(angle) * r * TUNE.bladeWidthPerDepth, b.y, Math.max(0.05, Math.sin(angle) * r));
@@ -794,18 +774,11 @@ export class Renderer {
         this.emit(w.x + k, w.y + k * diag, 0.2, rnd(-4, 4), rnd(-22, -8), 0, rnd(0.2, 0.4), rnd(2, 3.5));
       }
     }
-    // pillars of fire: rolling ones leave a trail, erupting ones roar straight up
+    // rolling pillars of fire
     for (const col of g.pillars) {
       for (let i = nOf(420, dt); i > 0; i--) {
         this.emit(col.x + rnd(-TUNE.pillarHalfW, TUNE.pillarHalfW), FLOOR_Y - rnd(0, TUNE.pillarHeight * 0.8), col.z + rnd(-0.3, 0.3),
           rnd(-6, 6), rnd(-90, -40), rnd(-2, 0), rnd(0.25, 0.55), rnd(5, 9));
-      }
-    }
-    for (const u of g.eruptions) {
-      const fade = u.erupted ? 1 - (u.t - TUNE.eruptDelayS) / TUNE.eruptLifeS : 0.15;
-      const w = TUNE.eruptRadius * (u.erupted ? 0.8 : 0.5);
-      for (let i = nOf(600 * fade, dt); i > 0; i--) {
-        this.emit(u.x + rnd(-w, w), FLOOR_Y - rnd(0, 4), u.z, rnd(-5, 5), u.erupted ? rnd(-170, -90) : rnd(-30, -10), 0, rnd(0.4, 0.8), rnd(5, 10));
       }
     }
     // standing fire walls

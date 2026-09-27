@@ -12,8 +12,8 @@ const GUARD: Record<Side, Vec2> = { l: { x: -12, y: 22 }, r: { x: 12, y: 22 } };
 const EXTEND_S = 0.12, OPEN_HOLD_S = 0.25, SHIELD_HALF_WIDTH = 16;
 /** Two-hand casts: open hands move for CAST_MOVE_S, then stay open for CAST_HOLD_S. */
 const CAST_MOVE_S = 0.25, CAST_HOLD_S = 0.3;
-/** Palm moves (right hand): opens for PALM_OPEN_S, moves for PALM_MOVE_S, stays open for PALM_HOLD_S. */
-const PALM_OPEN_S = 0.15, PALM_MOVE_S = 0.15, PALM_HOLD_S = 0.25, PALM_RISE = 28;
+/** Palm push (right hand): opens for PALM_OPEN_S, pushes for PALM_MOVE_S, stays open for PALM_HOLD_S. */
+const PALM_OPEN_S = 0.15, PALM_MOVE_S = 0.15, PALM_HOLD_S = 0.25;
 /** The mock body stands this far away (m) with shoulders this wide (m); fists rest this far in front (m). */
 const MOCK_DISTANCE = 1.5, MOCK_SHOULDERS_M = 0.38, GUARD_REACH_M = 0.25, PUNCH_REACH_M = 0.52;
 /** Crossed forearms: each fist on the other side (view units). */
@@ -27,7 +27,7 @@ export interface ViewMapper { screenToView(x: number, y: number): Vec2 }
  * Pretends to be the camera. The mouse is where you aim; a punch drives that fist to the mouse
  * (opening it at the end in the open-hand punch style); holding Space opens both hands around the mouse (shield); A/D/S lean and duck;
  * W sweeps open hands up (fire wall); U spreads open hands apart (ultimate); X crosses the arms;
- * E pushes an open right palm toward the mouse (pillar); Q sweeps it up to the mouse (eruption);
+ * E pushes an open right palm toward the mouse (pillar);
  * holding O swings the right hand out of the picture (only its arm is still tracked).
  */
 export class MockTracker implements Tracker {
@@ -94,14 +94,9 @@ export class MockTracker implements Tracker {
       } else if (this.palming && side === 'r') {
         const e = clamp((t - this.palming.t - PALM_OPEN_S) / PALM_MOVE_S, 0, 1);
         open = 1;
-        if (this.palming.kind === 'push') {
-          pos = { x: lerp(GUARD.r.x, aim.x, e), y: lerp(GUARD.r.y, aim.y, e) };
-          ext = 0.25 + 0.65 * e;
-          reachM = GUARD_REACH_M + (PUNCH_REACH_M - GUARD_REACH_M) * e;
-        } else {
-          pos = { x: aim.x, y: lerp(aim.y + PALM_RISE, aim.y, e) };
-          ext = 0.5;
-        }
+        pos = { x: lerp(GUARD.r.x, aim.x, e), y: lerp(GUARD.r.y, aim.y, e) };
+        ext = 0.25 + 0.65 * e;
+        reachM = GUARD_REACH_M + (PUNCH_REACH_M - GUARD_REACH_M) * e;
       } else if (this.keys.has('x')) {
         pos = XBLOCK[side];
       } else if (shield) {
@@ -165,7 +160,6 @@ export function bindMockControls(m: MockTracker, canvas: HTMLElement): () => voi
     if (!e.repeat && k === 'w') m.cast('wall');
     if (!e.repeat && k === 'u') m.cast('ultimate');
     if (!e.repeat && k === 'e') m.palm('push');
-    if (!e.repeat && k === 'q') m.palm('rise');
     m.setKey(k, true);
   };
   const onKeyUp = (e: KeyboardEvent) => m.setKey(e.key.toLowerCase(), false);

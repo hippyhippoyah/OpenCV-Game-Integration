@@ -22,7 +22,7 @@ export class Hud {
       : noHands ? ['NO HANDS', 'raise your fists into view']
       : tooFar ? ['GUARD', 'step closer (about 1.5 m) so fist punches can see your fists clearly']
         : ['GUARD', TUNING.punchTrigger === 'extend'
-          ? 'fist: punch · palm: push → pillar, up → eruption · both open: shield · wall · ultimate'
+          ? 'fist: punch · open palm push: pillar · both open: shield · wall · ultimate'
           : 'punch & open: shoot · still open hands: shield · sweep up: wall · spread: ultimate'];
     const lost = (['l', 'r'] as const).filter(side => hands[side] && !hands[side]!.inView);
     $('modeName').textContent = name;
@@ -49,7 +49,6 @@ export class Hud {
       case 'killEnemy': this.toast('+100'); break;
       case 'wall': this.toast('FIRE WALL'); break;
       case 'pillar': this.toast('PILLAR'); break;
-      case 'erupt': this.toast('ERUPTION'); break;
       case 'ultimate': this.banner('ULTIMATE'); break;
       case 'wave': this.banner(`WAVE ${e.wave}`); break;
     }

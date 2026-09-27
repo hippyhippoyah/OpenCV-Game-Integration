@@ -51,11 +51,11 @@ export interface Punch {
   dir: Vec2 | null;
 }
 
-export type PalmKind = 'push' | 'rise';
+export type PalmKind = 'push';
 
 /**
- * A heavy single-hand move with an open palm (the other hand not open): a quick push toward the
- * camera sends a pillar of fire rolling forward; a quick upward sweep erupts a pillar under the target.
+ * A heavy single-hand move with an open palm (the other hand not open): a push toward the camera
+ * sends a pillar of fire rolling forward.
  */
 export interface Palm {
   kind: PalmKind;
@@ -172,15 +172,15 @@ export const TUNING = {
    */
   castWindowS: 0.4, wallRise: 14, ultimateSpread: 24, castRefractoryS: 0.6,
   /**
-   * Palm moves (fist-punch mode only; the open-hand punch style already uses opening hands): one hand
-   * open for palmOpenS (so a fist opening at the end of a punch doesn't count), the other not.
-   * Push = a forward shove: the reach, averaged over 3 frames, rising palmPushRise within
-   * palmPushWindowS (more with a wobbly reading: palmNoise × wobble, up to palmPushCap; an open
-   * hand's reading wobbles more than a fist's), leading the other hand like a fist punch. Rise = the hand coming up palmRise view units
-   * within palmRiseWindowS, palmRiseRatio× more up than sideways. Each waits palmConfirmS (a second
-   * hand opening means shield or cast instead) and the hand rests palmRefractoryS afterwards.
+   * Palm push (fist-punch mode only; the open-hand punch style already uses opening hands): one hand
+   * open, the other not, shoved toward the camera — it may open on the way. The reach, averaged
+   * over 3 frames, rises palmPushRise within palmPushWindowS (more with a wobbly reading:
+   * palmNoise × wobble, up to palmPushCap; an open hand's reading wobbles more than a fist's),
+   * leading the other hand like a fist punch. Like punches, thresholds divide by punchSensitivity.
+   * It waits palmConfirmS (a second hand opening means shield or cast instead); the hand rests
+   * palmRefractoryS afterwards. A fist punch whose hand opens while it is confirming becomes a push.
    */
-  palmOpenS: 0.1, palmPushRise: 0.12, palmPushWindowS: 0.3, palmNoise: 9, palmPushCap: 0.17, palmRise: 16, palmRiseWindowS: 0.3, palmRiseRatio: 1.5, palmConfirmS: 0.08, palmRefractoryS: 0.5,
+  palmPushRise: 0.08, palmPushWindowS: 0.35, palmNoise: 8, palmPushCap: 0.15, palmConfirmS: 0.08, palmRefractoryS: 0.5,
   /** Experimental: only count palms facing each other (edge-on to the camera) as a shield. */
   shieldNeedsEdgeOnPalms: false, edgeOnBelow: 0.5,
   /** Pose wrists below this confidence are treated as guesses. */
@@ -207,8 +207,7 @@ interface Track extends HandState {
   reachSince: number | null;
   /** Hand tracker palm − pose-wrist palm estimate, so switching between them doesn't jump. */
   armOffset: Vec2;
-  /** When the hand last became open (null while it is a fist), and when it can make a palm move again. */
-  openSince: number | null;
+  /** When the hand can push again. */
   palmReadyAt: number;
   /** The shape the hand tracker saw last frame: its size (so its distance) is measured differently open and closed. */
   shapeOpen: boolean | null;
@@ -402,9 +401,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         const settled = tr.reachSince !== null && f.t - tr.reachSince >= TUNING.reachWarmupS;
         jolt = settled && tr.armed && f.t - tr.lastPunchT >= TUNING.refireS && rise >= need.rise && rise - otherRise >= need.lead;
         fire = jolt && tr.openness < TUNING.clearlyOpen;
-        const push = palmPushRise(tr.hist, TUNING.palmPushWindowS);
-        const pushNeed = Math.min(TUNING.palmPushCap, Math.max(TUNING.palmPushRise, TUNING.palmNoise * (tr.reachNoise ?? 0))) / TUNING.punchSensitivity;
-        shove = settled && tr.armed && f.t - tr.lastPunchT >= TUNING.refireS && push >= pushNeed && push - otherRise >= need.lead;
+        // only movement since this hand's last punch or push counts (not the tail of that one)
+        const push = palmPushRise(tr.hist, TUNING.palmPushWindowS, tr.lastPunchT);
+        shove = settled && tr.armed && f.t - tr.lastPunchT >= TUNING.refireS && push >= pushThreshold(tr.reachNoise ?? 0) && push - otherRise >= need.lead;
         if (fire) tr.peakReach = tr.reach;
       } else if (tr.extension !== null) {
         // no 3D hand data: fall back to the arm straightening
@@ -417,17 +416,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t });
         continue;
       }
-      // One open palm, the other hand not: a forward jolt pushes a pillar, an upward sweep raises one.
-      const palm = tr.source === 'hand' && tr.open && tr.openness >= TUNING.clearlyOpen && tr.openSince !== null
-        && f.t - tr.openSince >= TUNING.palmOpenS && !o?.open && f.t >= tr.palmReadyAt && tr.pos.y < TUNING.raisedAboveY
-        && !s.palmPending.some(p => p.hand === side);
-      const kind: PalmKind | null = !palm ? null : shove ? 'push' : palmRose(tr) ? 'rise' : null;
-      if (kind) {
-        tr.armed = false;
-        tr.lastPunchT = f.t;
-        if (tr.reach !== null) tr.peakReach = tr.reach;
-        tr.palmReadyAt = f.t + TUNING.palmRefractoryS;
-        s.palmPending.push({ kind, hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t });
+      // One open palm shoved forward, the other hand not open: a pillar.
+      if (shove && tr.open && !o?.open && f.t >= tr.palmReadyAt && tr.pos.y < TUNING.raisedAboveY && !s.palmPending.some(p => p.hand === side)) {
+        startPush(s, side, f.t, shoulders[side]);
       }
     }
   } else {
@@ -444,7 +435,12 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     const tr = s[p.hand];
     // a fist that reads half-open mid-punch still counts; only clearly open hands mean shield
     const opens = (t: Track | null) => !!t && (extendMode ? t.openness >= TUNING.clearlyOpen : t.open);
-    if (!tr || opens(s[other(p.hand)]) || (extendMode && opens(tr))) return false;
+    if (!tr || opens(s[other(p.hand)])) return false;
+    if (extendMode && opens(tr)) {
+      // the fist opened as it went out: that's a palm push
+      if (f.t >= tr.palmReadyAt && !s.palmPending.some(q => q.hand === p.hand)) startPush(s, p.hand, p.t, p.shoulder);
+      return false;
+    }
     if (f.t - p.t < confirmS) return true;
     punches.push({ hand: p.hand, at: { ...tr.pos }, shoulder: p.shoulder, dir: tr.aimDir && { ...tr.aimDir } });
     return false;
@@ -490,14 +486,19 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
   };
 }
 
-/** The hand came up quickly: palmRise view units within the window, mostly upward. */
-function palmRose(tr: Track): boolean {
-  const now = tr.hist[tr.hist.length - 1]?.t ?? 0;
-  let low: Track['hist'][number] | null = null;
-  for (const h of tr.hist) if (now - h.t <= TUNING.palmRiseWindowS && (!low || h.y > low.y)) low = h;
-  if (!low) return false;
-  const rise = low.y - tr.pos.y;
-  return rise >= TUNING.palmRise && rise >= TUNING.palmRiseRatio * Math.abs(tr.pos.x - low.x);
+/** Queue a palm push from this hand (it confirms after palmConfirmS). */
+function startPush(s: InterpretState, side: Side, t: number, shoulder: Vec2): void {
+  const tr = s[side]!;
+  tr.armed = false;
+  tr.lastPunchT = t;
+  if (tr.reach !== null) tr.peakReach = tr.reach;
+  tr.palmReadyAt = t + TUNING.palmRefractoryS;
+  s.palmPending.push({ kind: 'push', hand: side, at: { ...tr.pos }, shoulder: { ...shoulder }, dir: null, t });
+}
+
+/** The shove (m) a palm push needs, given the reading's wobble: capped, and scaled by sensitivity. */
+export function pushThreshold(noise: number): number {
+  return Math.min(TUNING.palmPushCap, Math.max(TUNING.palmPushRise, TUNING.palmNoise * noise)) / TUNING.punchSensitivity;
 }
 
 /** How the two hands moved since `from`: mostly up → wall, mostly apart → ultimate. */
@@ -587,7 +588,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
       reachSince: null,
       punchRise: null,
       aimDir: null, body3: b3 && { ...b3 },
-      armOffset: { x: 0, y: 0 }, filters, openSince: open >= 0.5 ? t : null, palmReadyAt: -Infinity, shapeOpen: h ? h.open >= 0.5 : null,
+      armOffset: { x: 0, y: 0 }, filters, palmReadyAt: -Infinity, shapeOpen: h ? h.open >= 0.5 : null,
       hist: [],
     };
     track.reach = reachNow(track);
@@ -597,18 +598,13 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     track.hist.push({ t, x: pos.x, y: pos.y, speed: 0, size, ext, reach: track.reach });
     return { track, opened: false };
   }
-  if (h) {
-    // Opening or closing the hand switches how its distance is measured, which jumps the reading:
-    // start the distance over rather than read the jump as the hand moving.
-    const shapeOpen = h.open >= 0.5;
-    if (tr.shapeOpen !== null && shapeOpen !== tr.shapeOpen) {
-      tr.filters.depth = new OneEuro(TUNING.handDepthMinCutoff, TUNING.handDepthBeta);
-      for (const x of tr.hist) x.reach = null;
-      tr.reachSlow = null;
-      tr.reachBase = null;
-    }
-    tr.shapeOpen = shapeOpen;
-  }
+  // Opening or closing the hand switches how its distance is measured, which jumps the reading:
+  // restart the distance filter and shift the reach history by the jump, so a hand that opens
+  // mid-push keeps its forward movement and the jump itself isn't read as movement.
+  const shapeOpen = h ? h.open >= 0.5 : tr.shapeOpen;
+  const reshaped = tr.shapeOpen !== null && shapeOpen !== tr.shapeOpen;
+  if (reshaped) tr.filters.depth = new OneEuro(TUNING.handDepthMinCutoff, TUNING.handDepthBeta);
+  tr.shapeOpen = shapeOpen;
   const prev = tr.pos;
   tr.pos = { x: tr.filters.x.filter(pos.x, dt), y: tr.filters.y.filter(pos.y, dt) };
   if (dt > 0) {
@@ -617,6 +613,13 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
   }
   tr.extension = ext === null ? null : tr.extension === null ? ext : lerp(tr.extension, ext, k);
   const reach = reachNow(tr);
+  if (reshaped && reach !== null && tr.reach !== null) {
+    const jump = reach - tr.reach;
+    for (const x of tr.hist) if (x.reach !== null) x.reach += jump;
+    if (tr.reachSlow !== null) tr.reachSlow += jump;
+    if (tr.reachBase !== null) tr.reachBase += jump;
+    tr.peakReach += jump;
+  }
   if (reach !== null && b3) {
     tr.reachSince ??= t;
     tr.reach = reach;
@@ -627,12 +630,12 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
   if (h) {
     tr.openness = lerp(tr.openness, h.open, k);
     tr.facing = lerp(tr.facing, h.facing, k);
-    if (!tr.open && tr.openness > TUNING.openAbove) { tr.open = true; opened = true; tr.openSince = t; }
-    else if (tr.open && tr.openness < TUNING.fistBelow) { tr.open = false; tr.openSince = null; }
+    if (!tr.open && tr.openness > TUNING.openAbove) { tr.open = true; opened = true; }
+    else if (tr.open && tr.openness < TUNING.fistBelow) tr.open = false;
   }
   tr.lastSeen = t;
   tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension, reach: reach !== null ? tr.reach : null });
-  const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS, TUNING.quickWindowS, TUNING.palmRiseWindowS, TUNING.palmPushWindowS);
+  const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS, TUNING.quickWindowS, TUNING.palmPushWindowS);
   while (tr.hist.length && t - tr.hist[0].t > keepS) tr.hist.shift();
   return { track: tr, opened };
 }
@@ -678,15 +681,14 @@ function reachRise(tr: Track, windowS: number): number {
  * Like reachRise, but on the reach averaged over the last few frames and over a longer window: an
  * open hand's reading wobbles more, and a palm push is a bigger, slightly slower move.
  */
-export function palmPushRise(hist: { t: number; reach: number | null }[], windowS: number, n = 3): number {
+export function palmPushRise(hist: { t: number; reach: number | null }[], windowS: number, since = -Infinity, n = 3): number {
+  // frames where the hand tracker lost the (blurred) hand have no reading: skip them
   const now = hist[hist.length - 1]?.t ?? 0;
+  const r = hist.filter(h => now - h.t <= windowS && h.t > since && h.reach !== null).map(h => h.reach!);
+  if (r.length < n) return 0;
   const avg: number[] = [];
-  for (let i = n - 1; i < hist.length; i++) {
-    const w = hist.slice(i - n + 1, i + 1);
-    if (now - w[0].t > windowS || w.some(h => h.reach === null)) continue;
-    avg.push(w.reduce((a, h) => a + h.reach!, 0) / n);
-  }
-  return avg.length ? avg[avg.length - 1] - Math.min(...avg) : 0;
+  for (let i = n - 1; i < r.length; i++) avg.push((r[i] + r[i - 1] + r[i - 2]) / 3);
+  return avg[avg.length - 1] - Math.min(...avg);
 }
 
 /** History samples within the punch window (the history itself is kept longer, for casts). */

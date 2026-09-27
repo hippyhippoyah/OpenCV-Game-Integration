@@ -99,7 +99,7 @@ describe('Game', () => {
     });
   });
 
-  describe('palm moves', () => {
+  describe('palm push', () => {
     const palm = (kind: Palm['kind'], x = 0, y = 10, hand: Side = 'r'): Palm => ({ kind, hand, at: { x, y }, shoulder: SHOULDERS[hand], dir: null });
     const foe = (id: number, x: number, z: number, hp = 3) =>
       ({ id, x, y: FLOOR_Y - 30, z, hp, t: 0, appear: 1, dying: 0, flash: 0, cd: 99, winding: false, wind: 0, side: 1 as const, phase: 0 });
@@ -127,29 +127,13 @@ describe('Game', () => {
       expect(g.hp).toBe(TUNE.maxHp);
     });
 
-    it('a rise erupts a pillar under the target near where the palm points, after a moment', () => {
+    it('each hand rests between pushes', () => {
       const g = quietGame();
-      g.enemies.push(foe(1, 30, 8), foe(2, -40, 8));
-      const s = 3 / (3 + 8); // where that enemy appears on screen
-      g.step(1 / 60, intent({ palms: [palm('rise', 30 * s, (FLOOR_Y - 30) * s)] }));
-      expect(g.eruptions).toHaveLength(1);
-      expect(g.eruptions[0].x).toBeCloseTo(30);
-      expect(g.eruptions[0].z).toBeCloseTo(8);
-      expect(g.enemies[0].hp).toBe(3);
-      run(g, TUNE.eruptDelayS + 0.1, intent());
-      expect(g.enemies[0].hp).toBe(3 - TUNE.palmDamage);
-      expect(g.enemies[1].hp).toBe(3);
-      run(g, TUNE.eruptLifeS, intent());
-      expect(g.eruptions).toHaveLength(0);
-    });
-
-    it('each hand rests between palm moves', () => {
-      const g = quietGame();
-      g.step(1 / 60, intent({ palms: [palm('push'), palm('rise'), palm('push', 0, 10, 'l')] }));
-      expect(g.pillars.length + g.eruptions.length).toBe(2);
+      g.step(1 / 60, intent({ palms: [palm('push'), palm('push'), palm('push', 0, 10, 'l')] }));
+      expect(g.pillars).toHaveLength(2);
       run(g, TUNE.palmCooldownS, intent());
-      g.step(1 / 60, intent({ palms: [palm('rise')] }));
-      expect(g.eruptions).toHaveLength(1);
+      g.step(1 / 60, intent({ palms: [palm('push')] }));
+      expect(g.pillars.some(p => p.age < 0.05)).toBe(true);
     });
   });
 

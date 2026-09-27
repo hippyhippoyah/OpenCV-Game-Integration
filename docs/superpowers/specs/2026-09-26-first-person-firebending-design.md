@@ -217,3 +217,20 @@ the reach reading restarts on a shape change instead of reading the jump as move
 Simulated at 1.2–1.8 m: every push and rise caught, with no fist punch; nothing fires from jabs, a
 still or slowly moving open palm, raising the shield, or a two-hand wall sweep. Mock: E = push,
 Q = rise (right hand). A rise-then-push combo (a bigger pillar) is a possible follow-up.
+
+## Revision 2026-09-27: eruption removed; palm push more forgiving
+
+The rising-palm eruption was too unreliable on camera and is gone; the push stays, and was missing
+real pushes. Now:
+
+- The palm no longer has to be open beforehand: it may open on the way out. A fist punch whose hand
+  opens while it is confirming becomes a push (one attack either way).
+- Opening/closing no longer wipes the reach history: the history is shifted by the measurement
+  jump, so the forward movement before the hand opened still counts.
+- Threshold (3-frame-averaged reach, within 0.35 s, counting only movement since the hand's last
+  attack): ≥ max(0.08 m, 8 × wobble), capped at 0.15 m, ÷ punch sensitivity (`[` / `]` adjust
+  both). Frames lost to blur are skipped, and a push can continue on the pose wrist.
+
+Simulated: full, slow (0.3 s) and short (15 cm) pushes, and pushes that open mid-way, all caught at
+1.2–1.5 m; at 1.8 m a 20 cm push. No pushes from a still or slowly moving open palm, the shield, jabs
+or both palms pushed together.
