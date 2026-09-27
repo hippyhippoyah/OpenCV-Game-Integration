@@ -40,3 +40,10 @@ Run `npm run dev`, play with the camera in Chrome. Note the result of each item.
 - [ ] A 3-minute run is fun and doesn't wear out your arms.
 
 Tuning knobs: `TUNING` in `src/intent/interpret.ts` (tracking feel), `TUNE` in `src/game/game.ts` (gameplay). Press `` ` `` in game for live numbers.
+
+- [ ] Campaign: the walk down the path looks good and runs smoothly; mouse look feels natural; Space skips ahead.
+- [ ] Scrolls: picking one up shows the note; Tab lists it with its animation.
+- [ ] The camera handoff is clear: the checklist tells you what's missing; the countdown starts once you're ready.
+- [ ] Ghost hands make each new move obvious; they fade once you've got it.
+- [ ] Every fight is winnable with the moves you have, and the boss's attacks are readable.
+- [ ] M map shows your progress and replays finished stops.

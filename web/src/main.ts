@@ -1,6 +1,12 @@
 import './style.css';
+import { CampaignRunner } from './campaign/runner';
+import { CampaignUI, type HandoffCheck } from './campaign/ui';
+import { Progress } from './campaign/progress';
+import { STOPS } from './campaign/chapter1';
 import { downloadRecording, Recorder } from './debug/recorder';
-import { Game } from './game/game';
+import { World3D } from './explore/world3d';
+import { Look } from './explore/path';
+import { Game, type GameEvent } from './game/game';
 import { LESSONS, Tutorial } from './game/tutorial';
 import { CameraError, CameraTracker } from './input/camera';
 import { bindMockControls, MOCK_CALIBRATION, MockTracker } from './input/mock';
@@ -21,7 +27,7 @@ const hud = new Hud();
 const debug = new DebugView($('pip') as HTMLCanvasElement, $('debugText'));
 const lessonDemo = new LessonDemo($('lessonDemo') as HTMLCanvasElement);
 
-type Mode = 'tutorial' | 'waves' | 'training';
+type Mode = 'tutorial' | 'waves' | 'training' | 'campaign';
 let phase: 'menu' | 'loading' | 'calibrating' | 'modes' | 'play' = 'menu';
 let mode: Mode = 'waves';
 let tutorial: Tutorial | null = null;
@@ -39,10 +45,16 @@ let pendingCasts: Cast[] = [];
 let pendingPalms: Palm[] = [];
 let lastFrame: TrackingFrame | null = null;
 let game: Game | null = null;
+const storage = (() => { try { return localStorage; } catch { return null; } })();
+const progress = Progress.load(storage);
+let campaign: CampaignRunner | null = null;
+let campUI: CampaignUI | null = null;
+let world: World3D | null = null;
+const look = new Look();
 const params = new URLSearchParams(location.search);
-/** Skip the mode menu with ?mode=tutorial|waves|training (?dummies = training). */
+/** Skip the mode menu with ?mode=tutorial|waves|training|campaign (?dummies = training). */
 const startMode: Mode | null = params.has('dummies') ? 'training'
-  : (['tutorial', 'waves', 'training'] as const).find(m => m === params.get('mode')) ?? null;
+  : (['tutorial', 'waves', 'training', 'campaign'] as const).find(m => m === params.get('mode')) ?? null;
 /** Fist punches by arm extension (default) or open-hand punches; toggled with P, or start with ?punch=open. */
 if (params.get('punch') === 'open') TUNING.punchTrigger = 'open';
 let acc = 0, last = performance.now(), fpsTime = 0, fpsFrames = 0;
@@ -99,8 +111,14 @@ function showModes(note = ''): void {
   phase = 'modes';
   game = null;
   tutorial = null;
+  campUI?.hideAll();
+  show('world', false);
+  renderer.ghost = null;
+  renderer.tint = null;
+  document.exitPointerLock?.();
   for (const id of ['calib', 'over', 'away', 'lesson', 'dodge', 'mockHelp']) show(id, false);
   document.body.classList.remove('tutorial');
+  $('campaignLabel').textContent = Object.keys(progress.data.stops).length > 0 ? 'Continue' : 'Campaign';
   $('modesNote').textContent = note;
   show('modesNote', !!note);
   show('modes');
@@ -114,12 +132,26 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
   pendingCasts = [];
   pendingPalms = [];
   acc = 0;
+  phase = 'play';
+  for (const id of ['calib', 'over', 'modes']) show(id, false);
+  if (m === 'campaign') {
+    world ??= new World3D($('world') as HTMLCanvasElement);
+    campUI ??= new CampaignUI(progress, stop => campaign?.replay(stop));
+    campaign = new CampaignRunner(progress, () => new Game(Math.random, renderer.viewHalfW, true));
+    game = null;
+    tutorial = null;
+    show('lesson', false);
+    document.body.classList.remove('tutorial');
+    if (tracker instanceof MockTracker && !mockHelpShown) {
+      mockHelpShown = true;
+      show('mockHelp');
+    }
+    return;
+  }
   // training (and the tutorial, which then takes the field over) start with dummies, not a wave
   game = new Game(Math.random, renderer.viewHalfW, m !== 'waves');
   tutorial = m === 'tutorial' ? new Tutorial(game, lesson) : null;
   if (tutorial) game.label = 'Tutorial';
-  phase = 'play';
-  for (const id of ['calib', 'over', 'modes']) show(id, false);
   show('lesson', !!tutorial);
   document.body.classList.toggle('tutorial', !!tutorial);
   drawLesson();
@@ -200,6 +232,43 @@ function stepGame(dt: number): void {
   hud.update(game, intent.hands);
 }
 
+function stepCampaign(dt: number, now: number): void {
+  const r = campaign!;
+  const exploring = r.state === 'walk' || r.state === 'scroll' || r.state === 'arena' || r.state === 'end';
+  const check = handoffCheck();
+  // the fight's game is the runner's
+  game = r.game;
+  let events: GameEvent[] = [];
+  if (game && intent && (r.state === 'practice' || r.state === 'fight')) {
+    acc += dt;
+    while (acc >= STEP) { game.step(STEP, { ...intent, punches: pendingPunches, casts: pendingCasts, palms: pendingPalms }); pendingPunches = []; pendingCasts = []; pendingPalms = []; acc -= STEP; }
+    events = game.drainEvents();
+    for (const e of events) { renderer.onEvent(e); hud.onEvent(e); }
+    hud.update(game, intent.hands);
+  }
+  if (!campUI!.overlayOpen) r.update(dt, check.seen && check.handsUp && check.distance === 'ok', events);
+  renderer.ghost = r.ghostMove ? { lessonId: r.ghostMove, alpha: 1 } : null;
+  renderer.tint = STOPS[r.stop].tint;
+  show('world', exploring || r.state === 'handoff' || r.state === 'countdown');
+  show('game', !(exploring || r.state === 'handoff' || r.state === 'countdown'));
+  if (exploring || r.state === 'handoff' || r.state === 'countdown') {
+    look.relax(dt);
+    world!.setTaken(STOPS.flatMap((s, i) => (s.scroll && progress.hasScroll(s.scroll) ? [i] : [])));
+    world!.render(r.rail, look, dt, r.state === 'scroll' ? 'scroll' : r.state === 'arena' ? 'arena' : null);
+  }
+  campUI!.update(r, check, now);
+}
+
+/** Is the camera ready for a fight: you're seen, fists up, at a good distance? (Mouse & keys: always.) */
+function handoffCheck(): HandoffCheck {
+  if (tracker instanceof MockTracker) return { seen: true, handsUp: true, distance: 'ok' };
+  const f = lastFrame, i = intent;
+  if (!f || !i?.present) return { seen: false, handsUp: false, distance: 'unknown' };
+  const up = (h: typeof i.hands.l) => !!h && h.inView && h.pos.y < 40;
+  const d = f.body ? (1.05 * f.body.span3) / f.body.span2 : null;
+  return { seen: true, handsUp: up(i.hands.l) && up(i.hands.r), distance: d === null ? 'unknown' : d < 0.9 ? 'close' : d > 2.2 ? 'far' : 'ok' };
+}
+
 function headLabel(i: Intent | null): string {
   if (!i) return '—';
   if (i.head.y > 10) return 'duck';
@@ -220,7 +289,10 @@ function loop(now: number): void {
   }
   const f = tracker?.poll(now);
   if (f) onFrame(f);
-  if (phase === 'play') stepGame(dt);
+  if (phase === 'play') {
+    if (mode === 'campaign') stepCampaign(dt, now);
+    else stepGame(dt);
+  }
   renderer.render(phase === 'play' ? game : null, dt);
   if (tutorial && phase === 'play') lessonDemo.draw(tutorial.lesson.id, now / 1000);
   debug.draw(lastFrame, intent, camera?.video ?? null);
@@ -244,9 +316,49 @@ LESSONS.forEach((l, i) => {
   $('lessonChips').appendChild(b);
 });
 $('mockHelpClose').addEventListener('click', () => show('mockHelp', false));
+$('campWalk').addEventListener('click', () => campaign?.walkOn());
+$('campAgain').addEventListener('click', () => {
+  if (campaign?.state === 'result') { campaign.state = 'lost'; campaign.retry(); }
+});
+$('campRetry').addEventListener('click', () => campaign?.retry());
+$('campMenu').addEventListener('click', () => showModes());
+
+/** Is the campaign currently exploring the 3D path (walk/scroll/arena/end), where mouse look & keys apply? */
+function exploringCampaign(): boolean {
+  return mode === 'campaign' && phase === 'play' && !!campaign
+    && (campaign.state === 'walk' || campaign.state === 'scroll' || campaign.state === 'arena' || campaign.state === 'end');
+}
+
+// Mouse look while exploring the campaign path: pointer lock when available, else a plain drag.
+let dragging = false, lastMouse: { x: number; y: number } | null = null;
+$('world').addEventListener('mousedown', e => {
+  if (!exploringCampaign() || !campaign) return;
+  const r = campaign;
+  if (document.pointerLockElement === $('world')) {
+    if (r.state === 'scroll' || r.state === 'arena') r.interact();
+  } else if ($('world').requestPointerLock) {
+    try {
+      const p = $('world').requestPointerLock() as unknown;
+      if (p && typeof (p as Promise<void>).catch === 'function') (p as Promise<void>).catch(() => { /* fall back to plain drag */ });
+    } catch { /* fall back to plain drag */ }
+  }
+  dragging = true;
+  lastMouse = { x: e.clientX, y: e.clientY };
+});
+addEventListener('mouseup', () => { dragging = false; lastMouse = null; });
+addEventListener('mousemove', e => {
+  if (!exploringCampaign()) return;
+  if (document.pointerLockElement === $('world')) {
+    look.move(e.movementX, e.movementY);
+  } else if (dragging && lastMouse) {
+    look.move(e.clientX - lastMouse.x, e.clientY - lastMouse.y);
+    lastMouse = { x: e.clientX, y: e.clientY };
+  }
+});
 addEventListener('resize', () => {
   renderer.resize();
   debug.resize();
+  world?.resize();
   if (game) game.viewHalfW = renderer.viewHalfW;
 });
 addEventListener('keydown', e => {
@@ -267,17 +379,32 @@ addEventListener('keydown', e => {
     TUNING.punchSensitivity = Math.round(Math.min(2.5, Math.max(0.5, TUNING.punchSensitivity + (k === ']' ? 0.1 : -0.1))) * 10) / 10;
     hud.toast(`PUNCH SENSITIVITY ×${TUNING.punchSensitivity.toFixed(1)}`, 'cool');
   }
-  if (k === 't' && game?.state === 'play' && mode !== 'tutorial') {
+  if (k === 't' && game?.state === 'play' && mode !== 'tutorial' && mode !== 'campaign') {
     game.setPractice(!game.practice);
     mode = game.practice ? 'training' : 'waves';
   }
-  if (k === 'escape' && phase === 'play') showModes();
+  if (mode === 'campaign' && phase === 'play' && campaign) {
+    const r = campaign;
+    if (exploringCampaign()) {
+      if (k === 'e') r.interact();
+      if (k === ' ') { e.preventDefault(); r.skip(); }
+      if (k === 'm') campUI?.toggleMap();
+      if (k === 'tab') { e.preventDefault(); campUI?.toggleScrolls(); }
+    }
+    if (k === 'escape') {
+      if (r.state === 'handoff' || r.state === 'countdown') r.back();
+      else if (campUI?.overlayOpen) { campUI.toggleMap(false); campUI.toggleScrolls(false); }
+      else showModes();
+      return;
+    }
+  }
+  if (k === 'escape' && phase === 'play' && mode !== 'campaign') showModes();
   if (tutorial && phase === 'play' && (k === 'n' || k === 'b')) {
     if (k === 'n') tutorial.next(); else tutorial.back();
     if (tutorial.finished) showModes('Tutorial complete — you know every move. Try the waves!');
     else drawLesson();
   }
-  if (k === 'r' && game?.state === 'over') beginPlay();
+  if (k === 'r' && game?.state === 'over' && mode !== 'campaign') beginPlay();
   if (k === 'c' && camera && phase === 'play') beginCalibration();
   if ((k === '?' || k === '/') && tracker instanceof MockTracker) $('mockHelp').classList.toggle('hidden');
 });

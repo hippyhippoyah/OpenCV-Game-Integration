@@ -1,5 +1,7 @@
 # Campaign — Chapter 1: The Ember Path
 
+**Status:** built (plan: docs/superpowers/plans/2026-09-27-campaign-chapter-1.md).
+
 ## Goal
 
 Replace "a list of lessons" with the start of a story. Chapter 1 is where a new player learns to
