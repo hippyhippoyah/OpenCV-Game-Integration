@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Firebending Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ui: #f4e9dc;
+    --muted: #b3a08c;
+    --accent: #ff8a3d;
+    --accent-2: #ffc36b;
+    --spirit: #7fe3ff;
+    --danger: #ff5050;
+    --panel: rgba(14, 9, 18, 0.62);
+    --line: rgba(255, 190, 140, 0.18);
+  }
+  html, body { margin: 0; height: 100%; background: #07060b; overflow: hidden; color: var(--ui);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  canvas#game { display: block; width: 100vw; height: 100vh; cursor: none; }
+
+  .hud { position: fixed; inset: 0; pointer-events: none; }
+  .label { font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+  .tl { position: absolute; top: 16px; left: 16px; }
+  .tr { position: absolute; top: 12px; right: 16px; text-align: right; }
+  .bar { width: min(260px, 38vw); height: 10px; border-radius: 6px; margin-top: 6px;
+    background: rgba(255,255,255,.07); border: 1px solid var(--line); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 100%; transition: width .12s;
+    background: linear-gradient(90deg, #ff4b2b, #ff9a3d 70%, #ffd27a); }
+  .score { font-family: Cinzel, serif; font-size: 34px; font-weight: 700; line-height: 1.1;
+    text-shadow: 0 0 18px rgba(255,140,60,.45); }
+  .wave { margin-top: 10px; font-family: Cinzel, serif; font-size: 15px; color: var(--accent-2); }
+
+  .pill { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 18px;
+    backdrop-filter: blur(6px); white-space: nowrap; }
+  .pill b { font-family: Cinzel, serif; font-size: 15px; letter-spacing: .08em; color: var(--accent-2); }
+  .pill span { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .pill.off b { color: var(--muted); }
+  .pill.shield b { color: #ffe08a; }
+
+  .bl { position: absolute; left: 16px; bottom: 16px; width: min(230px, 42vw); padding: 12px 14px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(6px); }
+  .shieldbar > i { background: linear-gradient(90deg, #ff8a3d, #ffe08a); }
+  .shieldbar.broken > i { background: #6b4a3a; }
+  .state { float: right; letter-spacing: .1em; }
+
+  .br { position: absolute; right: 16px; bottom: 16px; width: min(220px, 40vw); padding: 8px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(6px); }
+  .br canvas { display: block; width: 100%; aspect-ratio: 4 / 3; border-radius: 6px; }
+  .pipinfo { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; color: var(--muted);
+    margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .pipinfo em { font-style: normal; color: #9dffcf; }
+  .mock { position: absolute; top: 8px; left: 8px; font-size: 9px; letter-spacing: .15em; padding: 2px 6px;
+    border-radius: 4px; background: rgba(255,80,80,.18); color: #ffb0a0; }
+
+  #toasts { position: absolute; left: 50%; top: 26%; transform: translateX(-50%); display: flex;
+    flex-direction: column; align-items: center; gap: 4px; }
+  .toast { font-family: Cinzel, serif; font-weight: 700; font-size: 22px; letter-spacing: .1em;
+    color: var(--accent-2); text-shadow: 0 0 16px rgba(255,120,40,.7); animation: pop 1s ease-out forwards; }
+  .toast.bad { color: #ff8080; text-shadow: 0 0 16px rgba(255,40,40,.7); }
+  .toast.cool { color: var(--spirit); text-shadow: 0 0 16px rgba(80,200,255,.6); }
+  .toast.dim { color: var(--muted); font-size: 15px; text-shadow: none; }
+  @keyframes pop { 0% { opacity: 0; transform: translateY(8px) scale(.9); } 15% { opacity: 1; transform: none; }
+    75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-16px); } }
+
+  #banner { position: absolute; left: 0; right: 0; top: 36%; text-align: center; font-family: Cinzel, serif;
+    font-size: clamp(34px, 7vw, 72px); font-weight: 700; letter-spacing: .2em; color: #ffe2b8; opacity: 0;
+    text-shadow: 0 0 40px rgba(255,120,40,.6); }
+  #banner.show { animation: banner 2s ease-out forwards; }
+  @keyframes banner { 0% { opacity: 0; letter-spacing: .5em; } 20% { opacity: 1; letter-spacing: .2em; }
+    75% { opacity: 1; } 100% { opacity: 0; } }
+
+  .card { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: auto;
+    width: min(600px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box;
+    padding: 24px 26px; background: rgba(14, 9, 18, .9); border: 1px solid var(--line); border-radius: 16px;
+    backdrop-filter: blur(10px); box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+  .card h1 { font-family: Cinzel, serif; margin: 0 0 6px; font-size: 28px; color: #ffe2b8; }
+  .card p { margin: 0 0 16px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 18px; font-size: 13px; }
+  .grid div { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .grid h3 { grid-column: 1 / -1; margin: 8px 0 0; font-size: 10px; letter-spacing: .2em; color: var(--accent-2); font-weight: 600; }
+  kbd { font-family: inherit; font-size: 11px; min-width: 18px; text-align: center; padding: 2px 6px; border-radius: 5px;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16); color: var(--ui); }
+  .actions { display: flex; align-items: center; gap: 14px; margin-top: 20px; flex-wrap: wrap; }
+  button { pointer-events: auto; font: 600 14px Inter, sans-serif; color: #1a0c05; cursor: pointer; border: 0;
+    padding: 10px 20px; border-radius: 10px; background: linear-gradient(180deg, #ffc36b, #ff8a3d);
+    box-shadow: 0 6px 24px rgba(255,120,40,.35); }
+  .muted { color: var(--muted); font-size: 12px; }
+  .hidden { display: none; }
+
+  @media (max-width: 760px) {
+    .pill { top: 92px; }
+    .score { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div class="hud">
+  <div class="tl">
+    <div class="label">Vitality</div>
+    <div class="bar"><i id="hpFill"></i></div>
+  </div>
+  <div class="tr">
+    <div class="label">Score</div>
+    <div class="score" id="score">0</div>
+    <div class="wave" id="wave">Practice</div>
+  </div>
+  <div class="pill off" id="pill"><b id="modeName">NO FIRE</b><span id="modeHint">raise hands, palms together</span></div>
+
+  <div class="bl">
+    <div class="label">Shield <span class="state" id="shieldState">ready</span></div>
+    <div class="bar shieldbar" id="shieldBar" style="width:100%"><i id="shieldFill"></i></div>
+  </div>
+
+  <div class="br">
+    <div style="position:relative">
+      <canvas id="pip"></canvas>
+      <span class="mock">SIMULATED</span>
+    </div>
+    <div class="pipinfo"><span>HEAD <em id="headTag">center</em></span><span>HANDS <em>2</em></span><span id="fps">60 fps</span></div>
+  </div>
+
+  <div id="toasts"></div>
+  <div id="banner"></div>
+</div>
+
+<div class="card" id="help">
+  <h1>Firebending: first person</h1>
+  <p>You look through your own eyes. Your real head moves the camera and your real hands appear as fire-hands. Spirits throw fire at you: dodge by moving, block with a flame shield, or throw fireballs back. The camera is faked with mouse and keys.</p>
+  <div class="grid">
+    <h3>HANDS</h3>
+    <div><kbd>Mouse</kbd> move both hands</div>
+    <div><kbd>Scroll</kbd> hands together / apart</div>
+    <div><kbd>1</kbd> palms together → fireball appears</div>
+    <div><kbd>Click</kbd> push toward screen → throw</div>
+    <div><kbd>2</kbd> hands wide → flame shield (drains)</div>
+    <div>Hands low = rest, fire goes out</div>
+    <h3>HEAD / BODY</h3>
+    <div><kbd>A</kbd><kbd>D</kbd> lean left / right</div>
+    <div><kbd>S</kbd> duck</div>
+    <div style="grid-column:1/-1" class="muted">Red rings show where an incoming attack will land if you stay still. Move your head out of the ring, or put your shield over it.</div>
+  </div>
+  <div class="actions">
+    <button id="startBtn">Start waves</button>
+    <span class="muted">Press <kbd>?</kbd> to reopen · <kbd>Enter</kbd> to start</span>
+  </div>
+</div>
+
+<div class="card hidden" id="over">
+  <h1>Extinguished</h1>
+  <p>The spirits got through. Final score: <b id="overScore" style="color:var(--accent-2)">0</b></p>
+  <div class="actions"><button id="againBtn">Rekindle</button><span class="muted">or press <kbd>R</kbd></span></div>
+</div>
+
+<script>
+'use strict';
+// ---------- setup ----------
+const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+const skyL = document.createElement('canvas'), skx = skyL.getContext('2d');   // sky + mountains (far parallax)
+const midL = document.createElement('canvas'), mdx = midL.getContext('2d');   // wall + temples (mid parallax)
+const vig = document.createElement('canvas'), vgx = vig.getContext('2d');
+const handL = document.createElement('canvas'), hlx = handL.getContext('2d'); // first-person hands layer
+const pip = document.getElementById('pip'), pctx = pip.getContext('2d');
+const $ = id => document.getElementById(id);
+
+const F = 3;                     // perspective focal constant (depth units)
+const PAR_SKY = .03, PAR_MID = .16;
+let W = 0, H = 0, DPR = 1, u = 8, M = 0, VP = { x: 0, y: 0 }, FLOOR = 0;
+let t = 0, last = performance.now(), fpsAcc = 0, fpsN = 0;
+const mouse = { x: 0, y: 0 };
+const keys = new Set();
+
+// Head drives the camera (in the real game: tracked head position).
+const head = { lean: 0, duck: 0 };
+const cam = { x: 0, y: 0 };
+const player = { hp: 100, inv: 0 };
+const hands = { spread: 6, spreadT: 6, hl: { x: 0, y: 0 }, hr: { x: 0, y: 0 },
+  c: { x: 0, y: 0 }, prev: { x: 0, y: 0 }, vel: { x: 0, y: 0 } };
+const fire = { held: false, cool: 0 };
+const shield = { on: false, energy: 1, broken: 0 };
+let state = 'intro', paused = true, score = 0, wave = 0, toSpawn = 0, spawnT = 0, waveBreak = 0;
+let shake = 0, flash = 0;
+const enemies = [], projs = [], parts = [];
+let lanterns = [];
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+const lerp = (a, b, k) => a + (b - a) * k;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const nOf = (rate, dt) => { const x = rate * dt; return Math.floor(x) + (Math.random() < x % 1 ? 1 : 0); };
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let r = Math.imul(a ^ a >>> 15, 1 | a);
+  r = r + Math.imul(r ^ r >>> 7, 61 | r) ^ r; return ((r ^ r >>> 14) >>> 0) / 4294967296; }; }
+
+// World point (x, y at the z=0 plane scale, depth z) -> screen, seen from the head-tracked camera.
+function project(x, y, z) {
+  const s = F / (F + Math.max(z, -1.8));
+  return { x: VP.x + (x - VP.x - cam.x) * s, y: VP.y + (y - VP.y - cam.y) * s, s };
+}
+
+// ---------- sprites ----------
+function sprite(stops) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  stops.forEach(([o, col]) => gr.addColorStop(o, col)); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return c;
+}
+const SPR = {
+  fire: [
+    sprite([[0, 'rgba(255,255,235,1)'], [0.3, 'rgba(255,220,130,.85)'], [1, 'rgba(255,130,30,0)']]),
+    sprite([[0, 'rgba(255,190,90,.95)'], [0.4, 'rgba(255,110,30,.55)'], [1, 'rgba(200,40,10,0)']]),
+    sprite([[0, 'rgba(220,60,20,.6)'], [0.5, 'rgba(120,20,10,.25)'], [1, 'rgba(60,0,0,0)']]),
+  ],
+  spirit: [
+    sprite([[0, 'rgba(240,255,255,1)'], [0.3, 'rgba(150,235,255,.8)'], [1, 'rgba(60,160,255,0)']]),
+    sprite([[0, 'rgba(120,220,255,.9)'], [0.4, 'rgba(60,140,255,.5)'], [1, 'rgba(40,40,200,0)']]),
+    sprite([[0, 'rgba(120,80,255,.5)'], [0.5, 'rgba(70,40,180,.2)'], [1, 'rgba(30,0,80,0)']]),
+  ],
+};
+
+// ---------- resize & static layers ----------
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight;
+  u = Math.min(H, W * 1.25) / 100; M = 12 * u;
+  VP = { x: W / 2, y: H * .45 }; FLOOR = H + 8 * u;
+  for (const c of [cv, vig, handL]) { c.width = Math.round(W * DPR); c.height = Math.round(H * DPR); }
+  for (const c of [skyL, midL]) { c.width = Math.round((W + 2 * M) * DPR); c.height = Math.round((H + 2 * M) * DPR); }
+  pip.width = Math.round(pip.clientWidth * DPR); pip.height = Math.round(pip.clientHeight * DPR);
+  if (!mouse.x) { mouse.x = W / 2; mouse.y = H * .7; }
+  drawSky(); drawMid(); drawVignette();
+}
+
+function drawSky() {
+  const g = skx; g.setTransform(DPR, 0, 0, DPR, DPR * M, DPR * M);
+  g.clearRect(-M, -M, W + 2 * M, H + 2 * M);
+  const hz = VP.y, R = mulberry32(11);
+  let gr = g.createLinearGradient(0, -M, 0, hz);
+  gr.addColorStop(0, '#06061a'); gr.addColorStop(.55, '#151131'); gr.addColorStop(1, '#3c1d33');
+  g.fillStyle = gr; g.fillRect(-M, -M, W + 2 * M, hz + M + 1);
+  for (let i = 0; i < 180; i++) {
+    const x = R() * (W + 2 * M) - M, y = R() * hz * .8 - M, r = R() * 1.3 + .3;
+    g.globalAlpha = .25 + R() * .75; g.fillStyle = '#fff'; g.fillRect(x, y, r, r);
+  }
+  g.globalAlpha = 1;
+  const mx = W * .8, my = H * .13, mr = 4.2 * u;
+  gr = g.createRadialGradient(mx, my, 0, mx, my, mr * 6);
+  gr.addColorStop(0, 'rgba(255,238,215,.28)'); gr.addColorStop(1, 'rgba(255,238,215,0)');
+  g.fillStyle = gr; g.fillRect(mx - mr * 6, my - mr * 6, mr * 12, mr * 12);
+  g.fillStyle = '#f3ead8'; g.beginPath(); g.arc(mx, my, mr, 0, 7); g.fill();
+  g.fillStyle = 'rgba(120,100,90,.12)';
+  [[-.3, -.2, .28], [.25, .2, .22], [.1, -.4, .12]].forEach(([a, b, r]) => { g.beginPath(); g.arc(mx + a * mr, my + b * mr, r * mr, 0, 7); g.fill(); });
+  const ridge = (base, amp, col, seed, f1, f2) => {
+    g.fillStyle = col; g.beginPath(); g.moveTo(-M, hz + 2 * u);
+    for (let x = -M; x <= W + M + 8; x += 6) {
+      g.lineTo(x, base - amp * (.55 + .3 * Math.sin(x * f1 + seed) + .15 * Math.sin(x * f2 + seed * 3)));
+    }
+    g.lineTo(W + M, hz + 2 * u); g.closePath(); g.fill();
+  };
+  ridge(hz - 2 * u, 14 * u, '#231838', 1.3, .006, .021);
+  ridge(hz, 9 * u, '#170f27', 4.1, .009, .03);
+  gr = g.createLinearGradient(0, hz - 8 * u, 0, hz + 3 * u);
+  gr.addColorStop(0, 'rgba(255,110,80,0)'); gr.addColorStop(.7, 'rgba(255,110,80,.12)'); gr.addColorStop(1, 'rgba(255,110,80,0)');
+  g.fillStyle = gr; g.fillRect(-M, hz - 8 * u, W + 2 * M, 11 * u);
+}
+
+function drawMid() {
+  const g = mdx; g.setTransform(DPR, 0, 0, DPR, DPR * M, DPR * M);
+  g.clearRect(-M, -M, W + 2 * M, H + 2 * M);
+  const hz = VP.y, k = u * .8;
+  g.fillStyle = '#110c19'; g.fillRect(-M, hz - 2.2 * u, W + 2 * M, 2.6 * u);
+  for (let x = -M; x < W + M; x += 9 * u) g.fillRect(x, hz - 3.4 * u, 1.6 * u, 1.4 * u);
+  lanterns = [];
+  const roof = (l, r, y, h) => {
+    const w = r - l; g.beginPath();
+    g.moveTo(l - 1.5 * k, y - 2 * k);
+    g.quadraticCurveTo(l + w * .06, y + .6 * k, l + w * .16, y + .6 * k);
+    g.lineTo(r - w * .16, y + .6 * k);
+    g.quadraticCurveTo(r - w * .06, y + .6 * k, r + 1.5 * k, y - 2 * k);
+    g.lineTo(r - w * .24, y - h); g.lineTo(l + w * .24, y - h); g.closePath(); g.fill();
+  };
+  const temple = (x, w) => {
+    const base = hz - 1 * u;
+    g.fillStyle = '#0e0a16';
+    g.fillRect(x - w * .04, base - 3 * k, w * 1.08, 3 * k);
+    const bodyH = 12 * k, b1 = base - 3 * k - bodyH;
+    g.fillRect(x + w * .1, b1, w * .8, bodyH);
+    roof(x - w * .02, x + w * 1.02, b1, 5 * k);
+    const b2 = b1 - 5 * k - 7 * k;
+    g.fillRect(x + w * .3, b2, w * .4, 7 * k);
+    roof(x + w * .18, x + w * .82, b2, 4.5 * k);
+    g.fillStyle = 'rgba(255,165,90,.22)';
+    for (let i = 0; i < 3; i++) g.fillRect(x + w * (.22 + i * .22), b1 + bodyH * .35, w * .1, bodyH * .4);
+    g.fillRect(x + w * .44, b2 + 2 * k, w * .12, 3.5 * k);
+    lanterns.push({ x: x + w * .12, y: b1 + 2.4 * k }, { x: x + w * .88, y: b1 + 2.4 * k });
+  };
+  temple(W * .02, W * .22); temple(W * .76, W * .22);
+}
+
+function drawVignette() {
+  vgx.setTransform(DPR, 0, 0, DPR, 0, 0); vgx.clearRect(0, 0, W, H);
+  const gr = vgx.createRadialGradient(W / 2, H * .5, Math.min(W, H) * .35, W / 2, H * .5, Math.max(W, H) * .75);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.7)');
+  vgx.fillStyle = gr; vgx.fillRect(0, 0, W, H);
+}
+
+// Floor is drawn live so its perspective follows the head.
+function drawFloor() {
+  const hz = VP.y;
+  const gr = ctx.createLinearGradient(0, hz, 0, H);
+  gr.addColorStop(0, '#24182b'); gr.addColorStop(1, '#0a080f');
+  ctx.fillStyle = gr; ctx.fillRect(0, hz, W, H - hz);
+  ctx.strokeStyle = 'rgba(255,200,160,.06)'; ctx.lineWidth = 1;
+  for (let i = -18; i <= 18; i++) {
+    const xb = VP.x + i * W * .09, a = project(xb, FLOOR, 16), b = project(xb, FLOOR, -.4);
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  for (const z of [0, .5, 1.1, 1.9, 2.9, 4.2, 5.9, 8.1, 11, 15]) {
+    const y = project(0, FLOOR, z).y; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+}
+
+// ---------- particles ----------
+function emit(x, y, z, vx, vy, vz, life, size, pal = 'fire', rise = 1) {
+  if (parts.length > 2600) return;
+  parts.push({ x, y, z, vx, vy, vz, life, max: life, size, pal, rise });
+}
+function burst(x, y, z, pal, n, spd) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.283, sp = rnd(.3, 1) * spd * u;
+    emit(x, y, z, Math.cos(a) * sp, Math.sin(a) * sp, rnd(-1, 1), rnd(.25, .65), rnd(2, 4.5) * u, pal, .5);
+  }
+}
+function updParts(dt) {
+  const dr = Math.exp(-2.2 * dt);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.life -= dt;
+    if (p.life <= 0) { parts[i] = parts[parts.length - 1]; parts.pop(); continue; }
+    p.vy -= p.rise * 38 * u * dt; p.vx *= dr; p.vy *= dr;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+  }
+}
+function drawParts(far) {
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of parts) {
+    if ((p.z > 1) !== far) continue;
+    const q = project(p.x, p.y, p.z);
+    const k = 1 - p.life / p.max, idx = k < .28 ? 0 : k < .62 ? 1 : 2;
+    const a = k < .12 ? k / .12 : 1 - (k - .12) / .88;
+    const sz = p.size * (1 - k * .55) * q.s;
+    ctx.globalAlpha = a;
+    ctx.drawImage(SPR[p.pal][idx], q.x - sz, q.y - sz, sz * 2, sz * 2);
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+
+// ---------- actions ----------
+function toast(txt, cls = '') {
+  const box = $('toasts'); while (box.children.length > 3) box.firstChild.remove();
+  const d = document.createElement('div'); d.className = 'toast ' + cls; d.textContent = txt;
+  box.appendChild(d); setTimeout(() => d.remove(), 1000);
+}
+function banner(txt) { const b = $('banner'); b.textContent = txt; b.classList.remove('show'); void b.offsetWidth; b.classList.add('show'); }
+
+// Hand screen position -> world point on the z=0 plane (hands move with the head/camera).
+const handWorld = p => ({ x: p.x + cam.x, y: p.y + cam.y });
+
+function summon() {
+  fire.held = true;
+  const w = handWorld(hands.c); burst(w.x, w.y, 0, 'fire', 30, 30);
+}
+function extinguish() {
+  fire.held = false;
+  const w = handWorld(hands.c);
+  for (let i = 0; i < 14; i++) emit(w.x + rnd(-3, 3) * u, w.y, 0, rnd(-5, 5) * u, rnd(-12, -4) * u, 0, rnd(.3, .6), rnd(1.5, 3) * u, 'fire', .3);
+}
+function pickTarget(screenX) {
+  let best = null, bd = 1e9;
+  for (const e of enemies) {
+    if (e.hp <= 0) continue;
+    const d = Math.abs(project(e.px, e.py, e.z).x - screenX);
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+function throwFire() {
+  if (state === 'over' || paused) return;
+  if (!fire.held) { toast(shield.on ? 'bring hands together first' : 'palms together to make fire', 'dim'); return; }
+  const w = handWorld(hands.c), vz = 11;
+  let vx = hands.vel.x * .5, vy = hands.vel.y * .5 - 3 * u;
+  const tgt = pickTarget(hands.c.x + hands.vel.x * .25);
+  if (tgt) {
+    const T = (tgt.z - .3) / vz;
+    vx = lerp(vx, (tgt.px - w.x) / T, .8); vy = lerp(vy, (tgt.py - w.y) / T, .8);
+  }
+  projs.push({ kind: 'p', x: w.x, y: w.y, z: .3, vx, vy, vz, r: 4.5 * u });
+  burst(w.x, w.y, .3, 'fire', 28, 26);
+  shake = Math.max(shake, .15);
+  fire.held = false; fire.cool = .5;
+}
+
+// ---------- enemies & waves ----------
+function spawnEnemy() {
+  const z = rnd(6.5, 11), s = F / (F + z);
+  const px = VP.x + cam.x + rnd(-1, 1) * (W * .42) / s;
+  enemies.push({ px, py: FLOOR - 30 * u, z, hp: 2, t: 0, appear: 0, dying: 0, flash: 0,
+    cd: rnd(1.2, 2.6), winding: false, wind: 0, side: Math.random() < .5 ? -1 : 1, phase: rnd(0, 6) });
+}
+function startWave() { wave++; toSpawn = 2 + wave; spawnT = .6; banner('WAVE ' + wave); }
+function enemyThrow(e) {
+  // Aim at where your head/chest is right now; moving afterwards is how you dodge.
+  const tx = VP.x + cam.x + rnd(-4, 4) * u, ty = VP.y + cam.y + rnd(-3, 12) * u;
+  const hx = e.px + e.side * 11 * u, hy = e.py - 14 * u;
+  const vz = -(4.6 + wave * .35), T = e.z / -vz;
+  projs.push({ kind: 'e', x: hx, y: hy, z: e.z - .1, vx: (tx - hx) / T, vy: (ty - hy) / T, vz, r: 4.2 * u });
+}
+function distToSeg(p, a, b) {
+  const vx = b.x - a.x, vy = b.y - a.y, l2 = vx * vx + vy * vy || 1;
+  const k = clamp(((p.x - a.x) * vx + (p.y - a.y) * vy) / l2, 0, 1);
+  return Math.hypot(p.x - a.x - vx * k, p.y - a.y - vy * k);
+}
+function arrival(q) { const T = q.z / -q.vz; return { x: q.x + q.vx * T, y: q.y + q.vy * T }; }
+// Body hitbox relative to the current head position (real game: sample the segmentation mask).
+function bodyHit(x, y, r) {
+  const dx = x - (VP.x + cam.x), dy = y - (VP.y + cam.y);
+  if (Math.hypot(dx, dy) < 8 * u + r * .5) return true;
+  return Math.abs(dx) < 12 * u + r * .5 && dy > 6 * u && dy < 70 * u;
+}
+function shieldBlocks(x, y, r) {
+  return shield.on && distToSeg({ x: x - cam.x, y: y - cam.y }, hands.hl, hands.hr) < 8 * u + r;
+}
+function resolveIncoming(q) {
+  if (shieldBlocks(q.x, q.y, q.r)) {
+    burst(q.x, q.y, 0, 'spirit', 20, 30); burst(q.x, q.y, 0, 'fire', 14, 24);
+    shield.energy = Math.max(0, shield.energy - .18); score += 15; toast('BLOCKED', 'cool'); shake = .25; return true;
+  }
+  if (player.inv <= 0 && bodyHit(q.x, q.y, q.r)) {
+    player.hp -= 14; player.inv = .5; shake = 1; flash = 1; toast('HIT', 'bad');
+    if (player.hp <= 0) gameOver();
+    return true;
+  }
+  if (Math.hypot(q.x - (VP.x + cam.x), q.y - (VP.y + cam.y) - 10 * u) < 30 * u) { score += 10; toast('DODGED', 'cool'); }
+  return false;
+}
+function gameOver() {
+  player.hp = 0; state = 'over'; $('overScore').textContent = score; $('over').classList.remove('hidden');
+}
+function reset() {
+  player.hp = 100; player.inv = 0; score = 0; wave = 0; enemies.length = 0; projs.length = 0;
+  shield.energy = 1; shield.broken = 0;
+  $('over').classList.add('hidden'); $('help').classList.add('hidden');
+  state = 'play'; paused = false; startWave();
+}
+
+// ---------- update ----------
+function update(dt) {
+  t += dt;
+  // head -> camera (simulated tracking + a little natural sway)
+  const leanT = (keys.has('a') ? -1 : 0) + (keys.has('d') ? 1 : 0);
+  head.lean += (leanT - head.lean) * Math.min(1, dt * 7);
+  head.duck += ((keys.has('s') ? 1 : 0) - head.duck) * Math.min(1, dt * 8);
+  cam.x = head.lean * 22 * u + Math.sin(t * .7) * .6 * u;
+  cam.y = head.duck * 18 * u + Math.sin(t * 1.1) * .5 * u;
+  player.inv = Math.max(0, player.inv - dt);
+
+  // hands (screen space, simulated tracking with smoothing)
+  hands.spread += (hands.spreadT - hands.spread) * Math.min(1, dt * 12);
+  const half = hands.spread * u / 2;
+  const cx = clamp(mouse.x, half + 4 * u, W - half - 4 * u), cy = clamp(mouse.y, H * .2, H * 1.02);
+  const k = Math.min(1, dt * 16);
+  hands.hl.x = lerp(hands.hl.x, cx - half, k); hands.hl.y = lerp(hands.hl.y, cy, k);
+  hands.hr.x = lerp(hands.hr.x, cx + half, k); hands.hr.y = lerp(hands.hr.y, cy, k);
+  hands.prev.x = hands.c.x; hands.prev.y = hands.c.y;
+  hands.c.x = (hands.hl.x + hands.hr.x) / 2; hands.c.y = (hands.hl.y + hands.hr.y) / 2;
+  const kv = Math.min(1, dt * 12);
+  hands.vel.x = lerp(hands.vel.x, (hands.c.x - hands.prev.x) / dt, kv);
+  hands.vel.y = lerp(hands.vel.y, (hands.c.y - hands.prev.y) / dt, kv);
+
+  // gestures
+  const raised = hands.c.y < H * .82;
+  fire.cool = Math.max(0, fire.cool - dt);
+  shield.broken = Math.max(0, shield.broken - dt);
+  const wantShield = raised && hands.spread >= 22;
+  shield.on = wantShield && shield.energy > 0 && shield.broken <= 0;
+  if (shield.on) {
+    if (fire.held) fire.held = false;             // the fireball spreads into the shield
+    shield.energy = Math.max(0, shield.energy - dt * .33);
+    if (shield.energy <= 0) { shield.broken = 1.2; toast('SHIELD BROKEN', 'bad'); }
+  } else shield.energy = Math.min(1, shield.energy + dt * .22);
+  if (!fire.held && !shield.on && fire.cool <= 0 && raised && hands.spread < 9) summon();
+  if (fire.held && hands.c.y > H * .9) extinguish();
+  emitHandFire(dt);
+
+  const sMid = F / (F + 16);   // lanterns sit at depth 16, same parallax as the mid layer
+  for (const l of lanterns) if (Math.random() < dt * 1.5) emit(VP.x + (l.x - VP.x) / sMid + cam.x, VP.y + (l.y - VP.y) / sMid + cam.y, 16, rnd(-2, 2) * u / sMid, rnd(-6, -2) * u / sMid, 0, rnd(.6, 1.2), .6 * u / sMid, 'fire', .1 / sMid);
+
+  if (state === 'play') updateWorld(dt);
+  updParts(dt);
+  shake = Math.max(0, shake - dt * 2.5); flash = Math.max(0, flash - dt * 2);
+}
+
+function emitHandFire(dt) {
+  const vx0 = hands.vel.x * .3, vy0 = hands.vel.y * .3;
+  if (fire.held) {
+    const w = handWorld(hands.c), r = 4.2 * u;
+    for (let i = nOf(140, dt); i > 0; i--) {
+      const a = Math.random() * 6.283, d = Math.sqrt(Math.random()) * r * .55;
+      emit(w.x + Math.cos(a) * d, w.y + Math.sin(a) * d, 0, rnd(-6, 6) * u + vx0, rnd(-16, -5) * u + vy0, 0, rnd(.3, .6), r * rnd(.55, 1));
+    }
+  }
+  if (shield.on) {
+    const a = handWorld(hands.hl), b = handWorld(hands.hr), e = shield.energy;
+    for (let i = nOf(260, dt); i > 0; i--) {
+      const k = Math.random();
+      emit(lerp(a.x, b.x, k) + rnd(-1, 1) * u, lerp(a.y, b.y, k) + rnd(-2, 3) * u, 0,
+        rnd(-3, 3) * u + vx0, rnd(-34, -14) * u * (.6 + e * .6) + vy0, 0, rnd(.25, .5), (3 + e * 2) * u * rnd(.7, 1.1));
+    }
+  }
+}
+
+function updateWorld(dt) {
+  const alive = enemies.filter(e => e.hp > 0).length;
+  if (toSpawn > 0) {
+    spawnT -= dt;
+    if (spawnT <= 0 && alive < 2 + Math.ceil(wave / 2)) { spawnEnemy(); toSpawn--; spawnT = rnd(.8, 1.8); }
+  } else if (enemies.length === 0) {
+    waveBreak += dt; if (waveBreak > 2.2) { waveBreak = 0; startWave(); }
+  }
+  const baseCd = Math.max(1.4, 3.4 - wave * .25);
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i]; e.t += dt; e.appear = Math.min(1, e.appear + dt * 1.2); e.flash = Math.max(0, e.flash - dt * 4);
+    const s = F / (F + e.z);
+    if (e.hp <= 0) {
+      e.dying += dt * 2.2;
+      for (let j = nOf(120, dt); j > 0; j--) emit(e.px + rnd(-8, 8) * u, e.py + rnd(-20, 20) * u, e.z, rnd(-10, 10) * u / s, rnd(-30, -5) * u / s, 0, rnd(.4, .8), rnd(3, 6) * u / s, 'spirit', .6);
+      if (e.dying >= 1) enemies.splice(i, 1);
+      continue;
+    }
+    e.px += Math.sin(e.t * .5 + e.phase) * 8 * u * dt / s;
+    if (e.appear < 1) continue;
+    if (!e.winding) { e.cd -= dt; if (e.cd <= 0) { e.winding = true; e.wind = 0; } }
+    else { e.wind += dt; if (e.wind >= 1) { enemyThrow(e); e.winding = false; e.cd = rnd(baseCd, baseCd + 1.5); e.side = -e.side; } }
+  }
+  for (let i = projs.length - 1; i >= 0; i--) {
+    const p = projs[i]; let dead = false;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+    const pal = p.kind === 'p' ? 'fire' : 'spirit';
+    for (let j = nOf(p.kind === 'p' ? 120 : 90, dt); j > 0; j--) {
+      emit(p.x + rnd(-.4, .4) * p.r, p.y + rnd(-.4, .4) * p.r, p.z, rnd(-3, 3) * u, rnd(-6, 2) * u, p.vz * .25, rnd(.2, .45), p.r * rnd(.6, 1), pal, .6);
+    }
+    if (p.kind === 'p') {
+      for (const e of enemies) {
+        if (e.hp <= 0 || Math.abs(p.z - e.z) > .7) continue;
+        if (Math.abs(p.x - e.px) < p.r + 7 * u && Math.abs(p.y - e.py) < p.r + 22 * u) {
+          e.hp -= 1; e.flash = 1; burst(p.x, p.y, p.z, 'fire', 30, 40);
+          if (e.hp <= 0) { score += 100; toast('+100'); }
+          dead = true; break;
+        }
+      }
+      for (const q of projs) {
+        if (dead || q.kind !== 'e' || q.dead || Math.abs(p.z - q.z) > .8) continue;
+        if (Math.hypot(p.x - q.x, p.y - q.y) < p.r + q.r + 2 * u) {
+          q.dead = true; dead = true; burst(q.x, q.y, q.z, 'spirit', 24, 34); score += 25; toast('CLASH', 'cool');
+        }
+      }
+      if (p.z > 14) dead = true;
+    } else {
+      if (p.dead) dead = true;
+      else if (p.z <= .2 && !p.resolved) { p.resolved = true; if (resolveIncoming(p)) dead = true; }
+      if (p.z < -1.5) dead = true;
+    }
+    if (dead) projs.splice(i, 1);
+  }
+}
+
+// ---------- render ----------
+function drawEnemy(e) {
+  const c = project(e.px, e.py, e.z), s = c.s, sx = c.x;
+  const bob = Math.sin(e.t * 2 + e.phase) * 1.5 * u * s;
+  const cy = c.y + bob, hgt = 52 * u * s, feet = project(e.px, FLOOR, e.z).y;
+  const alpha = e.appear * (1 - Math.min(1, e.dying));
+  if (alpha <= 0) return;
+  ctx.globalAlpha = alpha * .5; ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(sx, feet, 9 * u * s, 2 * u * s, 0, 0, 7); ctx.fill();
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = alpha;
+  let gr = ctx.createRadialGradient(sx, cy, 0, sx, cy, hgt * .75);
+  gr.addColorStop(0, `rgba(80,190,255,${.22 + e.flash * .4})`); gr.addColorStop(1, 'rgba(80,190,255,0)');
+  ctx.fillStyle = gr; ctx.fillRect(sx - hgt, cy - hgt, hgt * 2, hgt * 2);
+  ctx.globalCompositeOperation = 'source-over';
+  const top = cy - hgt * .42, hem = cy + hgt * .45, w = 11 * u * s;
+  gr = ctx.createLinearGradient(0, top, 0, hem);
+  gr.addColorStop(0, e.flash > 0 ? 'rgba(255,230,200,.95)' : 'rgba(175,235,255,.88)');
+  gr.addColorStop(.6, 'rgba(70,130,210,.55)'); gr.addColorStop(1, 'rgba(40,70,160,0)');
+  ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(sx - w * .45, top + hgt * .12);
+  ctx.quadraticCurveTo(sx, top - hgt * .08, sx + w * .45, top + hgt * .12);
+  ctx.lineTo(sx + w * .8, top + hgt * .28); ctx.lineTo(sx + w * .55, top + hgt * .4);
+  for (let i = 0; i <= 8; i++) {
+    const k = i / 8; ctx.lineTo(sx + w * (.6 - 1.2 * k), hem + Math.sin(k * 12 + e.t * 5) * 1.6 * u * s);
+  }
+  ctx.lineTo(sx - w * .55, top + hgt * .4); ctx.lineTo(sx - w * .8, top + hgt * .28); ctx.closePath(); ctx.fill();
+  const hy = top + hgt * .03, hr = 4.6 * u * s;
+  ctx.fillStyle = '#eaf4f6'; ctx.beginPath(); ctx.ellipse(sx, hy, hr * .85, hr, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#0a1a28';
+  ctx.beginPath(); ctx.ellipse(sx - hr * .35, hy - hr * .1, hr * .22, hr * .1, .35, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(sx + hr * .35, hy - hr * .1, hr * .22, hr * .1, -.35, 0, 7); ctx.fill();
+  ctx.fillStyle = '#c0392b'; ctx.fillRect(sx - hr * .08, hy + hr * .3, hr * .16, hr * .35);
+  if (e.winding) {
+    const o = project(e.px + e.side * 11 * u, e.py - 14 * u, e.z), r = (1.2 + e.wind * 3.5) * u * s;
+    const ox = o.x, oy = o.y + bob;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(SPR.spirit[1], ox - r * 2.2, oy - r * 2.2, r * 4.4, r * 4.4);
+    ctx.drawImage(SPR.spirit[0], ox - r, oy - r, r * 2, r * 2);
+    ctx.strokeStyle = `rgba(140,230,255,${.6 * (1 - e.wind)})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(ox, oy, r * (4 - e.wind * 2.5), 0, 7); ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawProjCores(far) {
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of projs) {
+    if ((p.z > 1) !== far) continue;
+    const q = project(p.x, p.y, p.z), r = p.r * q.s;
+    const set = p.kind === 'p' ? SPR.fire : SPR.spirit;
+    ctx.drawImage(set[1], q.x - r * 2.4, q.y - r * 2.4, r * 4.8, r * 4.8);
+    ctx.drawImage(set[0], q.x - r * 1.2, q.y - r * 1.2, r * 2.4, r * 2.4);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// Where each incoming attack will land if you stay still: red = it would hit you.
+function drawLandingMarkers() {
+  for (const p of projs) {
+    if (p.kind !== 'e' || p.z > 5 || p.z < .2) continue;
+    const a = arrival(p), q = project(a.x, a.y, 0), near = 1 - p.z / 5;
+    const danger = bodyHit(a.x, a.y, p.r) && !shieldBlocks(a.x, a.y, p.r);
+    ctx.strokeStyle = danger ? `rgba(255,80,70,${.25 + near * .65})` : `rgba(130,220,255,${near * .6})`;
+    ctx.lineWidth = danger ? 3 : 2;
+    const r = p.r * (1.3 + (1 - near) * 2.5);
+    ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 7); ctx.stroke();
+    if (danger) { ctx.beginPath(); ctx.arc(q.x, q.y, r * .35, 0, 7); ctx.stroke(); }
+  }
+}
+
+// First-person forearm + hand, in screen space. side: -1 left, +1 right.
+function handShape(c, h, side, grow, open) {
+  const k = 1.5 * u, g = grow;
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  const line = (x1, y1, x2, y2, w) => { c.lineWidth = w + 2 * g; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); };
+  const elbow = { x: h.x + side * 16 * k, y: H + 14 * k }, mid = { x: lerp(elbow.x, h.x, .55), y: lerp(elbow.y, h.y + 4 * k, .55) };
+  line(elbow.x, elbow.y, mid.x, mid.y, 9 * k);
+  line(mid.x, mid.y, h.x, h.y + 3.5 * k, 6.4 * k);
+  const pw = open ? 5.4 * k : 3.4 * k;
+  c.beginPath(); c.ellipse(h.x, h.y, pw / 2 + g, 3.6 * k + g, 0, 0, 7); c.fill();
+  const fan = open ? .2 : .06, curl = open ? 0 : -side * .28;
+  for (let i = 0; i < 4; i++) {
+    const a = -Math.PI / 2 + (i - 1.5) * fan + curl, len = (i === 1 || i === 2 ? 5.2 : 4.4) * k;
+    const bx = h.x + (i - 1.5) * pw * .26, by = h.y - 2.6 * k;
+    line(bx, by, bx + Math.cos(a) * len, by + Math.sin(a) * len, 1.6 * k);
+  }
+  const ta = -Math.PI / 2 - side * (open ? 1.05 : .7);
+  const tx = h.x - side * pw * .42, ty = h.y + .4 * k;
+  line(tx, ty, tx + Math.cos(ta) * 3.6 * k, ty + Math.sin(ta) * 3.6 * k, 1.9 * k);
+}
+
+function drawHands() {
+  const open = shield.on;
+  const glow = fire.held || shield.on ? .9 + .1 * Math.sin(t * 20) : .15;
+  ctx.strokeStyle = ctx.fillStyle = `rgba(255,130,60,${.12 + .28 * glow})`;
+  handShape(ctx, hands.hl, -1, .9 * u, open); handShape(ctx, hands.hr, 1, .9 * u, open);
+  hlx.setTransform(DPR, 0, 0, DPR, 0, 0); hlx.globalCompositeOperation = 'source-over'; hlx.clearRect(0, 0, W, H);
+  hlx.strokeStyle = hlx.fillStyle = player.inv > 0 && Math.sin(t * 40) > 0 ? '#3a1216' : '#150f19';
+  handShape(hlx, hands.hl, -1, 0, open); handShape(hlx, hands.hr, 1, 0, open);
+  hlx.globalCompositeOperation = 'source-atop';
+  const gr = hlx.createRadialGradient(hands.c.x, hands.c.y - 4 * u, 0, hands.c.x, hands.c.y, 50 * u);
+  gr.addColorStop(0, `rgba(255,160,80,${.75 * glow})`); gr.addColorStop(1, 'rgba(255,90,30,0)');
+  hlx.fillStyle = gr; hlx.fillRect(0, 0, W, H);
+  ctx.drawImage(handL, 0, 0, W, H);
+}
+
+function render() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  if (shake > 0) ctx.translate(rnd(-1, 1) * shake * 1.2 * u, rnd(-1, 1) * shake * 1.2 * u);
+
+  // parallax background: sky barely moves, temples a bit, floor fully
+  ctx.drawImage(skyL, -M - cam.x * PAR_SKY, -M - cam.y * PAR_SKY, W + 2 * M, H + 2 * M);
+  drawFloor();
+  const mx = -M - cam.x * PAR_MID, my = -M - cam.y * PAR_MID;
+  ctx.drawImage(midL, mx, my, W + 2 * M, H + 2 * M);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const [i, l] of lanterns.entries()) {
+    const x = l.x + mx + M, y = l.y + my + M, f = .75 + .25 * Math.sin(t * 9 + i * 2) * Math.sin(t * 5.3 + i), r = 7 * u * f;
+    const gr = ctx.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(255,170,80,.55)'); gr.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = gr; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    ctx.fillStyle = '#ffb45e'; ctx.fillRect(x - .6 * u, y - .9 * u, 1.2 * u, 1.8 * u);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  [...enemies].sort((a, b) => b.z - a.z).forEach(drawEnemy);
+  drawParts(true); drawProjCores(true);
+  drawLandingMarkers();
+
+  // warm light from held fire / shield
+  const glow = fire.held || shield.on ? .9 + .1 * Math.sin(t * 20) : 0;
+  if (glow) {
+    ctx.globalCompositeOperation = 'lighter';
+    const r = (shield.on ? 55 : 40) * u;
+    const gr = ctx.createRadialGradient(hands.c.x, hands.c.y, 0, hands.c.x, hands.c.y, r);
+    gr.addColorStop(0, `rgba(255,140,60,${.28 * glow})`); gr.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = gr; ctx.fillRect(hands.c.x - r, hands.c.y - r, r * 2, r * 2);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  if (shield.on) {
+    const a = hands.hl, b = hands.hr, hgt = (14 + shield.energy * 10) * u;
+    const gr = ctx.createLinearGradient(0, a.y, 0, a.y - hgt);
+    gr.addColorStop(0, `rgba(255,150,60,${.35 * shield.energy + .1})`); gr.addColorStop(1, 'rgba(255,90,30,0)');
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y + 2 * u); ctx.lineTo(b.x, b.y + 2 * u);
+    for (let i = 0; i <= 10; i++) { const k = 1 - i / 10; ctx.lineTo(lerp(a.x, b.x, k), lerp(a.y, b.y, k) - hgt * (.75 + .25 * Math.sin(k * 14 + t * 12))); }
+    ctx.closePath(); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+  }
+
+  drawProjCores(false);
+  drawHands();
+  drawParts(false);
+  if (fire.held) {
+    const w = handWorld(hands.c), q = project(w.x, w.y, 0), r = 4.4 * u * (.95 + .08 * Math.sin(t * 25));
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(SPR.fire[0], q.x - r, q.y - r, r * 2, r * 2);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.drawImage(vig, 0, 0, W, H);
+  if (flash > 0) {
+    const gr = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .2, W / 2, H / 2, Math.max(W, H) * .7);
+    gr.addColorStop(0, 'rgba(255,0,0,0)'); gr.addColorStop(1, `rgba(255,30,30,${.5 * flash})`);
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+  }
+  drawPip();
+  drawHud();
+}
+
+// Fake "what the webcam sees": you, mirrored, with pose + hand points.
+function drawPip() {
+  const pw = pip.width, ph = pip.height;
+  pctx.setTransform(1, 0, 0, 1, 0, 0);
+  pctx.fillStyle = '#05070a'; pctx.fillRect(0, 0, pw, ph);
+  pctx.strokeStyle = 'rgba(255,255,255,.05)'; pctx.lineWidth = 1;
+  for (let i = 1; i < 8; i++) { pctx.beginPath(); pctx.moveTo(pw * i / 8, 0); pctx.lineTo(pw * i / 8, ph); pctx.stroke(); }
+  for (let i = 1; i < 6; i++) { pctx.beginPath(); pctx.moveTo(0, ph * i / 6); pctx.lineTo(pw, ph * i / 6); pctx.stroke(); }
+  const U = ph / 100;
+  const hx = pw / 2 + cam.x / W * pw * .8, hy = ph * .3 + cam.y / H * ph * .8;
+  const sh = { l: { x: hx - 13 * U, y: hy + 16 * U }, r: { x: hx + 13 * U, y: hy + 16 * U } };
+  const hp = p => ({ x: pw / 2 + (p.x - W / 2) / W * pw * .9, y: ph * .15 + (p.y - H * .2) / H * ph * 1.1 });
+  const L = hp(hands.hl), R = hp(hands.hr);
+  // mask
+  pctx.fillStyle = 'rgba(90,210,170,.22)'; pctx.strokeStyle = 'rgba(90,210,170,.22)'; pctx.lineCap = 'round';
+  pctx.beginPath(); pctx.arc(hx, hy, 8 * U, 0, 7); pctx.fill();
+  pctx.beginPath(); pctx.moveTo(sh.l.x - 3 * U, sh.l.y); pctx.lineTo(sh.r.x + 3 * U, sh.r.y);
+  pctx.lineTo(sh.r.x, ph + 5); pctx.lineTo(sh.l.x, ph + 5); pctx.closePath(); pctx.fill();
+  pctx.lineWidth = 7 * U;
+  for (const [s, h] of [[sh.l, L], [sh.r, R]]) { pctx.beginPath(); pctx.moveTo(s.x, s.y); pctx.lineTo(h.x, h.y); pctx.stroke(); }
+  // skeleton
+  pctx.strokeStyle = '#9dffcf'; pctx.lineWidth = 1.5 * DPR;
+  const seg = (a, b) => { pctx.beginPath(); pctx.moveTo(a.x, a.y); pctx.lineTo(b.x, b.y); pctx.stroke(); };
+  seg(sh.l, sh.r); seg(sh.l, L); seg(sh.r, R); seg({ x: hx, y: hy + 8 * U }, { x: (sh.l.x + sh.r.x) / 2, y: sh.l.y });
+  pctx.strokeStyle = '#ffc36b';
+  for (const h of [L, R]) for (let f = 0; f < 5; f++) { const a = -Math.PI / 2 + (f - 2) * (shield.on ? .35 : .15); seg(h, { x: h.x + Math.cos(a) * 6 * U, y: h.y + Math.sin(a) * 6 * U }); }
+  pctx.fillStyle = '#fff';
+  for (const p of [{ x: hx, y: hy }, sh.l, sh.r, L, R]) { pctx.beginPath(); pctx.arc(p.x, p.y, 2 * DPR, 0, 7); pctx.fill(); }
+}
+
+function drawHud() {
+  $('hpFill').style.width = Math.max(0, player.hp) + '%';
+  $('score').textContent = score;
+  $('wave').textContent = state === 'intro' ? 'Practice' : 'Wave ' + wave;
+  const pill = $('pill');
+  pill.classList.toggle('off', !fire.held && !shield.on);
+  pill.classList.toggle('shield', shield.on);
+  if (shield.on) { $('modeName').textContent = 'FLAME SHIELD'; $('modeHint').textContent = 'cover the red rings · drains while held'; }
+  else if (fire.held) { $('modeName').textContent = 'FIREBALL'; $('modeHint').textContent = 'push toward the screen to throw'; }
+  else { $('modeName').textContent = 'NO FIRE'; $('modeHint').textContent = 'raise hands, palms together  ·  or spread wide to shield'; }
+  $('shieldFill').style.width = Math.round(shield.energy * 100) + '%';
+  $('shieldBar').classList.toggle('broken', shield.broken > 0);
+  $('shieldState').textContent = shield.broken > 0 ? 'broken' : shield.on ? 'holding' : shield.energy < 1 ? 'recharging' : 'ready';
+  $('headTag').textContent = head.duck > .5 ? 'duck' : head.lean < -.5 ? 'left' : head.lean > .5 ? 'right' : 'center';
+}
+
+// ---------- loop ----------
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc > .5) { $('fps').textContent = Math.round(fpsN / fpsAcc) + ' fps'; fpsAcc = 0; fpsN = 0; }
+  if (!(paused && state === 'play')) update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+
+// ---------- input ----------
+addEventListener('resize', resize);
+addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+cv.addEventListener('mousedown', e => { if (e.button === 0) throwFire(); });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('wheel', e => { hands.spreadT = clamp(hands.spreadT - e.deltaY * .03, 4, 40); }, { passive: true });
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if ([' ', 'arrowup', 'arrowdown'].includes(k)) e.preventDefault();
+  if (e.repeat) return;
+  keys.add(k);
+  if (k === '1') hands.spreadT = 6;
+  if (k === '2') hands.spreadT = 34;
+  if (k === 'r' && state === 'over') reset();
+  if (k === '?' || k === '/') {
+    const h = $('help'); h.classList.toggle('hidden');
+    if (state === 'play') paused = !h.classList.contains('hidden');
+  }
+  if (k === 'enter' && state !== 'play') reset();
+});
+addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+addEventListener('blur', () => keys.clear());
+$('startBtn').addEventListener('click', () => { if (state === 'play') { $('help').classList.add('hidden'); paused = false; } else reset(); });
+$('againBtn').addEventListener('click', reset);
+
+resize();
+hands.hl.x = hands.hr.x = hands.c.x = mouse.x; hands.hl.y = hands.hr.y = hands.c.y = mouse.y;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
