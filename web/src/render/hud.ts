@@ -2,7 +2,7 @@ import { TUNE, type ComboName, type Game, type GameEvent } from '../game/game';
 
 const COMBO_NAMES: Record<ComboName, string> = {
   charged: 'CHARGED', flurry: 'FLURRY', counter: 'COUNTER', oneTwo: 'ONE-TWO PUSH', volley: 'PILLAR VOLLEY',
-  wallBreaker: 'WALL BREAKER', shieldBurst: 'SHIELD BURST', finisher: 'FINISHER',
+  wallBreaker: 'WALL BREAKER', finisher: 'FINISHER',
 };
 import { TUNING, type Intent } from '../intent/interpret';
 

@@ -51,7 +51,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'charge', title: 'Charged punch',
-    how: 'Pull a fist back toward your chest and hold it still for a moment: it glows, then burns blue. Punch, and a blue fireball flies out — bigger, faster, twice as strong.',
+    how: 'Hold a fist still at your hip (elbow bent back) or cocked up by your ear (elbow raised) for a moment: it glows, then burns blue. Punch, and a blue fireball flies out — bigger, faster, twice as strong.',
     goal: 'Throw charged punches', need: 2,
     cast: [{ tag: 'dummy', kind: 'dummy', x: 0, z: 7 }],
     progress: (_g, events) => combos(events, 'charged'),
@@ -132,13 +132,6 @@ export const LESSONS: Lesson[] = [
     goal: 'Break walls into your enemies', need: 2,
     cast: [{ tag: 'a', kind: 'dummy', x: -18, z: 7 }, { tag: 'b', kind: 'dummy', x: 18, z: 8 }],
     progress: (_g, events) => combos(events, 'wallBreaker'),
-  },
-  {
-    id: 'burst', title: 'Shield burst',
-    how: 'Hold the flame shield for a second, then shove both palms forward. The shield bursts outward and clears everything coming at you.',
-    goal: 'Burst your shield', need: 2,
-    cast: [{ tag: 'spirit', kind: 'spirit', x: 0, z: 8, only: 'orb', cd: 1, pace: 1.2 }],
-    progress: (_g, events) => combos(events, 'shieldBurst'),
   },
   {
     id: 'ultimate', title: 'Finisher',

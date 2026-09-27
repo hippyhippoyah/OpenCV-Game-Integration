@@ -368,3 +368,14 @@ recordings nothing charges by accident (swaying used to, until charging required
 The tutorial has 16 lessons, adding Charged punch, Flurry, Shield counter, One-two push, Pillar
 volley, Wall breaker (was Wall push), Shield burst and Finisher (was Ultimate), each with an
 animated demo. Mock: hold G to charge the right fist.
+
+**Charging and Shield burst (revised):** on a real camera "pull the fist back" charged almost
+everything — the distance reading drifts more than the pull. Charging now uses what the camera
+sees reliably, screen positions and arm shape (view units from the fist's shoulder): a fist held
+still for 0.5 s (body steady) either **at the hip** — 28–60 below the shoulder, elbow flared out
+≥ 8 past it or the arm bent (extension < 0.5), unlike a relaxed arm hanging straight — or
+**cocked by the ear** — ≥ 20 above the shoulder with the elbow raised ≥ 12 above it (guard, jabs
+and uppercuts keep the elbow at or below the shoulder). Both fists at the hips charge both. A
+full charge lasts 1.5 s. Charged shots no longer follow where the fist points (it's near the
+chest, where aim reads worst): they go for the enemy aimed at, else the nearest, else straight
+ahead. Shield burst is removed. Mock: G holds the right fist at the hip.

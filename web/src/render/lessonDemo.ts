@@ -111,14 +111,16 @@ export class LessonDemo {
         break;
       }
       case 'charge': {
-        // pull the fist back and hold (it glows, then burns blue), then punch a blue fireball
-        const u = t % 3, back = ramp(u, 0.1, 0.3) * (1 - ramp(u, 1.5, 0.08)), glow = ramp(u, 0.4, 0.9), s = hit(u, 1.5, 0.6);
+        // fist to the hip (or cocked by the ear, every other loop) and held: it glows, then burns
+        // blue; then punch a blue fireball
+        const ear = Math.floor(t / 3) % 2 === 1, u = t % 3;
+        const into = ramp(u, 0.1, 0.3) * (1 - ramp(u, 1.5, 0.08)), glow = ramp(u, 0.4, 0.9), s = hit(u, 1.5, 0.6);
         this.fist(cx - 34, H * 0.62, 1);
-        const fx = cx + 34 - s * 20, fy = H * 0.62 + back * 14 - s * 22;
+        const fx = cx + 34 + into * (ear ? 4 : 6) - s * 20, fy = H * 0.62 + into * (ear ? -44 : 32) - s * 22;
         if (glow > 0 && s === 0 && u < 1.5) this.glow(fx, fy, 10 + glow * 16, `rgba(120,170,255,${0.3 + 0.5 * glow})`);
-        this.fist(fx, fy, (1 - back * 0.2) * (1 + s * 0.45));
+        this.fist(fx, fy, 1 + s * 0.45);
         if (s > 0.9) this.glow(cx + 8, H * 0.25, 14, 'rgba(150,200,255,1)');
-        if (u < 1.4) this.arrow(cx + 50, H * 0.55, cx + 50, H * 0.8, 0.6);
+        if (u < 1.4) this.arrow(cx + 54, H * 0.55, cx + 54, ear ? H * 0.12 : H * 0.95, 0.6);
         break;
       }
       case 'flurry': {
@@ -174,15 +176,6 @@ export class LessonDemo {
         this.palm(cx + 32 - push * 6, y, 0.9 + push * 0.3, true);
         if (up > 0.3) this.sheet(cx - 40 * (1 - away * 0.6), cx + 40 * (1 - away * 0.6), H * (0.95 - away * 0.35), (H * 0.5) * (0.4 + 0.6 * up) * (1 - away * 0.6));
         if (u > 1.3 && u < 2.2) this.arrow(cx, H * 0.98, cx, H * 0.72, 0.6);
-        break;
-      }
-      case 'burst': {
-        // hold the shield, then shove both palms: it blasts outward
-        const u = t % 3, push = hit(u, 1.4, 0.8), blast = ramp(u, 1.6, 0.4) * (1 - ramp(u, 2.2, 0.3));
-        this.palm(cx - 36 + push * 6, H * 0.62 - push * 10, 1 + push * 0.3);
-        this.palm(cx + 36 - push * 6, H * 0.62 - push * 10, 1 + push * 0.3, true);
-        if (u < 1.6) this.sheet(cx - 24, cx + 24, H * 0.64, 26 * (0.85 + 0.15 * Math.sin(t * 9)));
-        if (blast > 0) this.ring(cx, H * 0.5, 20 + blast * 50);
         break;
       }
       case 'ultimate': {
@@ -259,7 +252,7 @@ export class LessonDemo {
     c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
   }
 
-  /** A bright ring (a counter shot, a burst). */
+  /** A bright ring (a counter shot). */
   private ring(x: number, y: number, r: number): void {
     const c = this.ctx;
     c.strokeStyle = 'rgba(255,240,210,.85)';

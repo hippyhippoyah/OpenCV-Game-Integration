@@ -27,7 +27,7 @@ export interface ViewMapper { screenToView(x: number, y: number): Vec2 }
  * Pretends to be the camera. The mouse is where you aim; a punch drives that fist to the mouse
  * (opening it at the end in the open-hand punch style); holding Space opens both hands around the mouse (shield); A/D/S lean and duck;
  * W sweeps open hands up (fire wall); U spreads open hands apart (ultimate); F pushes both open
- * palms forward (wall push); X crosses the arms; holding G pulls the right fist back to charge it;
+ * palms forward (wall push); X crosses the arms; holding G holds the right fist at the hip to charge it;
  * E pushes an open right palm toward the mouse (pillar);
  * holding O swings the right hand out of the picture (only its arm is still tracked).
  */
@@ -101,9 +101,9 @@ export class MockTracker implements Tracker {
         ext = 0.25 + 0.65 * e;
         reachM = GUARD_REACH_M + (PUNCH_REACH_M - GUARD_REACH_M) * e;
       } else if (this.keys.has('g') && side === 'r' && (since === null || since > EXTEND_S + OPEN_HOLD_S)) {
-        // pulled back toward the chest and held: charging
-        pos = { x: GUARD.r.x - 2, y: GUARD.r.y + 4 };
-        reachM = GUARD_REACH_M - 0.13;
+        // down at the hip, elbow bent: charging
+        pos = { x: 22, y: 58 };
+        reachM = GUARD_REACH_M - 0.1;
         ext = 0.1;
       } else if (this.keys.has('x')) {
         pos = XBLOCK[side];

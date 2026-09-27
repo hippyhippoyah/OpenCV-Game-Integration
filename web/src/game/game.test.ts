@@ -169,21 +169,6 @@ describe('Game', () => {
       expect(g.walls).toHaveLength(0); // rolled off the end of the field
     });
 
-    it('shield burst: after holding the shield a moment, blasts outward and clears what is coming', () => {
-      const g = quietGame();
-      g.projs.push({ ...incoming(0, 10), z: 3.5, vz: -2 });
-      run(g, TUNE.shieldBurstHoldS * 0.5, shieldUp(10));
-      g.step(1 / 60, { ...shieldUp(10), casts: [{ kind: 'push', at: { x: 0, y: 10 } }] });
-      expect(g.walls).toHaveLength(0); // not held long enough
-      run(g, TUNE.shieldBurstHoldS * 0.6, shieldUp(10));
-      g.drainEvents();
-      // pushing drops the shield on the same frame
-      g.step(1 / 60, intent({ casts: [{ kind: 'push', at: { x: 0, y: 10 } }] }));
-      expect(g.drainEvents()).toContainEqual(expect.objectContaining({ type: 'combo', name: 'shieldBurst' }));
-      run(g, 1, intent());
-      expect(g.projs.filter(p => p.kind === 'enemy')).toHaveLength(0);
-      expect(g.walls).toHaveLength(0); // short range: gone by burstReach
-    });
   });
 
   describe('combos', () => {
@@ -202,6 +187,24 @@ describe('Game', () => {
       expect(combos(g)).toEqual(['charged']);
       run(g, 1.5, intent());
       expect(g.enemies[0].hp).toBe(5 - TUNE.chargedDamage);
+    });
+
+    it('a charged punch goes for an enemy even when the fist points somewhere odd', () => {
+      const g = quietGame();
+      g.enemies.push(foe(1, 40, 8));
+      // the fist reads far off to the lower left, pointing sideways
+      g.step(1 / 60, intent({ punches: [{ ...punch('r', -40, 45, { x: -2, y: 1.5 }), charged: true }] }));
+      run(g, 1.5, intent());
+      expect(g.enemies[0].hp).toBe(5 - TUNE.chargedDamage);
+    });
+
+    it('with nobody there, a charged punch flies straight ahead', () => {
+      const g = quietGame();
+      g.step(1 / 60, intent({ punches: [{ ...punch('r', -40, 45, { x: -2, y: 1.5 }), charged: true }] }));
+      // heads for the middle of the view, not off to the lower left where the fist pointed
+      const p = g.projs[0], t = (TUNE.aimDepth - p.z) / p.vz;
+      expect(Math.abs(p.x + p.vx * t)).toBeLessThan(1);
+      expect(p.y + p.vy * t).toBeLessThan(FLOOR_Y - 30);
     });
 
     it('flurry: the third quick punch is a big fireball that also burns those nearby', () => {

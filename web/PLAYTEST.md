@@ -23,9 +23,9 @@ Run `npm run dev`, play with the camera in Chrome. Note the result of each item.
 - [ ] An earthbender's pillar clearly comes down your left or right (its furrow shows the track), and leaning away dodges it with time to spare.
 - [ ] The dodge cue turns green (✓ CLEAR) as soon as you're out of the way, for both pillars and the water wave.
 - [ ] Nothing flashes or shakes enough to startle you.
-- [ ] Pulling a fist back and holding it turns it blue within about half a second; the next punch is a blue fireball. It never charges on its own while you sway or punch normally.
+- [ ] Holding a fist at your hip (or cocked by your ear) turns it blue within about half a second; the next punch is a blue fireball that flies at an enemy. It never charges on its own in guard, while punching, swaying or with arms hanging.
 - [ ] Three quick punches make a flurry; jab-jab-push makes a wide pillar; push-push (one hand each) makes a pillar volley.
-- [ ] Raising a wall then pushing both palms breaks it forward; holding the shield then pushing bursts it; pushing both palms otherwise does nothing (with a hint).
+- [ ] Raising a wall then pushing both palms breaks it forward; pushing both palms otherwise does nothing (with a hint).
 - [ ] Blocking with the shield then punching throws a counter that homes in.
 - [ ] Jab, jab, gather & fling fires the finisher when the ultimate bar is full; the fling alone says how.
 - [ ] Enemies stay near the middle of the screen, where they're easy to aim at.

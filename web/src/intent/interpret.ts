@@ -138,15 +138,19 @@ export const TUNING = {
    */
   sharpJolt: 0.09, sharpWindowS: 0.1,
   /**
-   * Charged punch: a fist pulled back at least chargePull (m) behind where it usually rests, and
-   * held there for chargeHoldS, is charged; it stays charged for chargeKeepS after leaving that
-   * spot, until it punches or opens. Held = it settled (moving less than chargeStill m over
-   * chargeStillS) and hasn't moved chargeMove since. Where it usually rests follows the fist at
-   * guardRate (1/s), a quarter as fast while pulled back, not mid-punch, and fully while its
-   * reading warms up. It only builds while the body is steady (see leanFreeSpeed): swaying pulls a
-   * fist back too.
+   * Charged punch: a fist held for chargeHoldS in a charging pose, with the body steady (swaying
+   * moves fists about too), charges; it stays charged for chargeKeepS after leaving the pose, until
+   * it punches or opens. Poses, in view units (shoulder widths × 32) from its shoulder — screen
+   * positions and arm shape only, as the camera's distance reading is too rough for this:
+   * - at the hip: the fist hipBelow…hipBelowMax below the shoulder, with the elbow flared out
+   *   elbowFlare past it or the arm bent (extension under hipMaxExtension) — unlike a relaxed arm
+   *   hanging straight down;
+   * - cocked by the ear: the fist earAbove above the shoulder and the elbow raised elbowUp above
+   *   it — guard, jabs and uppercuts keep the elbow at or below the shoulder.
+   * The fist must be held nearly still (screen speed under chargeMaxSpeed).
    */
-  chargePull: 0.06, chargeStill: 0.05, chargeMove: 0.1, chargeStillS: 0.2, chargeHoldS: 0.5, chargeKeepS: 2.5, guardRate: 0.4,
+  chargeHoldS: 0.5, chargeKeepS: 1.5, chargeMaxSpeed: 35,
+  hipBelow: 28, hipBelowMax: 60, elbowFlare: 8, hipMaxExtension: 0.5, earAbove: 20, elbowUp: 12,
   /**
    * Live punch and push sensitivity ([ and ] in game): thresholds are divided by this. Tuned and tested
    * at 1; the default is set higher by preference (more misses caught, some more misfires).
@@ -269,11 +273,7 @@ interface Track extends HandState {
   reachSince: number | null;
   /** Hand tracker palm − pose-wrist palm estimate, so switching between them doesn't jump. */
   armOffset: Vec2;
-  /**
-   * Charged punch: where the fist usually rests (a slow average, not following it while pulled
-   * back), when it was pulled back and held (chamberSince), and when it was last fully charged.
-   */
-  guardSlow: number | null;
+  /** Charged punch: since when it has been held in a charging pose, and when it was last fully charged. */
   chamberSince: number | null;
   chargedAt: number | null;
   /** When the hand can push again. */
@@ -473,8 +473,10 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     // A quick jolt of a fist toward the camera (more than the other fist moved); re-arms on a short pull-back.
     for (const side of SIDES) {
       const tr = s[side], o = s[other(side)];
-      if (!tr || tr.source === 'estimate') continue;
-      updateCharge(tr, f.t, dt, recentSpeed > TUNING.leanFreeSpeed);
+      if (!tr) continue;
+      // (a fist at the hip may be below the picture: charging still counts it)
+      updateCharge(tr, side, shoulders[side], f.t, recentSpeed > TUNING.leanFreeSpeed);
+      if (tr.source === 'estimate') continue;
       let fire = false, jolt = false, shove = false;
       if (tr.reach !== null) {
         const need = fistThresholds(tr.reachNoise ?? 0, leanExtra);
@@ -587,26 +589,24 @@ function heldStill(o: Track, pushing: Track): boolean {
   return palmPushRise(o.hist, w, o.lastPunchT) < TUNING.palmOtherStill * palmPushRise(pushing.hist, w);
 }
 
+/** Is this fist in a charging pose: down at the hip (elbow flared or arm bent), or cocked up by the ear (elbow raised)? */
+export function chargePose(tr: HandState, side: Side, shoulder: Vec2): 'hip' | 'ear' | null {
+  if (tr.openness >= TUNING.clearlyOpen || !tr.elbow) return null;
+  const out = side === 'l' ? -1 : 1, below = tr.pos.y - shoulder.y;
+  const flared = (tr.elbow.x - tr.pos.x) * out >= TUNING.elbowFlare;
+  if (below >= TUNING.hipBelow && below <= TUNING.hipBelowMax && (flared || (tr.extension ?? 1) < TUNING.hipMaxExtension)) return 'hip';
+  if (tr.source === 'hand' && -below >= TUNING.earAbove && shoulder.y - tr.elbow.y >= TUNING.elbowUp) return 'ear';
+  return null;
+}
+
 /**
- * Charged punch: is this fist pulled back and held (charging), and for how long? Fills
- * `charge` 0 → 1 over chargeHoldS; a full charge lasts chargeKeepS after it leaves the spot.
+ * Charged punch: fills `charge` 0 → 1 while the fist is held still in a charging pose (with the
+ * body steady); a full charge lasts chargeKeepS after it leaves the pose.
  */
-function updateCharge(tr: Track, t: number, dt: number, bodyMoving: boolean): void {
-  if (tr.reach === null || tr.source !== 'hand') return;
-  const warming = tr.reachSince === null || t - tr.reachSince < TUNING.reachWarmupS;
-  tr.guardSlow = warming || tr.guardSlow === null ? tr.reach : tr.guardSlow;
-  // pulled back: chargePull to start, half that to stay (the reading wobbles)
-  const holding = tr.chamberSince !== null || tr.chargedAt !== null;
-  const pulled = tr.guardSlow - tr.reach >= TUNING.chargePull * (holding ? 0.5 : 1);
-  const then = tr.hist.find(h => h.reach !== null && t - h.t <= TUNING.chargeStillS);
-  const moved = then ? Math.abs(tr.reach - then.reach!) : Infinity;
-  // settling into the spot needs stillness; once there, only a real move breaks it
-  const still = tr.chamberSince === null ? moved < TUNING.chargeStill && Math.hypot(tr.vel.x, tr.vel.y) < 40 : moved < TUNING.chargeMove;
+function updateCharge(tr: Track, side: Side, shoulder: Vec2, t: number, bodyMoving: boolean): void {
   const fist = tr.openness < TUNING.clearlyOpen;
-  // where the fist usually rests: follow it (slowly while pulled back), not mid-punch
-  if (tr.armed) tr.guardSlow = lerp(tr.guardSlow, tr.reach, Math.min(1, dt * TUNING.guardRate * (pulled ? 0.25 : 1)));
-  // a charge builds only with the body steady: swaying pulls a fist back too
-  if (fist && pulled && still && !bodyMoving) {
+  const held = !bodyMoving && Math.hypot(tr.vel.x, tr.vel.y) < TUNING.chargeMaxSpeed && chargePose(tr, side, shoulder) !== null;
+  if (held) {
     tr.chamberSince ??= t;
     // a full charge stays full; otherwise it fills while held
     tr.charge = tr.chargedAt !== null ? 1 : Math.min(1, (t - tr.chamberSince) / TUNING.chargeHoldS);
@@ -614,7 +614,7 @@ function updateCharge(tr: Track, t: number, dt: number, bodyMoving: boolean): vo
     return;
   }
   tr.chamberSince = null;
-  // left the spot: a full charge is kept a while (to punch with); a partial one is lost
+  // left the pose: a full charge is kept a moment (to punch with); a partial one is lost
   const kept = tr.chargedAt !== null && t - tr.chargedAt <= TUNING.chargeKeepS && fist;
   if (kept) tr.charge = 1;
   else { tr.charge = 0; tr.chargedAt = null; }
@@ -738,7 +738,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
       punchRise: null,
       aimDir: null, body3: b3 && { ...b3 },
       armOffset: { x: 0, y: 0 }, filters, palmReadyAt: -Infinity, shapeOpen: h ? h.open >= 0.5 : null,
-      guardSlow: null, chamberSince: null, chargedAt: null, charge: 0,
+      chamberSince: null, chargedAt: null, charge: 0,
       hist: [],
     };
     track.reach = reachNow(track);

@@ -60,7 +60,7 @@ describe('MockTracker', () => {
     expect(out.flatMap(o => o.casts)).toHaveLength(0);
   });
 
-  it('holding G pulls the right fist back to charge it; the next click throws a charged punch', () => {
+  it('holding G holds the right fist at the hip to charge it; the next click throws a charged punch', () => {
     const m = new MockTracker(identity);
     m.setMouse(5, 5);
     const out = run(m, 150, i => {

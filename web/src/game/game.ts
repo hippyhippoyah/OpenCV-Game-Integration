@@ -71,9 +71,7 @@ export const TUNE = {
    * - Pillar volley: a palm push with the other hand within volleyWindowS of one — the two merge into
    *   a wave volleyWidth× a pillar's width doing volleyDamage.
    * - Wall breaker: pushing both palms while your own fire wall stands sends it rolling forward.
-   *   (Pushing both palms does nothing otherwise, unless…)
-   * - Shield burst: pushing both palms after holding the flame shield shieldBurstHoldS — a short
-   *   blast (burstHalfW wide, out to burstReach) that clears every attack coming at you.
+   *   (Pushing both palms does nothing otherwise.)
    * - Finisher: the ultimate (gather & fling) needs the ultimate bar full and finisherPunches
    *   punches within finisherWindowS before it.
    */
@@ -82,7 +80,6 @@ export const TUNE = {
   counterWindowS: 0.6, counterSpeed: 1.5, counterDamage: 2,
   oneTwoWindowS: 1.2, oneTwoGapS: 0.8, oneTwoWidth: 2, oneTwoDamage: 3,
   volleyWindowS: 0.6, volleyWidth: 3, volleyDamage: 3,
-  shieldBurstHoldS: 1, burstHalfW: 35, burstReach: 6, burstSpeed: 10,
   finisherPunches: 2, finisherWindowS: 2,
   /** Testing: the shield never drains or breaks. */
   shieldInfinite: true,
@@ -121,7 +118,7 @@ export interface Proj {
   damage?: number;
 }
 
-export type ComboName = 'charged' | 'flurry' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker' | 'shieldBurst' | 'finisher';
+export type ComboName = 'charged' | 'flurry' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker' | 'finisher';
 
 type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab';
 export type GameEvent =
@@ -230,9 +227,6 @@ export class Game {
   private recentPunches: { t: number; hand: Side }[] = [];
   private lastFlurryT = -Infinity;
   private lastShieldBlockT = -Infinity;
-  private shieldSince: number | null = null;
-  /** The last time the shield came down, and how long it had been held. */
-  private shieldDown = { at: -Infinity, held: 0 };
 
   constructor(private rand: Rand = Math.random, public viewHalfW = 70, practice = false) {
     if (practice) this.setPractice(true);
@@ -349,10 +343,6 @@ export class Game {
     sh.broken = Math.max(0, sh.broken - dt);
     sh.on = wanted && !!this.hands.l && !!this.hands.r && sh.energy > 0 && sh.broken <= 0;
     if (!sh.on) {
-      if (this.shieldSince !== null) this.shieldDown = { at: this.time, held: this.time - this.shieldSince };
-      this.shieldSince = null;
-    } else this.shieldSince ??= this.time;
-    if (!sh.on) {
       sh.energy = Math.min(1, sh.energy + dt * TUNE.shieldRegenPerS);
     } else if (!TUNE.shieldInfinite) {
       sh.energy = Math.max(0, sh.energy - dt * TUNE.shieldDrainPerS);
@@ -410,6 +400,13 @@ export class Game {
       // homes in on the nearest enemy
       const e = this.nearestEnemy();
       if (e) { target = { x: e.x, y: e.y }; depth = e.z; }
+    } else if (shot === 'charged') {
+      // thrown from the chest, where the fist's distance reads worst: don't trust where it points —
+      // go for the enemy it's aimed at, else the nearest, else straight ahead
+      const aimed = this.aimFor(p.at, p.shoulder, p.dir).target;
+      const e = aimed ?? this.nearestEnemy();
+      if (e) { target = { x: e.x, y: e.y }; depth = e.z; }
+      else { target = { x: this.cam.x, y: this.cam.y + 10 }; depth = TUNE.aimDepth; }
     }
     const speed = TUNE.fireballSpeed * (shot === 'charged' ? TUNE.chargedSpeed : shot === 'counter' ? TUNE.counterSpeed : 1);
     const r = TUNE.fireballRadius * (shot === 'charged' ? TUNE.chargedRadius : shot === 'flurry' ? TUNE.flurryRadius : 1);
@@ -607,16 +604,6 @@ export class Game {
         wall.hit = [];
         this.emit('wallPush', wall.x, FLOOR_Y, wall.z);
         this.events.push({ type: 'combo', name: 'wallBreaker', x: wall.x, y: FLOOR_Y, z: wall.z });
-        return;
-      }
-      // shield burst: the held flame shield blasts outward, clearing what's coming
-      // (pushing drops the shield, so one that just came down counts)
-      const held = this.shieldSince !== null ? this.time - this.shieldSince : this.time - this.shieldDown.at <= 0.3 ? this.shieldDown.held : 0;
-      if (held >= TUNE.shieldBurstHoldS && this.pushWallCool <= 0) {
-        this.pushWallCool = TUNE.pushWallCooldownS;
-        const z = 0.5, x = this.cam.x + c.at.x / depthScale(z);
-        this.walls.push({ id: this.nextId++, x, z, halfW: TUNE.burstHalfW, life: Infinity, vz: TUNE.burstSpeed, hit: [], maxZ: TUNE.burstReach });
-        this.events.push({ type: 'combo', name: 'shieldBurst', x, y: FLOOR_Y, z });
         return;
       }
       this.events.push({ type: 'hint', text: 'WALL PUSH: RAISE A FIRE WALL FIRST' });
