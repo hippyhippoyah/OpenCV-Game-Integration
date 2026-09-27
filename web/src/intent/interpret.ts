@@ -116,8 +116,11 @@ export const TUNING = {
    * never past quickRiseCap. Above reachNoiseMax the HUD suggests stepping closer.
    */
   noiseQuick: 8, noiseLead: 4, noiseRearm: 4, quickRiseCap: 0.2, quickLeadCap: 0.1, reachNoiseMax: 0.017,
-  /** Live punch sensitivity ([ and ] in game): thresholds are divided by this. */
-  punchSensitivity: 1,
+  /**
+   * Live punch and push sensitivity ([ and ] in game): thresholds are divided by this. Tuned and tested
+   * at 1; the default is set higher by preference (more misses caught, some more misfires).
+   */
+  punchSensitivity: 1.4,
   /** Fist punches: a hand only stops a punch (or counts as opening for a shield) once it is clearly open. */
   clearlyOpen: 0.8,
   /**

@@ -234,3 +234,10 @@ real pushes. Now:
 Simulated: full, slow (0.3 s) and short (15 cm) pushes, and pushes that open mid-way, all caught at
 1.2–1.5 m; at 1.8 m a 20 cm push. No pushes from a still or slowly moving open palm, the shield, jabs
 or both palms pushed together.
+
+## Revision 2026-09-27: default sensitivity 1.4
+
+By preference, punches and pushes default to sensitivity ×1.4 (all thresholds ÷ 1.4) to catch
+more real attempts. The simulated suites still test detection at ×1.0; at ×1.4 the simulator shows
+occasional misfires (weaving or leaning in guard, a still open palm), most at 1.5 m and beyond.
+`[` / `]` still adjust it live.

@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { guardState, lerpReach, POSES, punchReach, simulate, type BodyState, type Reach, type SimOptions } from './synthetic';
 import { initialState, interpret, TUNING, type Intent } from '../intent/interpret';
 import type { Side } from '../input/types';
 import { dist } from '../math';
+
+// Detection is tuned and tested at sensitivity 1; the game's default is more sensitive (see TUNING).
+let sensitivity = 1;
+beforeAll(() => { sensitivity = TUNING.punchSensitivity; TUNING.punchSensitivity = 1; });
+afterAll(() => { TUNING.punchSensitivity = sensitivity; });
 
 /** Run a performance through the synthetic camera and the interpreter. */
 function perform(script: (t: number) => BodyState, seconds: number, opts: SimOptions = {}): Intent[] {
