@@ -622,6 +622,42 @@ describe('Game', () => {
     });
   });
 
+  describe('moves you have (campaign)', () => {
+    const jab = (hand: Side) => intent({ punches: [punch(hand, 0, 8)] });
+    it('every move is allowed by default', () => {
+      expect(quietGame().allowed).toBeNull();
+    });
+
+    it('ignores moves you have not learned', () => {
+      const g = quietGame();
+      g.allowed = new Set(['punch']);
+      g.step(1 / 60, intent({ palms: [{ kind: 'push', hand: 'r', at: { x: 0, y: 10 }, shoulder: SHOULDERS.r, dir: null }] }));
+      g.step(1 / 60, intent({ casts: [{ kind: 'wall', at: { x: 0, y: 10 } }] }));
+      g.step(1 / 60, shieldUp(10));
+      expect(g.pillars).toHaveLength(0);
+      expect(g.walls).toHaveLength(0);
+      expect(g.shield.on).toBe(false);
+      g.step(1 / 60, jab('r'));
+      expect(g.projs).toHaveLength(1);
+    });
+
+    it('a charged punch without the charge scroll is an ordinary punch', () => {
+      const g = quietGame();
+      g.allowed = new Set(['punch']);
+      g.step(1 / 60, intent({ punches: [{ ...punch('r', 0, 8), charged: true }] }));
+      expect(g.projs[0].shot).toBe('normal');
+    });
+
+    it('no flurry, counter or finisher without them', () => {
+      const g = quietGame();
+      g.allowed = new Set(['punch']);
+      for (let i = 0; i < 3; i++) { g.step(1 / 60, jab(i % 2 ? 'l' : 'r')); run(g, 0.2, intent()); }
+      expect(g.projs.map(p => p.shot)).not.toContain('flurry');
+      g.step(1 / 60, intent({ casts: [{ kind: 'ultimate', at: { x: 0, y: 10 } }] }));
+      expect(g.blades).toHaveLength(0);
+    });
+  });
+
   it('bodyHit covers head and torso only', () => {
     expect(bodyHit({ x: 0, y: 0 }, 4)).toBe(true);
     expect(bodyHit({ x: 0, y: 30 }, 4)).toBe(true);

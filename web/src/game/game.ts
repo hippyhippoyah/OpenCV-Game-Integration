@@ -120,6 +120,10 @@ export interface Proj {
 
 export type ComboName = 'charged' | 'flurry' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker' | 'finisher';
 
+/** Every move the player can have; the campaign unlocks them one scroll at a time. */
+export type MoveName = 'punch' | 'flurry' | 'shield' | 'palm' | 'charge' | 'wall' | 'finisher'
+  | 'xBlock' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker';
+
 type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
@@ -207,6 +211,8 @@ export class Game {
   practice = false;
   /** Tutorial: attacks still land (and show) but cost no health. */
   noDamage = false;
+  /** The moves you have (campaign); null = every move (waves, training, tutorial). */
+  allowed: Set<MoveName> | null = null;
   /** Shown instead of the wave number (e.g. "Tutorial"). */
   label: string | null = null;
 
@@ -231,6 +237,11 @@ export class Game {
   constructor(private rand: Rand = Math.random, public viewHalfW = 70, practice = false) {
     if (practice) this.setPractice(true);
     else this.startWave();
+  }
+
+  /** Do you have this move? */
+  has(move: MoveName): boolean {
+    return this.allowed === null || this.allowed.has(move);
   }
 
   /**
@@ -284,7 +295,7 @@ export class Game {
   step(dt: number, intent: Intent): void {
     this.cam = { ...intent.head };
     this.hands = intent.hands;
-    this.xBlock = intent.xBlock;
+    this.xBlock = intent.xBlock && this.has('xBlock');
     if (intent.shoulders) this.shoulders = intent.shoulders;
     this.inv = Math.max(0, this.inv - dt);
     this.punchCool = { l: Math.max(0, this.punchCool.l - dt), r: Math.max(0, this.punchCool.r - dt) };
@@ -293,11 +304,14 @@ export class Game {
     this.time += dt;
     this.palmCool = { l: Math.max(0, this.palmCool.l - dt), r: Math.max(0, this.palmCool.r - dt) };
     this.ultimateIn = Math.max(0, this.ultimateIn - dt);
-    this.updateShield(dt, intent.shield);
+    this.updateShield(dt, intent.shield && this.has('shield'));
     if (this.state !== 'play') return;
-    for (const p of intent.punches) this.punch(p);
-    for (const c of intent.casts) this.cast(c);
-    for (const p of intent.palms ?? []) this.palm(p);
+    if (this.has('punch')) for (const p of intent.punches) this.punch(this.has('charge') ? p : { ...p, charged: false });
+    for (const c of intent.casts) {
+      const needs: MoveName = c.kind === 'wall' ? 'wall' : c.kind === 'push' ? 'wallBreaker' : 'finisher';
+      if (this.has(needs)) this.cast(c);
+    }
+    if (this.has('palm')) for (const p of intent.palms ?? []) this.palm(p);
     this.updateWalls(dt);
     this.updateBlades(dt);
     this.updatePillars(dt);
@@ -391,8 +405,8 @@ export class Game {
     const start = this.handWorld(p.at);
     let { point: target, depth } = this.aimFor(p.at, p.shoulder, p.dir);
     // what kind of shot: a charged fist, the end of a flurry, or a counter just after blocking
-    const flurry = this.recentPunches.filter(x => x.t > this.lastFlurryT && now - x.t <= TUNE.flurryWindowS).length >= TUNE.flurryCount;
-    const counter = now - this.lastShieldBlockT <= TUNE.counterWindowS;
+    const flurry = this.has('flurry') && this.recentPunches.filter(x => x.t > this.lastFlurryT && now - x.t <= TUNE.flurryWindowS).length >= TUNE.flurryCount;
+    const counter = this.has('counter') && now - this.lastShieldBlockT <= TUNE.counterWindowS;
     const shot: Shot = p.charged ? 'charged' : counter ? 'counter' : flurry ? 'flurry' : 'normal';
     if (flurry) this.lastFlurryT = now;
     if (counter) this.lastShieldBlockT = -Infinity;
@@ -433,7 +447,7 @@ export class Game {
     const now = this.time, start = this.handWorld(p.at).x, z = TUNE.launchZ;
     this.events.push({ type: 'pillar', x: start, y: FLOOR_Y, z, side: p.hand });
     // pillar volley: the other hand's pillar went out just now — the two merge into a wave
-    const partner = this.pillars.find(c => c.hand !== p.hand && c.age <= TUNE.volleyWindowS && c.halfW < TUNE.pillarHalfW * TUNE.volleyWidth);
+    const partner = !this.has('volley') ? undefined : this.pillars.find(c => c.hand !== p.hand && c.age <= TUNE.volleyWindowS && c.halfW < TUNE.pillarHalfW * TUNE.volleyWidth);
     if (partner) {
       partner.x = (partner.x + start) / 2;
       partner.halfW = TUNE.pillarHalfW * TUNE.volleyWidth;
@@ -444,7 +458,7 @@ export class Game {
     }
     // one-two push: two punches just before
     const jabs = this.recentPunches.filter(x => now - x.t <= TUNE.oneTwoWindowS);
-    const oneTwo = jabs.length >= 2 && now - jabs[jabs.length - 1].t <= TUNE.oneTwoGapS;
+    const oneTwo = this.has('oneTwo') && jabs.length >= 2 && now - jabs[jabs.length - 1].t <= TUNE.oneTwoGapS;
     if (oneTwo) this.recentPunches = [];
     // rolls from in front of the hand toward where the palm points
     const { point, depth } = this.aimFor(p.at, p.shoulder, p.dir);
