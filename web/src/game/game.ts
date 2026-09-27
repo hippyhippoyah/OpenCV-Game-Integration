@@ -1,5 +1,6 @@
 import type { Cast, Intent, Palm, Punch, Side } from '../intent/interpret';
 import { distToSeg, lerp, type Vec2 } from '../math';
+import { BOSS, bossDamage, newBossState, updateBoss, type BossState } from './boss';
 
 /** An object at depth z appears at scale FOCAL / (FOCAL + z). */
 export const FOCAL = 3;
@@ -104,6 +105,10 @@ export interface Enemy {
   /** Practice target: never moves or attacks, respawns in its slot. */
   dummy?: boolean;
   slot?: number;
+  /** The chapter boss (Daro Stonefist). */
+  boss?: BossState;
+  /** Full health, for bosses' health bars. */
+  maxHp?: number;
 }
 
 /** What kind of fireball a player's shot is (they look and hit differently). */
@@ -163,6 +168,7 @@ export interface Incoming {
 export interface Hazard {
   id: number; kind: 'stonePillar' | 'slab'; x: number; y: number; z: number; vz: number; resolved: boolean;
   laneX: number; side: 1 | -1; startX: number; startZ: number; rise: number; owner: number | null;
+  halfW?: number; look?: 'boulder';
 }
 
 /** A wall of fire across the courtyard: standing (vz 0), or rolling forward (a wall push) burning what it passes. */
@@ -274,6 +280,34 @@ export class Game {
     };
     this.enemies.push(e);
     return e;
+  }
+
+  /** The boss on the field, if any. */
+  get boss(): Enemy | null { return this.enemies.find(e => e.boss && e.hp > 0) ?? null; }
+
+  /** Put Daro Stonefist on the field. */
+  addBoss(x: number, z: number): Enemy {
+    const e = this.addEnemy({ kind: 'earth', x, z, hp: BOSS.hp, cd: Infinity });
+    e.boss = newBossState();
+    e.maxHp = BOSS.hp;
+    return e;
+  }
+
+  /** A coin toss from the game's own random source (bosses). */
+  rngBool(): boolean { return this.rand() < 0.5; }
+
+  /** A stone pillar raised and shoved at once down the lane at laneX (the boss's attacks). */
+  sendPillar(e: Enemy, laneX: number, halfW?: number): void {
+    const z = e.z - 0.6, side: 1 | -1 = laneX >= this.cam.x ? 1 : -1;
+    this.hazards.push({ id: this.nextId++, kind: 'stonePillar', x: laneX, y: FLOOR_Y, z, vz: -TUNE.stonePillarSpeed, resolved: false, laneX, side, startX: laneX, startZ: z, rise: 1, owner: null, halfW });
+    this.events.push({ type: 'stonePillar', x: laneX, y: FLOOR_Y, z, side });
+  }
+
+  /** A sweep at head height (a boulder, for the boss). */
+  sendSlab(e: Enemy, look?: 'boulder'): void {
+    const z = e.z - 0.1;
+    this.hazards.push({ id: this.nextId++, kind: 'slab', x: e.x, y: TUNE.slabY, z, vz: -TUNE.slabSpeed, resolved: false, laneX: 0, side: 1, startX: e.x, startZ: z, rise: 1, owner: null, look });
+    this.emit('slab', e.x, TUNE.slabY, z);
   }
 
   /** Switch between practice dummies and spirit waves, clearing the field. */
@@ -480,7 +514,7 @@ export class Game {
       for (const e of this.enemies) {
         if (e.hp <= 0 || w.hit.includes(e.id) || e.z < z0 - 0.5 || e.z > w.z + 0.5 || Math.abs(e.x - w.x) > w.halfW + 7) continue;
         w.hit.push(e.id);
-        this.burn(e);
+        this.burn(e, TUNE.palmDamage, 'wall');
       }
     }
     this.walls = this.walls.filter(w => w.life > 0 && w.z < (w.maxZ ?? TUNE.pillarMaxZ));
@@ -512,7 +546,7 @@ export class Game {
       const z0 = h.z;
       h.z += h.vz * dt;
       // a wall stops it if it stands between the attack and you
-      const wall = this.wallMet(h.kind === 'stonePillar' ? h.x : this.cam.x, h.kind === 'stonePillar' ? TUNE.stonePillarHalfW : 0, z0, h.z, dt);
+      const wall = this.wallMet(h.kind === 'stonePillar' ? h.x : this.cam.x, h.kind === 'stonePillar' ? h.halfW ?? TUNE.stonePillarHalfW : 0, z0, h.z, dt);
       if (wall) {
         dead.add(h.id);
         this.score += 15;
@@ -537,7 +571,7 @@ export class Game {
   /** Out of this attack's way where you stand now: beside a pillar's lane, or ducked under a sweep. */
   private outOfWay(h: Hazard): boolean {
     return h.kind === 'stonePillar'
-      ? Math.abs(this.cam.x - h.laneX) >= TUNE.stonePillarHalfW + TUNE.bodyHalfW
+      ? Math.abs(this.cam.x - h.laneX) >= (h.halfW ?? TUNE.stonePillarHalfW) + TUNE.bodyHalfW
       : this.cam.y - h.y >= TUNE.slabDuck;
   }
 
@@ -564,11 +598,13 @@ export class Game {
     }
   }
 
-  /** Burn an enemy with a pillar. */
-  private burn(e: Enemy, damage = TUNE.palmDamage): void {
-    e.hp -= damage;
+  /** Burn an enemy with a pillar (or a rolling wall, `shot: 'wall'`). */
+  private burn(e: Enemy, damage = TUNE.palmDamage, shot: 'pillar' | 'wall' = 'pillar'): void {
+    const dealt = e.boss ? bossDamage(e, shot, damage) : damage;
+    e.hp -= dealt;
     e.flash = 1;
-    if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', e.x, e.y, e.z); }
+    if (dealt === 0) this.emit('blocked', e.x, e.y, e.z);
+    else if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', e.x, e.y, e.z); }
     else this.emit('hitEnemy', e.x, e.y, e.z);
   }
 
@@ -645,6 +681,7 @@ export class Game {
       b.r += TUNE.bladeSpeed * dt;
       for (const e of this.enemies) {
         if (e.hp <= 0 || !reach(b, e.x, e.z)) continue;
+        if (e.boss) { e.hp -= bossDamage(e, 'blade', 10); e.flash = 1; if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', e.x, e.y, e.z); } else this.emit('hitEnemy', e.x, e.y, e.z); continue; }
         e.hp = 0;
         e.flash = 1;
         this.score += 100;
@@ -753,6 +790,7 @@ export class Game {
         continue;
       }
       if (e.dummy) continue;
+      if (e.boss) { updateBoss(this, e, dt); continue; }
       // sway gently, staying near the middle of the screen
       const band = this.bandAt(e.z);
       e.x = Math.max(-band, Math.min(band, e.x + (Math.sin(e.t * 0.5 + e.phase) * 5 * dt) / depthScale(e.z)));
@@ -832,10 +870,12 @@ export class Game {
         for (const e of this.enemies) {
           if (e.hp <= 0 || Math.abs(p.z - e.z) > 0.7) continue;
           if (Math.abs(p.x - e.x) < p.r + 7 && Math.abs(p.y - e.y) < p.r + 22) {
-            e.hp -= p.damage ?? 1;
+            const dealt = e.boss ? bossDamage(e, p.shot ?? 'normal', p.damage ?? 1) : p.damage ?? 1;
+            e.hp -= dealt;
             e.flash = 1;
             dead.add(p.id);
-            if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', p.x, p.y, p.z); }
+            if (dealt === 0) this.emit('blocked', p.x, p.y, p.z);
+            else if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', p.x, p.y, p.z); }
             else this.emit('hitEnemy', p.x, p.y, p.z);
             // a flurry's big fireball bursts, burning those standing nearby
             if (p.shot === 'flurry') {
