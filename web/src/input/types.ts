@@ -8,6 +8,10 @@ export interface HandObs {
   center: Point;
   /** Wrist → middle-knuckle distance; grows as the hand moves toward the camera. */
   size: number;
+  /** 0 = fist … 1 = open hand. */
+  open: number;
+  /** 1 = palm faces the camera, 0 = palm edge-on (e.g. palms facing each other). */
+  facing: number;
 }
 
 /** One tracked camera frame. Camera and mock trackers both produce these. */

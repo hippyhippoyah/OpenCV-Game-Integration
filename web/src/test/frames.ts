@@ -13,7 +13,14 @@ export function bodyFrame(t: number, o: { mid?: Vec2; sw?: number; head?: Vec2; 
   };
 }
 
-/** Two hands placed relative to the shoulders, in shoulder widths (x right, y down). */
-export function handsRel(mid: Vec2, sw: number, left: Vec2, right: Vec2, size = 0.4): HandObs[] {
-  return [left, right].map(p => ({ center: { x: mid.x + p.x * sw, y: mid.y + p.y * sw }, size: size * sw }));
+/** A hand relative to the shoulder centre, in shoulder widths (x right, y down). A fist facing the camera by default. */
+export interface HandSpec { x: number; y: number; open?: number; size?: number; facing?: number }
+
+export function hand(mid: Vec2, sw: number, p: HandSpec): HandObs {
+  return {
+    center: { x: mid.x + p.x * sw, y: mid.y + p.y * sw },
+    size: (p.size ?? 0.4) * sw,
+    open: p.open ?? 0,
+    facing: p.facing ?? 1,
+  };
 }

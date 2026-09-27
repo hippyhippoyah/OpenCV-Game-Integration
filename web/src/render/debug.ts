@@ -48,20 +48,33 @@ export class DebugView {
         c.fillStyle = '#fff';
         c.beginPath(); c.arc(p.x, p.y, 5, 0, 7); c.fill();
       }
-      c.strokeStyle = '#ffc36b';
-      for (const hand of f.hands) {
-        const p = P(hand.center);
-        c.beginPath(); c.arc(p.x, p.y, Math.max(3, hand.size * w * 0.5), 0, 7); c.stroke();
-      }
+      // each hand: filled orange = open, red ring = fist; label shows openness and palm facing
+      c.font = `${Math.round(h / 14)}px ui-monospace, Menlo, monospace`;
+      const sorted = [...f.hands].sort((a, b) => a.center.x - b.center.x);
+      sorted.forEach((hand, i) => {
+        const p = P(hand.center), open = hand.open >= 0.5, r = Math.max(4, hand.size * w * 0.5);
+        c.strokeStyle = c.fillStyle = open ? '#ffb347' : '#ff5a4a';
+        c.beginPath(); c.arc(p.x, p.y, r, 0, 7);
+        if (open) c.fill(); else c.stroke();
+        // left hand's label hangs off to the left, right hand's to the right, so they never overlap
+        const leftmost = sorted.length > 1 && i === 0;
+        c.textAlign = leftmost ? 'right' : 'left';
+        const x = leftmost ? p.x - r - 3 : p.x + r + 3;
+        c.fillStyle = '#fff';
+        c.fillText(`${open ? 'OPEN' : 'FIST'} ${hand.open.toFixed(2)}`, x, p.y);
+        c.fillText(`face ${hand.facing.toFixed(2)}`, x, p.y + h / 12);
+      });
     }
     if (this.detailed && intent) {
-      const hd = intent.hands;
+      const line = (name: string, h: Intent['hands']['l']) => h
+        ? `${name} ${h.open ? 'open' : 'fist'} ${h.openness.toFixed(2)}  face ${h.facing.toFixed(2)}  speed ${Math.hypot(h.vel.x, h.vel.y).toFixed(0)}`
+        : `${name} —`;
       this.text.textContent = [
-        `present ${intent.present}  raised ${intent.raised}`,
-        `head    x ${intent.head.x.toFixed(1)}  y ${intent.head.y.toFixed(1)}`,
-        hd ? `hands   ${hd.center.x.toFixed(1)}, ${hd.center.y.toFixed(1)}  spread ${hd.spread.toFixed(1)}` : 'hands   —',
-        hd ? `vel     ${hd.vel.x.toFixed(0)}, ${hd.vel.y.toFixed(0)}` : '',
-        f?.hands.length ? `size    ${f.hands.map(x => x.size.toFixed(3)).join('  ')}` : '',
+        `present ${intent.present}  shield ${intent.shield}`,
+        `head x ${intent.head.x.toFixed(1)}  y ${intent.head.y.toFixed(1)}`,
+        line('L', intent.hands.l),
+        line('R', intent.hands.r),
+        f?.hands.length ? `size ${f.hands.map(x => x.size.toFixed(3)).join('  ')}` : '',
       ].join('\n');
     }
   }

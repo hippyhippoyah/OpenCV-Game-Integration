@@ -4,7 +4,7 @@ import { CameraError, CameraTracker } from './input/camera';
 import { bindMockControls, MOCK_CALIBRATION, MockTracker } from './input/mock';
 import type { Tracker, TrackingFrame } from './input/types';
 import { Calibrator, type Calibration } from './intent/calibration';
-import { initialState, interpret, type Intent, type InterpretState } from './intent/interpret';
+import { initialState, interpret, type Intent, type InterpretState, type Punch } from './intent/interpret';
 import { DebugView } from './render/debug';
 import { Hud } from './render/hud';
 import { Renderer } from './render/renderer';
@@ -24,7 +24,8 @@ let calibrator = new Calibrator();
 let calibration: Calibration | null = null;
 let istate: InterpretState = initialState();
 let intent: Intent | null = null;
-let pendingThrow = false;
+/** Punches seen since the last fixed game step. */
+let pendingPunches: Punch[] = [];
 let lastFrame: TrackingFrame | null = null;
 let game: Game | null = null;
 /** Dummies instead of spirits; toggled with T, or start with ?dummies. */
@@ -74,7 +75,7 @@ function beginCalibration(): void {
 function beginPlay(): void {
   istate = initialState();
   intent = null;
-  pendingThrow = false;
+  pendingPunches = [];
   acc = 0;
   game = new Game(Math.random, renderer.viewHalfW, practice);
   phase = 'play';
@@ -93,7 +94,7 @@ function onFrame(f: TrackingFrame): void {
     }
   } else if (phase === 'play' && calibration) {
     intent = interpret(f, calibration, istate);
-    if (intent.throwNow) pendingThrow = true; // held until the next fixed step consumes it
+    pendingPunches.push(...intent.punches); // held until the next fixed step consumes them
   }
 }
 
@@ -104,8 +105,8 @@ function stepGame(dt: number): void {
   if (!intent.present || paused) { acc = 0; return; }
   acc += dt;
   while (acc >= STEP) {
-    game.step(STEP, { ...intent, throwNow: pendingThrow });
-    pendingThrow = false;
+    game.step(STEP, { ...intent, punches: pendingPunches });
+    pendingPunches = [];
     acc -= STEP;
   }
   for (const e of game.drainEvents()) {

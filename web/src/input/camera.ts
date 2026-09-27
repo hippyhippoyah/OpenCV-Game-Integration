@@ -68,7 +68,7 @@ export class CameraTracker implements Tracker {
     this.lastVideoTime = this.video.currentTime;
     const hands = this.hands.detectForVideo(this.video, now);
     const pose = this.pose.detectForVideo(this.video, now);
-    return toFrame(now / 1000, hands.landmarks, pose.landmarks[0]);
+    return toFrame(now / 1000, hands.landmarks, pose.landmarks[0], hands.worldLandmarks);
   }
 
   dispose(): void {

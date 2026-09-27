@@ -79,3 +79,20 @@ so it works at any distance from the camera. Screen mapping happens only at the 
 - Vitest unit tests for `interpret` (synthetic frames: distance-invariance, summon, throw,
   shield spread, lost-hands grace) and `game` (summon/throw/hit/shield/damage/waves).
 - Manual playtest checklist against the success criteria.
+
+## Revision 2026-09-26: fist/open controls
+
+Replaces the palms-together summon and push-throw, which depended on weak depth sensing.
+
+- **Guard (rest):** both fists up at chest height. Fists smoulder with embers.
+- **Punch:** a fist that moves fast (or toward the camera), then opens → fire leaves that hand.
+  Aim = where the hand opened on screen, bent along shoulder→hand (x 0.5, y 0.2), snapping onto a
+  target within 22 view units. Each hand punches independently (0.2 s cooldown per hand).
+  Not fired if the other hand is open (or opens within 80 ms), since both open = shield.
+- **Shield:** both hands open for 0.15 s → flame wall between them. Unlimited while testing
+  (`TUNE.shieldInfinite`); drain/break logic kept for later.
+- **Detection:** open/fist from 3D finger straightness (MediaPipe world landmarks), with hysteresis
+  (open > 0.65, fist < 0.35). Palm facing (1 = toward camera, 0 = edge-on) is measured and shown in
+  the debug panel; `TUNING.shieldNeedsEdgeOnPalms` can require palms facing each other for a shield.
+  Hands are followed frame to frame so crossing punches keep their left/right labels.
+- **Practice mode:** `T` or `?dummies` swaps spirits for still, respawning training dummies.

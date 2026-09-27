@@ -1,4 +1,4 @@
-import type { Game, GameEvent } from '../game/game';
+import { TUNE, type Game, type GameEvent } from '../game/game';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -9,16 +9,18 @@ export class Hud {
     $('score').textContent = String(g.score);
     $('wave').textContent = g.practice ? 'Practice dummies' : `Wave ${g.wave}`;
     const pill = $('pill');
-    pill.classList.toggle('off', !g.fire.held && !g.shield.on);
+    const noHands = !g.hands.l && !g.hands.r;
+    pill.classList.toggle('off', noHands);
     pill.classList.toggle('shield', g.shield.on);
-    const [name, hint] = g.shield.on ? ['FLAME SHIELD', 'cover the red rings · drains while held']
-      : g.fire.held ? ['FIREBALL', 'push toward the screen to throw']
-        : ['NO FIRE', 'raise hands, palms together · or spread wide to shield'];
+    const [name, hint] = g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
+      : noHands ? ['NO HANDS', 'raise your fists into view']
+        : ['GUARD', 'punch, then open your hand to shoot · open both hands to shield'];
     $('modeName').textContent = name;
     $('modeHint').textContent = hint;
     $('shieldFill').style.width = `${Math.round(g.shield.energy * 100)}%`;
     $('shieldBar').classList.toggle('broken', g.shield.broken > 0);
-    $('shieldState').textContent = g.shield.broken > 0 ? 'broken' : g.shield.on ? 'holding' : g.shield.energy < 1 ? 'recharging' : 'ready';
+    $('shieldState').textContent = g.shield.broken > 0 ? 'broken' : g.shield.on ? (TUNE.shieldInfinite ? 'holding · unlimited' : 'holding')
+      : g.shield.energy < 1 ? 'recharging' : 'ready';
   }
 
   onEvent(e: GameEvent): void {

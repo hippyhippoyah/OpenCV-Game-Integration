@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { bodyHit, Game, TUNE, type Proj } from './game';
-import type { HandsIntent, Intent } from '../intent/interpret';
+import type { HandState, Intent, Punch, Side } from '../intent/interpret';
 import { mulberry32 } from '../math';
 
-const hands = (cx: number, cy: number, spread: number): HandsIntent => ({
-  l: { x: cx - spread / 2, y: cy }, r: { x: cx + spread / 2, y: cy },
-  center: { x: cx, y: cy }, spread, vel: { x: 0, y: 0 },
-});
+const SHOULDERS = { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } };
+const hs = (x: number, y: number, open = false): HandState =>
+  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1 });
+const guard = () => ({ l: hs(-12, 22), r: hs(12, 22) });
 const intent = (o: Partial<Intent> = {}): Intent =>
-  ({ present: true, head: { x: 0, y: 0 }, hands: null, raised: false, throwNow: false, ...o });
-const ready = () => intent({ hands: hands(0, 20, 5), raised: true });
+  ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], shield: false, ...o });
+const punch = (hand: Side, x: number, y: number): Punch => ({ hand, at: { x, y }, shoulder: SHOULDERS[hand] });
+const shieldUp = (y = 0) => intent({ hands: { l: hs(-15, y, true), r: hs(15, y, true) }, shield: true });
 const incoming = (x: number, y: number, id = 999): Proj =>
   ({ id, kind: 'enemy', x, y, z: 0.4, vx: 0, vy: 0, vz: -5, r: TUNE.enemyProjRadius, resolved: false });
 
@@ -23,92 +24,109 @@ function run(g: Game, seconds: number, i: Intent): void {
 }
 
 describe('Game', () => {
-  it('summons fire when raised hands come together', () => {
-    const g = quietGame();
-    g.step(1 / 60, ready());
-    expect(g.fire.held).toBe(true);
-    expect(g.drainEvents().some(e => e.type === 'summon')).toBe(true);
+  describe('punch', () => {
+    it('launches a fireball from the hand that opened', () => {
+      const g = quietGame();
+      g.step(1 / 60, intent({ punches: [punch('r', 10, 5)] }));
+      expect(g.projs).toHaveLength(1);
+      expect(g.projs[0].kind).toBe('player');
+      expect(g.drainEvents()).toContainEqual({ type: 'punch', x: 10, y: 5, z: TUNE.launchZ });
+    });
+
+    it('each hand has its own short cooldown', () => {
+      const g = quietGame();
+      g.step(1 / 60, intent({ punches: [punch('r', 10, 5), punch('r', 10, 5), punch('l', -10, 5)] }));
+      g.step(1 / 60, intent({ punches: [punch('r', 10, 5)] }));
+      expect(g.projs).toHaveLength(2);
+      run(g, TUNE.punchCooldownS, intent());
+      g.step(1 / 60, intent({ punches: [punch('r', 10, 5)] }));
+      expect(g.projs).toHaveLength(3);
+    });
+
+    it('goes the way you punch when nothing is near', () => {
+      const g = quietGame();
+      g.step(1 / 60, intent({ punches: [punch('l', -30, 0), punch('r', 30, 0)] }));
+      const [left, right] = [...g.projs].sort((a, b) => a.x - b.x);
+      expect(left.vx).toBeLessThan(0);
+      expect(right.vx).toBeGreaterThan(0);
+    });
+
+    it('snaps onto a target near where you punch and knocks it down', () => {
+      const g = new Game(mulberry32(3), 70, true);
+      g.drainEvents();
+      for (let n = 0; n < 2; n++) {
+        g.step(1 / 60, intent({ punches: [punch('r', 0, 8)] }));
+        run(g, 1, intent());
+      }
+      expect(g.drainEvents().some(e => e.type === 'killEnemy')).toBe(true);
+    });
   });
 
-  it('does not summon with hands down, and drops fire when hands go low', () => {
-    const g = quietGame();
-    g.step(1 / 60, intent({ hands: hands(0, 50, 5), raised: false }));
-    expect(g.fire.held).toBe(false);
-    g.step(1 / 60, ready());
-    g.step(1 / 60, intent({ hands: hands(0, 50, 5), raised: false }));
-    expect(g.fire.held).toBe(false);
+  describe('shield', () => {
+    it('is up while both hands are open', () => {
+      const g = quietGame();
+      g.step(1 / 60, shieldUp());
+      expect(g.shield.on).toBe(true);
+      g.step(1 / 60, intent());
+      expect(g.shield.on).toBe(false);
+    });
+
+    it('needs both hands in view', () => {
+      const g = quietGame();
+      g.step(1 / 60, intent({ hands: { l: hs(-15, 0, true), r: null }, shield: true }));
+      expect(g.shield.on).toBe(false);
+    });
+
+    it('never runs out while testing', () => {
+      const g = quietGame();
+      run(g, 10, shieldUp());
+      expect(g.shield.on).toBe(true);
+      expect(g.shield.energy).toBe(1);
+    });
+
+    it('blocks an attack it covers', () => {
+      const g = quietGame();
+      g.projs.push(incoming(0, 0));
+      run(g, 0.2, shieldUp(0));
+      expect(g.hp).toBe(TUNE.maxHp);
+      expect(g.drainEvents().some(e => e.type === 'blocked')).toBe(true);
+    });
   });
 
-  it('throws a fireball, then waits for the cooldown before re-summoning', () => {
-    const g = quietGame();
-    g.step(1 / 60, ready());
-    g.step(1 / 60, { ...ready(), throwNow: true });
-    expect(g.projs.filter(p => p.kind === 'player')).toHaveLength(1);
-    expect(g.fire.held).toBe(false);
-    run(g, 0.3, ready());
-    expect(g.fire.held).toBe(false);
-    run(g, 0.3, ready());
-    expect(g.fire.held).toBe(true);
-  });
+  describe('getting hit', () => {
+    it('an attack at your face hurts', () => {
+      const g = quietGame();
+      g.projs.push(incoming(0, 0));
+      run(g, 0.2, intent());
+      expect(g.hp).toBe(TUNE.maxHp - TUNE.hitDamage);
+    });
 
-  it('spreading hands turns fire into a shield that drains, breaks and recovers', () => {
-    const g = quietGame();
-    g.step(1 / 60, ready());
-    const wide = intent({ hands: hands(0, 20, 30), raised: true });
-    g.step(1 / 60, wide);
-    expect(g.shield.on).toBe(true);
-    expect(g.fire.held).toBe(false);
-    run(g, 3.2, wide);
-    expect(g.shield.on).toBe(false);
-    expect(g.drainEvents().some(e => e.type === 'shieldBroken')).toBe(true);
-    run(g, 1.5, intent());
-    expect(g.shield.energy).toBeGreaterThan(0.2);
-  });
+    it('leaning out of the way dodges it', () => {
+      const g = quietGame();
+      g.projs.push(incoming(0, 0));
+      run(g, 0.2, intent({ head: { x: 25, y: 0 } }));
+      expect(g.hp).toBe(TUNE.maxHp);
+      expect(g.drainEvents().some(e => e.type === 'dodged')).toBe(true);
+    });
 
-  it('an attack at your face hurts', () => {
-    const g = quietGame();
-    g.projs.push(incoming(0, 0));
-    run(g, 0.2, intent());
-    expect(g.hp).toBe(TUNE.maxHp - TUNE.hitDamage);
-  });
+    it('flags incoming attacks that would hit if you stay still', () => {
+      const g = quietGame();
+      const p = incoming(0, 0);
+      g.projs.push(p);
+      expect(g.isThreat(p)).toBe(true);
+      g.step(1 / 60, intent({ head: { x: 25, y: 0 } }));
+      expect(g.isThreat(p)).toBe(false);
+    });
 
-  it('leaning out of the way dodges it', () => {
-    const g = quietGame();
-    g.projs.push(incoming(0, 0));
-    run(g, 0.2, intent({ head: { x: 25, y: 0 } }));
-    expect(g.hp).toBe(TUNE.maxHp);
-    expect(g.drainEvents().some(e => e.type === 'dodged')).toBe(true);
-  });
-
-  it('a shield over the attack blocks it', () => {
-    const g = quietGame();
-    g.projs.push(incoming(0, 0));
-    run(g, 0.2, intent({ hands: hands(0, 0, 30), raised: true }));
-    expect(g.hp).toBe(TUNE.maxHp);
-    expect(g.drainEvents().some(e => e.type === 'blocked')).toBe(true);
-  });
-
-  it('fireballs home in on spirits; two hits banish one', () => {
-    const g = quietGame();
-    g.enemies.push({ id: 50, x: 0, y: 33, z: 4, hp: 2, t: 0, appear: 1, dying: 0, flash: 0,
-      cd: 99, winding: false, wind: 0, side: 1, phase: 0 });
-    for (let n = 0; n < 2; n++) {
-      run(g, 0.6, ready());
-      g.step(1 / 60, { ...ready(), throwNow: true });
-      run(g, 0.6, ready());
-    }
-    expect(g.drainEvents().some(e => e.type === 'killEnemy')).toBe(true);
-    expect(g.score).toBeGreaterThanOrEqual(100);
-  });
-
-  it('ends the game when health runs out', () => {
-    const g = quietGame();
-    for (let i = 0; i < 8; i++) {
-      g.projs.push(incoming(0, 0, 1000 + i));
-      run(g, 0.6, intent());
-    }
-    expect(g.state).toBe('over');
-    expect(g.hp).toBe(0);
+    it('ends the game when health runs out', () => {
+      const g = quietGame();
+      for (let i = 0; i < 8; i++) {
+        g.projs.push(incoming(0, 0, 1000 + i));
+        run(g, 0.6, intent());
+      }
+      expect(g.state).toBe('over');
+      expect(g.hp).toBe(0);
+    });
   });
 
   it('announces and spawns the first wave', () => {
@@ -116,15 +134,6 @@ describe('Game', () => {
     expect(g.drainEvents()).toContainEqual({ type: 'wave', wave: 1 });
     run(g, 3, intent());
     expect(g.enemies.length).toBeGreaterThan(0);
-  });
-
-  it('flags incoming attacks that would hit if you stay still', () => {
-    const g = quietGame();
-    const p = incoming(0, 0);
-    g.projs.push(p);
-    expect(g.isThreat(p)).toBe(true);
-    g.step(1 / 60, intent({ head: { x: 25, y: 0 } }));
-    expect(g.isThreat(p)).toBe(false);
   });
 
   describe('practice mode', () => {

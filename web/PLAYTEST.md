@@ -4,9 +4,11 @@ Run `npm run dev`, play with the camera in Chrome. Note the result of each item.
 
 - [ ] Frame rate (corner panel) stays ≥ 30 fps while playing.
 - [ ] Fire follows your hands without noticeable lag.
-- [ ] Palms together makes fire at 1 m, 1.5 m and 2.5 m from the camera.
-- [ ] A quick push throws; slowly moving hands toward the camera does not.
-- [ ] Spreading hands raises the shield; it blocks an attack you cover.
+- [ ] Fists read as FIST and open hands as OPEN in the corner panel at 1 m, 1.5 m and 2.5 m.
+- [ ] A punch that opens at the end fires every time — straight at the camera, a cross, and a hook.
+- [ ] Opening a still fist does not fire; the shot goes roughly where your hand was when it opened.
+- [ ] Opening both hands raises the shield without also firing a punch; it blocks an attack you cover.
+- [ ] Palm "face" reads high with palms toward the camera and low with palms facing each other.
 - [ ] Leaning and ducking dodge attacks aimed at your head.
 - [ ] Walking out of frame pauses with "Step into frame".
 - [ ] A 3-minute run is fun and doesn't wear out your arms.

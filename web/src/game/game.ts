@@ -1,15 +1,24 @@
-import type { HandsIntent, Intent } from '../intent/interpret';
-import { distToSeg, type Vec2 } from '../math';
+import type { Intent, Punch, Side } from '../intent/interpret';
+import { distToSeg, lerp, type Vec2 } from '../math';
 
 /** An object at depth z appears at scale FOCAL / (FOCAL + z). */
 export const FOCAL = 3;
 /** Floor height below the eyes, world units. */
 export const FLOOR_Y = 63;
+const depthScale = (z: number) => FOCAL / (FOCAL + z);
 
 export const TUNE = {
   maxHp: 100, hitDamage: 14, invulnS: 0.5,
-  summonSpread: 9, shieldSpread: 22, dropBelowY: 45,
-  fireCooldownS: 0.5, fireballSpeed: 11, fireballRadius: 4.5, aimAssist: 0.8,
+  punchCooldownS: 0.2, fireballSpeed: 12, fireballRadius: 4, launchZ: 0.3,
+  /**
+   * How far the shoulder→hand direction bends a shot beyond where the hand opened. Sideways it
+   * helps cross punches and hooks; vertically it mostly overshoots, so it is kept small.
+   */
+  aimSkewX: 0.5, aimSkewY: 0.2, aimDepth: 10,
+  /** Shots snap (by aimAssist) onto a target within assistRadius view units of the aim point. */
+  aimAssist: 1, assistRadius: 22,
+  /** Testing: the shield never drains or breaks. */
+  shieldInfinite: true,
   shieldDrainPerS: 0.33, shieldRegenPerS: 0.22, shieldBlockCost: 0.18, shieldBrokenS: 1.2, shieldReach: 8,
   enemyHp: 2, enemyProjRadius: 4.2, windupS: 1, waveBreakS: 2.2,
 };
@@ -29,7 +38,7 @@ export interface Proj {
   resolved: boolean;
 }
 
-type PositionedType = 'summon' | 'extinguish' | 'throw' | 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash';
+type PositionedType = 'punch' | 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
   | { type: 'shieldBroken' | 'gameOver' }
@@ -59,8 +68,7 @@ export class Game {
   score = 0;
   wave = 0;
   cam: Vec2 = { x: 0, y: 0 };
-  hands: HandsIntent | null = null;
-  fire = { held: false, cool: 0 };
+  hands: Intent['hands'] = { l: null, r: null };
   shield = { on: false, energy: 1, broken: 0 };
   inv = 0;
   enemies: Enemy[] = [];
@@ -76,6 +84,7 @@ export class Game {
   private waveBreak = 0;
   private nextId = 1;
   private dummyTimers = DUMMY_SLOTS.map(() => 0);
+  private punchCool: Record<Side, number> = { l: 0, r: 0 };
 
   constructor(private rand: Rand = Math.random, public viewHalfW = 70, practice = false) {
     if (practice) this.setPractice(true);
@@ -101,8 +110,10 @@ export class Game {
     this.cam = { ...intent.head };
     this.hands = intent.hands;
     this.inv = Math.max(0, this.inv - dt);
-    this.updateHands(dt, intent);
+    this.punchCool = { l: Math.max(0, this.punchCool.l - dt), r: Math.max(0, this.punchCool.r - dt) };
+    this.updateShield(dt, intent.shield);
     if (this.state !== 'play') return;
+    for (const p of intent.punches) this.punch(p);
     this.updateWaves(dt);
     this.updateEnemies(dt);
     this.updateProjs(dt);
@@ -134,67 +145,56 @@ export class Game {
   }
 
   private shieldCovers(v: Vec2, r: number): boolean {
-    return this.shield.on && this.hands !== null && distToSeg(v, this.hands.l, this.hands.r) < TUNE.shieldReach + r;
+    const { l, r: rh } = this.hands;
+    return this.shield.on && !!l && !!rh && distToSeg(v, l.pos, rh.pos) < TUNE.shieldReach + r;
   }
 
-  private updateHands(dt: number, intent: Intent): void {
-    const h = this.hands, fire = this.fire, sh = this.shield;
-    fire.cool = Math.max(0, fire.cool - dt);
+  private updateShield(dt: number, wanted: boolean): void {
+    const sh = this.shield;
     sh.broken = Math.max(0, sh.broken - dt);
-
-    sh.on = h !== null && intent.raised && h.spread >= TUNE.shieldSpread && sh.energy > 0 && sh.broken <= 0;
-    if (sh.on) {
-      fire.held = false; // the fireball spreads into the shield
+    sh.on = wanted && !!this.hands.l && !!this.hands.r && sh.energy > 0 && sh.broken <= 0;
+    if (!sh.on) {
+      sh.energy = Math.min(1, sh.energy + dt * TUNE.shieldRegenPerS);
+    } else if (!TUNE.shieldInfinite) {
       sh.energy = Math.max(0, sh.energy - dt * TUNE.shieldDrainPerS);
       if (sh.energy <= 0) {
         sh.on = false;
         sh.broken = TUNE.shieldBrokenS;
         this.events.push({ type: 'shieldBroken' });
       }
-    } else {
-      sh.energy = Math.min(1, sh.energy + dt * TUNE.shieldRegenPerS);
     }
-
-    if (h === null) {
-      if (fire.held) this.extinguish();
-      return;
-    }
-    if (!fire.held && !sh.on && fire.cool <= 0 && intent.raised && h.spread < TUNE.summonSpread) {
-      fire.held = true;
-      const c = this.handWorld(h.center);
-      this.emit('summon', c.x, c.y, 0);
-    }
-    if (fire.held && h.center.y > TUNE.dropBelowY) this.extinguish();
-    if (intent.throwNow && fire.held) this.throwFire(h);
   }
 
-  private extinguish(): void {
-    this.fire.held = false;
-    const c = this.hands ? this.handWorld(this.hands.center) : this.cam;
-    this.emit('extinguish', c.x, c.y, 0);
-  }
-
-  private throwFire(h: HandsIntent): void {
-    const w = this.handWorld(h.center), vz = TUNE.fireballSpeed;
-    let vx = h.vel.x * 0.5, vy = h.vel.y * 0.5 - 3;
-    const tgt = this.pickTarget(h.center.x + h.vel.x * 0.25);
+  /** Fire leaves the opened hand toward where it points: its screen position, bent further along shoulder → hand. */
+  private punch(p: Punch): void {
+    if (this.punchCool[p.hand] > 0) return;
+    this.punchCool[p.hand] = TUNE.punchCooldownS;
+    const start = this.handWorld(p.at);
+    let aim = { x: p.at.x + (p.at.x - p.shoulder.x) * TUNE.aimSkewX, y: p.at.y + (p.at.y - p.shoulder.y) * TUNE.aimSkewY };
+    let depth = TUNE.aimDepth;
+    const tgt = this.pickTarget(aim);
     if (tgt) {
-      const T = (tgt.z - 0.3) / vz;
-      vx += ((tgt.x - w.x) / T - vx) * TUNE.aimAssist;
-      vy += ((tgt.y - w.y) / T - vy) * TUNE.aimAssist;
+      const s = depthScale(tgt.z);
+      aim = { x: lerp(aim.x, (tgt.x - this.cam.x) * s, TUNE.aimAssist), y: lerp(aim.y, (tgt.y - this.cam.y) * s, TUNE.aimAssist) };
+      depth = tgt.z;
     }
-    this.projs.push({ id: this.nextId++, kind: 'player', x: w.x, y: w.y, z: 0.3, vx, vy, vz, r: TUNE.fireballRadius, resolved: false });
-    this.fire.held = false;
-    this.fire.cool = TUNE.fireCooldownS;
-    this.emit('throw', w.x, w.y, 0.3);
+    // Head for the world point that appears at `aim` on screen at that depth.
+    const s = depthScale(depth), T = (depth - TUNE.launchZ) / TUNE.fireballSpeed;
+    const target = { x: this.cam.x + aim.x / s, y: Math.min(FLOOR_Y - 4, this.cam.y + aim.y / s) };
+    this.projs.push({
+      id: this.nextId++, kind: 'player', x: start.x, y: start.y, z: TUNE.launchZ,
+      vx: (target.x - start.x) / T, vy: (target.y - start.y) / T, vz: TUNE.fireballSpeed, r: TUNE.fireballRadius, resolved: false,
+    });
+    this.emit('punch', start.x, start.y, TUNE.launchZ);
   }
 
-  /** The living enemy whose on-screen x is closest to `viewX`. */
-  private pickTarget(viewX: number): Enemy | null {
-    let best: Enemy | null = null, bestD = Infinity;
+  /** The living enemy that appears closest to `aim` on screen, if within assist range. */
+  private pickTarget(aim: Vec2): Enemy | null {
+    let best: Enemy | null = null, bestD = TUNE.assistRadius;
     for (const e of this.enemies) {
       if (e.hp <= 0) continue;
-      const d = Math.abs((e.x - this.cam.x) * (FOCAL / (FOCAL + e.z)) - viewX);
+      const s = depthScale(e.z);
+      const d = Math.hypot((e.x - this.cam.x) * s - aim.x, (e.y - this.cam.y) * s - aim.y);
       if (d < bestD) { bestD = d; best = e; }
     }
     return best;
@@ -245,7 +245,7 @@ export class Game {
   }
 
   private spawnEnemy(): void {
-    const z = this.rnd(6.5, 11), s = FOCAL / (FOCAL + z);
+    const z = this.rnd(6.5, 11), s = depthScale(z);
     this.enemies.push({
       id: this.nextId++, x: this.cam.x + (this.rnd(-1, 1) * this.viewHalfW * 0.85) / s, y: FLOOR_Y - 30, z,
       hp: TUNE.enemyHp, t: 0, appear: 0, dying: 0, flash: 0,
@@ -266,7 +266,7 @@ export class Game {
         continue;
       }
       if (e.dummy) continue;
-      e.x += (Math.sin(e.t * 0.5 + e.phase) * 8 * dt) / (FOCAL / (FOCAL + e.z));
+      e.x += (Math.sin(e.t * 0.5 + e.phase) * 8 * dt) / depthScale(e.z);
       if (e.appear < 1) continue;
       if (!e.winding) {
         e.cd -= dt;
