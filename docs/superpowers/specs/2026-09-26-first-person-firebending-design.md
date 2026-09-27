@@ -365,7 +365,7 @@ The two-palm push alone no longer does anything (it was overpowered): it's the W
 Shield burst, and says "raise a fire wall first" otherwise; the ultimate without the jabs says how.
 A charged fist is detected in `interpret` (`HandState.charge`, `Punch.charged`); on the real
 recordings nothing charges by accident (swaying used to, until charging required a steady body).
-The tutorial has 16 lessons, adding Charged punch, Flurry, Shield counter, One-two push, Pillar
+The tutorial has 16 lessons, adding Charged punch, Flurry, One-two push, Pillar
 volley, Wall breaker (was Wall push), Shield burst and Finisher (was Ultimate), each with an
 animated demo. Mock: hold G to charge the right fist.
 

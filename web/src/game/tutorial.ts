@@ -85,13 +85,6 @@ export const LESSONS: Lesson[] = [
     progress: (g, events) => (g.shield.on ? count(events, e => e.type === 'blocked') : 0),
   },
   {
-    id: 'counter', title: 'Shield counter',
-    how: 'Block an orb with the flame shield, then punch straight away (within about half a second). The counter fireball flies fast, finds its target on its own, and hits twice as hard.',
-    goal: 'Counter after a block', need: 2,
-    cast: [{ tag: 'spirit', kind: 'spirit', x: 0, z: 8, only: 'orb', cd: 1, pace: 1.6 }],
-    progress: (_g, events) => combos(events, 'counter'),
-  },
-  {
     id: 'xblock', title: 'X block',
     how: 'Cross your forearms in front of your chest, fists up. While crossed, you block every orb that reaches you.',
     goal: 'Block orbs with the X block', need: 3,

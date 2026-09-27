@@ -26,7 +26,7 @@ const lessonIndex = (id: string) => LESSONS.findIndex(l => l.id === id);
 describe('Tutorial', () => {
   it('starts with movement, then punching, and teaches every move', () => {
     expect(LESSONS.map(l => l.id)).toEqual([
-      'move', 'punch', 'charge', 'flurry', 'pillar', 'wave', 'shield', 'counter', 'xblock',
+      'move', 'punch', 'charge', 'flurry', 'pillar', 'wave', 'shield', 'xblock',
       'palm', 'onetwo', 'volley', 'wall', 'wallbreaker', 'ultimate',
     ]);
   });

@@ -133,23 +133,6 @@ export class LessonDemo {
         if (c3 > 0.9) this.flame(cx - 4, H * 0.26, 16);
         break;
       }
-      case 'counter': {
-        // shield up, an orb bursts on it; then a quick punch fires a white-hot counter
-        const u = t % 2.6, shield = u < 1.2, s = hit(u, 1.3, 0.6);
-        if (shield) {
-          this.palm(cx - 36, H * 0.62, 1);
-          this.palm(cx + 36, H * 0.62, 1, true);
-          this.sheet(cx - 24, cx + 24, H * 0.64, 26);
-          const orb = Math.min(1, u / 0.9);
-          if (orb < 1) this.glow(cx, 10 + orb * H * 0.35, 5 + orb * 6, 'rgba(120,220,255,.9)');
-          else this.glow(cx, H * 0.45, 16, 'rgba(255,220,160,.8)');
-        } else {
-          this.fist(cx - 34, H * 0.62, 1);
-          this.fist(cx + 34 - s * 20, H * 0.62 - s * 22, 1 + s * 0.45);
-          if (s > 0.9) { this.flame(cx + 6, H * 0.28, 9); this.ring(cx + 6, H * 0.28, 13); }
-        }
-        break;
-      }
       case 'onetwo': {
         // jab, jab, then an open palm shoved — a wide pillar
         const u = t % 2.6, a = hit(u, 0, 0.35), b = hit(u, 0.35, 0.35), p = hit(u, 0.8, 0.8);
@@ -250,14 +233,6 @@ export class LessonDemo {
     g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
     c.fillStyle = g;
     c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
-  }
-
-  /** A bright ring (a counter shot). */
-  private ring(x: number, y: number, r: number): void {
-    const c = this.ctx;
-    c.strokeStyle = 'rgba(255,240,210,.85)';
-    c.lineWidth = 2.5;
-    c.beginPath(); c.arc(x, y, r, 0, 7); c.stroke();
   }
 
   private flame(x: number, y: number, r: number): void {
