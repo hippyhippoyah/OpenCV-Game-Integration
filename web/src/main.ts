@@ -395,10 +395,13 @@ $('campReset').addEventListener('click', () => {
 });
 $('mockHelpClose').addEventListener('click', () => show('mockHelp', false));
 $('campWalk').addEventListener('click', () => campaign?.walkOn());
-$('campAgain').addEventListener('click', () => {
+/** Fight the stop again from its result card (not saved as done) or after losing. */
+function campaignTryAgain(): void {
   if (campaign?.state === 'result') { campaign.state = 'lost'; campaign.retry(); }
-});
-$('campRetry').addEventListener('click', () => campaign?.retry());
+  else campaign?.retry();
+}
+$('campAgain').addEventListener('click', campaignTryAgain);
+$('campRetry').addEventListener('click', campaignTryAgain);
 $('campMenu').addEventListener('click', () => showModes());
 $('campResume').addEventListener('click', () => { campPaused = false; });
 $('campLeave').addEventListener('click', () => { campPaused = false; showModes(); });
@@ -445,6 +448,9 @@ addEventListener('keydown', e => {
   }
   if (mode === 'campaign' && phase === 'play' && campaign) {
     const r = campaign;
+    // the result and lost cards' buttons, from the keyboard
+    if (r.state === 'result' && k === 'enter') { e.preventDefault(); r.walkOn(); return; }
+    if ((r.state === 'result' || r.state === 'lost') && k === 'r') { campaignTryAgain(); return; }
     if (exploringCampaign()) {
       if (k === 'e') r.interact();
       if (k === ' ') { e.preventDefault(); r.skip(); }
