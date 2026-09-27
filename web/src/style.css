@@ -58,6 +58,15 @@ canvas#game { display: block; width: 100vw; height: 100vh; cursor: none; }
 .toast { font-family: Cinzel, serif; font-weight: 700; font-size: 22px; letter-spacing: .1em;
   color: var(--accent-2); text-shadow: 0 0 16px rgba(255,120,40,.7); animation: pop 1s ease-out forwards; }
 .toast.bad { color: #ff8080; text-shadow: 0 0 16px rgba(255,40,40,.7); }
+.dodge { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); text-align: center;
+  padding: 8px 18px; border-radius: 12px; background: rgba(20,10,10,.45); border: 1px solid rgba(255,120,100,.35);
+  transition: background .15s, border-color .15s; pointer-events: none; }
+.dodge b { display: block; font-family: Cinzel, serif; font-size: 22px; letter-spacing: .1em; color: #ff9a8a; }
+.dodge i { display: block; height: 4px; margin-top: 6px; border-radius: 2px; background: #ff9a8a; transform-origin: left; }
+.dodge.safe { background: rgba(10,30,15,.45); border-color: rgba(120,230,150,.45); }
+.dodge.safe b { color: #9ef0b4; }
+.dodge.safe i { background: #9ef0b4; }
+.toast.good { color: #9ef0b4; text-shadow: 0 0 16px rgba(80,230,130,.55); }
 .toast.cool { color: var(--spirit); text-shadow: 0 0 16px rgba(80,200,255,.6); }
 @keyframes pop { 0% { opacity: 0; transform: translateY(8px) scale(.9); } 15% { opacity: 1; transform: none; }
   75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-16px); } }

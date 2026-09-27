@@ -221,17 +221,36 @@ describe('Game', () => {
       expect(g.hazards).toHaveLength(0);
     });
 
-    it('after the pillar he throws rocks', () => {
+    it('earthbenders only ever raise pillars (no rocks)', () => {
       const g = quietGame();
-      g.enemies.push(foe({ earth: true, opened: true }));
-      const kinds = new Set<string>();
+      g.enemies.push(foe({ earth: true }));
+      let pillars = 0;
       for (let t = 0; t < 40; t += 1 / 60) {
         g.step(1 / 60, at(0));
         g.hp = TUNE.maxHp;
-        g.projs.filter(p => p.kind === 'enemy').forEach(p => kinds.add(p.rock ? 'rock' : 'orb'));
-        g.hazards.forEach(h => kinds.add(h.kind));
+        expect(g.projs.filter(p => p.kind === 'enemy')).toHaveLength(0);
+        pillars += g.drainEvents().filter(e => e.type === 'stonePillar').length;
       }
-      expect([...kinds].sort()).toEqual(['rock', 'stonePillar']);
+      expect(pillars).toBeGreaterThan(3);
+    });
+
+    it('the pillar runs straight down a lane clearly to one side of you', () => {
+      const g = pillarComing();
+      const h = g.hazards[0];
+      expect(Math.abs(h.x)).toBe(TUNE.pillarOffset);
+      run(g, 1, at(0));
+      expect(g.hazards[0].x).toBe(h.laneX);
+      // its near edge only just reaches past your centre
+      expect(Math.abs(h.laneX) - TUNE.stonePillarHalfW).toBeGreaterThan(0);
+    });
+
+    it('tells you, the whole way in, whether you are out of its way yet', () => {
+      const g = pillarComing();
+      const side = Math.sign(g.hazards[0].laneX);
+      expect(g.incoming()).toEqual([expect.objectContaining({ kind: 'stonePillar', safe: false, away: -side })]);
+      run(g, 0.3, at(-side * 15));
+      expect(g.incoming()[0].safe).toBe(true);
+      expect(g.incoming()[0].closeness).toBeGreaterThan(0);
     });
 
     it('the shield and X block do not stop a pillar; a fire wall does', () => {
@@ -272,9 +291,9 @@ describe('Game', () => {
           widest = Math.max(widest, Math.abs(e.x * (3 / (3 + e.z))));
         }
         for (const h of g.hazards) kinds.add(h.kind);
-        g.projs.filter(p => p.kind === 'enemy').forEach(p => kinds.add(p.rock ? 'rock' : 'orb'));
+        if (g.projs.some(p => p.kind === 'enemy')) kinds.add('orb');
       }
-      expect([...kinds].sort()).toEqual(['earthbender', 'orb', 'rock', 'slab', 'spirit', 'stonePillar']);
+      expect([...kinds].sort()).toEqual(['earthbender', 'orb', 'slab', 'spirit', 'stonePillar']);
       expect(widest).toBeLessThanOrEqual(g.viewHalfW * TUNE.enemyBand + 0.01);
     });
   });

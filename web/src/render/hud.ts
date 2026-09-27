@@ -29,6 +29,15 @@ export class Hud {
     $('modeHint').textContent = lost.length
       ? `${lost.map(side => (side === 'l' ? 'left' : 'right')).join(' and ')} hand out of camera view`
       : hint;
+    // the attack you most need to move out of: red with what to do, green once you're clear
+    const next = g.incoming()[0];
+    $('dodge').classList.toggle('hidden', !next);
+    if (next) {
+      $('dodge').classList.toggle('safe', next.safe);
+      $('dodgeText').textContent = next.safe ? '✓ CLEAR'
+        : next.kind === 'slab' ? '↓ DUCK' : next.away < 0 ? '← MOVE LEFT' : 'MOVE RIGHT →';
+      $('dodgeBar').style.transform = `scaleX(${next.closeness.toFixed(3)})`;
+    }
     $('shieldFill').style.width = `${Math.round(g.shield.energy * 100)}%`;
     $('shieldBar').classList.toggle('broken', g.shield.broken > 0);
     const ready = g.ultimateCharge >= 1;
@@ -42,7 +51,7 @@ export class Hud {
   onEvent(e: GameEvent): void {
     switch (e.type) {
       case 'blocked': this.toast('BLOCKED', 'cool'); break;
-      case 'dodged': this.toast('DODGED', 'cool'); break;
+      case 'dodged': this.toast('✓ DODGED', 'good'); break;
       case 'clash': this.toast('CLASH', 'cool'); break;
       case 'playerHit': this.toast('HIT', 'bad'); break;
       case 'shieldBroken': this.toast('SHIELD BROKEN', 'bad'); break;
@@ -50,8 +59,6 @@ export class Hud {
       case 'wall': this.toast('FIRE WALL'); break;
       case 'pillar': this.toast('PILLAR'); break;
       case 'wallPush': this.toast('WALL PUSH'); break;
-      case 'stonePillar': this.toast(e.side > 0 ? '← PILLAR ON YOUR RIGHT' : 'PILLAR ON YOUR LEFT →', 'bad'); break;
-      case 'slab': this.toast('↓ DUCK', 'bad'); break;
       case 'ultimate': this.banner('ULTIMATE'); break;
       case 'wave': this.banner(`WAVE ${e.wave}`); break;
     }

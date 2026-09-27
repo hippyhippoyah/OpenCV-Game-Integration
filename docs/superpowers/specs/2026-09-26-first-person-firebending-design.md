@@ -288,3 +288,18 @@ time. Water spirits keep orbs and the high sweep (30%).
 pillar's side flashes red (the inner 45% of the width fades out) — faintly while it rises, then
 stronger and faster as it closes in — and only while you're still in its path: once you've moved
 out of the way, it stops.
+
+## Revision 2026-09-27: clearer, calmer dodging
+
+- **Nothing startling:** the pillar warning is a soft, slowly breathing red glow on the edge of the
+  screen on its side (30% wide, max ~0.28 alpha), only while you're in its path; being hit is a
+  small shake and a soft red edge (was a full shake and flash); a shoved pillar barely shakes.
+- **Pillars clearly go to one side:** a pillar erupts straight up in its lane (centre 22 units off
+  yours, 40 wide, so its near edge only just reaches past your centre) and slides straight down it,
+  ploughing a furrow on the ground from the pillar to you so you can see the track it will take.
+- **Earthbenders only raise pillars;** rocks are gone (too hard to see).
+- **High sweep looks like water:** a wave rolling at you with a foamy crest at your eye height; its
+  underside sits just above where your eyes need to duck to, so ducking visibly takes you under it.
+- **Always know if you're dodging:** while a pillar or sweep is coming, a cue below the centre
+  says what to do in red (← MOVE LEFT / MOVE RIGHT → / ↓ DUCK) with a bar filling as it arrives,
+  and turns green (✓ CLEAR) the moment you're out of its way; a green ✓ DODGED confirms it.

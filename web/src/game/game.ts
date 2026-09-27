@@ -47,14 +47,14 @@ export const TUNE = {
   /**
    * Enemies: water spirits and (earthShare of them) earthbenders. Spirits throw water orbs, or
    * (slabShare) a high sweep: a sheet of water crossing the whole field at the height your eyes
-   * were — duck at least slabDuck. Earthbenders open by raising a stone pillar (over their
-   * pillarWindupS wind-up) in a lane just to one side of where you stand — its centre pillarOffset
-   * off your centre, pillarHalfW wide — and shoving it at you at stonePillarSpeed: lean or step the
-   * other way (your body is bodyHalfW wide). After that they throw rocks, raising another pillar
-   * now and then (pillarAgain). Shield and X block don't stop pillars or sweeps; a fire wall does.
+   * were — duck at least slabDuck. Earthbenders raise stone pillars (over their pillarWindupS
+   * wind-up) out of the ground in a lane to one side of where you stand — its centre pillarOffset
+   * off your centre, stonePillarHalfW wide, so it clearly runs down your left or right — and shove
+   * them straight down that lane at stonePillarSpeed: lean or step the other way (your body is
+   * bodyHalfW wide). Shield and X block don't stop pillars or sweeps; a fire wall does.
    */
   earthShare: 0.35, slabShare: 0.3, slabSpeed: 6, slabDuck: 14, bodyHalfW: 12,
-  pillarWindupS: 1.4, stonePillarSpeed: 3.5, stonePillarHalfW: 13, pillarHeightStone: 70, pillarOffset: 10, pillarAgain: 0.3,
+  pillarWindupS: 1.4, stonePillarSpeed: 3.5, stonePillarHalfW: 20, pillarHeightStone: 70, pillarOffset: 22,
   /** Enemies stay within this fraction of the screen's half-width of its centre (easier to aim at). */
   enemyBand: 0.4,
   /** Testing: the shield never drains or breaks. */
@@ -69,10 +69,8 @@ export interface Enemy {
   cd: number; winding: boolean; wind: number; side: 1 | -1; phase: number;
   /** The attack it is winding up (picked when the wind-up starts). */
   attack?: AttackKind;
-  /** Earthbender (stone pillars and rocks) instead of a water spirit. */
+  /** Earthbender (stone pillars) instead of a water spirit. */
   earth?: boolean;
-  /** Earthbender: has already opened with a pillar. */
-  opened?: boolean;
   /** Practice target: never moves or attacks, respawns in its slot. */
   dummy?: boolean;
   slot?: number;
@@ -80,8 +78,6 @@ export interface Enemy {
 
 export interface Proj {
   id: number; kind: 'player' | 'enemy';
-  /** An earthbender's rock rather than a water orb. */
-  rock?: boolean;
   x: number; y: number; z: number; vx: number; vy: number; vz: number; r: number;
   resolved: boolean;
 }
@@ -102,12 +98,22 @@ export interface Blade { id: number; x: number; y: number; r: number }
 /** A palm push: a column of fire rolling forward from the floor, `hit` = enemies it already burned. */
 export interface Pillar { id: number; x: number; z: number; vx: number; age: number; hit: number[] }
 
-export type AttackKind = 'orb' | 'rock' | 'slab' | 'pillar';
+export type AttackKind = 'orb' | 'slab' | 'pillar';
+
+/** An attack on its way that you can only move out of: are you out of its way right now? */
+export interface Incoming {
+  kind: 'stonePillar' | 'slab';
+  safe: boolean;
+  /** Stone pillar: which way to move to get out of its lane (−1 left, 1 right). */
+  away: 1 | -1;
+  /** 0 = just started … 1 = arriving. */
+  closeness: number;
+}
 
 /**
- * An attack you have to move out of, travelling toward you at depth z. A stone pillar rises in
- * front of its earthbender (rise 0 → 1, `owner` while it rises), then slides toward `laneX`, where
- * it arrives; a slab (high sweep) crosses the whole field at height y.
+ * An attack you have to move out of, travelling toward you at depth z. A stone pillar rises out of
+ * the ground in its lane at `laneX` (rise 0 → 1, `owner` while its earthbender raises it), then
+ * slides straight down the lane to you; a slab (high sweep) crosses the whole field at height y.
  */
 export interface Hazard {
   id: number; kind: 'stonePillar' | 'slab'; x: number; y: number; z: number; vz: number; resolved: boolean;
@@ -359,8 +365,6 @@ export class Game {
       }
       const z0 = h.z;
       h.z += h.vz * dt;
-      // a stone pillar is shoved from in front of its earthbender toward its lane beside you
-      if (h.kind === 'stonePillar') h.x = lerp(h.laneX, h.startX, Math.max(0, h.z) / h.startZ);
       // a wall stops it if it stands between the attack and you
       const wall = this.wallMet(h.kind === 'stonePillar' ? h.x : this.cam.x, h.kind === 'stonePillar' ? TUNE.stonePillarHalfW : 0, z0, h.z, dt);
       if (wall) {
@@ -371,9 +375,7 @@ export class Game {
       }
       if (!h.resolved && h.z <= 0.2) {
         h.resolved = true;
-        const hit = h.kind === 'stonePillar'
-          ? Math.abs(this.cam.x - h.laneX) < TUNE.stonePillarHalfW + TUNE.bodyHalfW
-          : this.cam.y - h.y < TUNE.slabDuck;
+        const hit = !this.outOfWay(h);
         if (!hit) {
           this.score += 20;
           this.emit('dodged', this.cam.x, this.cam.y + 10, 0);
@@ -384,6 +386,26 @@ export class Game {
       if (h.z < -1.5) dead.add(h.id);
     }
     if (dead.size) this.hazards = this.hazards.filter(h => !dead.has(h.id));
+  }
+
+  /** Out of this attack's way where you stand now: beside a pillar's lane, or ducked under a sweep. */
+  private outOfWay(h: Hazard): boolean {
+    return h.kind === 'stonePillar'
+      ? Math.abs(this.cam.x - h.laneX) >= TUNE.stonePillarHalfW + TUNE.bodyHalfW
+      : this.cam.y - h.y >= TUNE.slabDuck;
+  }
+
+  /** Attacks on their way you have to move out of, nearest first, and whether you are clear of each. */
+  incoming(): Incoming[] {
+    return this.hazards
+      .filter(h => !h.resolved)
+      .sort((a, b) => (a.owner !== null ? 1 : 0) - (b.owner !== null ? 1 : 0) || a.z - b.z)
+      .map(h => ({
+        kind: h.kind,
+        safe: this.outOfWay(h),
+        away: (h.laneX > this.cam.x ? -1 : 1) as 1 | -1,
+        closeness: h.owner !== null ? 0 : Math.max(0, Math.min(1, 1 - h.z / h.startZ)),
+      }));
   }
 
   private hurt(x: number, y: number): void {
@@ -598,25 +620,24 @@ export class Game {
   }
 
   private pickAttack(e: Enemy): AttackKind {
-    if (e.earth) return !e.opened || this.rand() < TUNE.pillarAgain ? 'pillar' : 'rock';
+    if (e.earth) return 'pillar';
     return this.rand() < TUNE.slabShare ? 'slab' : 'orb';
   }
 
-  /** An earthbender stomps: a stone pillar starts rising in front of him, aimed at a lane beside you. */
+  /** An earthbender stomps: a stone pillar starts rising out of the ground in a lane to one side of you. */
   private raisePillar(e: Enemy): void {
-    const side: 1 | -1 = this.rand() < 0.5 ? -1 : 1, z = e.z - 0.6, x = e.x + side * 16;
+    const side: 1 | -1 = this.rand() < 0.5 ? -1 : 1, z = e.z - 0.6, x = this.cam.x + side * TUNE.pillarOffset;
     this.hazards.push({
       id: this.nextId++, kind: 'stonePillar', x, y: FLOOR_Y, z, vz: 0, resolved: false,
-      laneX: this.cam.x + side * TUNE.pillarOffset, side, startX: x, startZ: z, rise: 0, owner: e.id,
+      laneX: x, side, startX: x, startZ: z, rise: 0, owner: e.id,
     });
   }
 
   private enemyAttack(e: Enemy): void {
     const kind = e.attack ?? 'orb';
-    if (kind === 'orb' || kind === 'rock') { this.enemyThrow(e, kind === 'rock'); return; }
+    if (kind === 'orb') { this.enemyThrow(e); return; }
     if (kind === 'pillar') {
-      // shove the raised pillar at you
-      e.opened = true;
+      // shove the raised pillar down its lane
       const h = this.hazards.find(x => x.owner === e.id);
       if (!h) return;
       h.owner = null;
@@ -631,11 +652,11 @@ export class Game {
   }
 
   /** Aim at where your head/chest is now; moving afterwards is how you dodge. */
-  private enemyThrow(e: Enemy, rock = false): void {
+  private enemyThrow(e: Enemy): void {
     const tx = this.cam.x + this.rnd(-4, 4), ty = this.cam.y + this.rnd(-3, 12);
     const hx = e.x + e.side * 11, hy = e.y - 14, z = e.z - 0.1;
     const vz = -(4.6 + this.wave * 0.35), T = z / -vz;
-    this.projs.push({ id: this.nextId++, kind: 'enemy', rock, x: hx, y: hy, z, vx: (tx - hx) / T, vy: (ty - hy) / T, vz, r: TUNE.enemyProjRadius, resolved: false });
+    this.projs.push({ id: this.nextId++, kind: 'enemy', x: hx, y: hy, z, vx: (tx - hx) / T, vy: (ty - hy) / T, vz, r: TUNE.enemyProjRadius, resolved: false });
   }
 
   private updateProjs(dt: number): void {

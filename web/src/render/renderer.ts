@@ -137,7 +137,7 @@ export class Renderer {
         break;
       case 'stonePillar':
         this.burst(e.x, e.y - 4, e.z, 'earth', 30, 30);
-        this.shake = Math.max(this.shake, 0.3);
+        this.shake = Math.max(this.shake, 0.08);
         break;
       case 'slab': this.burst(e.x, e.y, e.z, 'spirit', 20, 30); break;
       case 'cut': this.burst(e.x, e.y, e.z, 'fire', 16, 30); break;
@@ -149,7 +149,8 @@ export class Renderer {
         this.burst(e.x, e.y, 0, 'fire', 14, 24);
         this.shake = Math.max(this.shake, 0.25);
         break;
-      case 'playerHit': this.burst(e.x, e.y, 0, 'spirit', 26, 36); this.shake = 1; this.flash = 1; break;
+      // felt, not startling: a small shake and a soft red edge
+      case 'playerHit': this.burst(e.x, e.y, 0, 'spirit', 26, 36); this.shake = Math.max(this.shake, 0.3); this.flash = 0.45; break;
     }
   }
 
@@ -433,7 +434,7 @@ export class Renderer {
 
   /**
    * An earthbender in green and brown. Raising a pillar he stomps and lifts both arms (first 60% of
-   * the wind-up), then drives both palms forward; throwing a rock he draws one arm back.
+   * the wind-up), then drives both palms forward.
    */
   private drawEarthbender(e: Enemy): void {
     const c = this.ctx, u = this.u, p = this.project(e.x, e.y, e.z), k = u * p.s, x = p.x;
@@ -458,7 +459,7 @@ export class Renderer {
     c.moveTo(x - 6 * k, top); c.lineTo(x + 6 * k, top); c.lineTo(x + 8 * k, hip.y + 3 * k); c.lineTo(x - 8 * k, hip.y + 3 * k); c.closePath(); c.fill();
     c.fillStyle = hit ? '#ffe0b0' : '#b58a3c';
     c.fillRect(x - 7 * k, hip.y - 3 * k, 14 * k, 2.4 * k);
-    // arms: rest → raised (lifting the stone) → driven forward (shoving it); a rock is drawn back
+    // arms: rest → raised (lifting the stone) → driven forward (shoving it)
     c.strokeStyle = hit ? '#ffe0b0' : '#4e6b3a';
     c.lineWidth = 3 * k;
     for (const side of [-1, 1]) {
@@ -467,13 +468,10 @@ export class Renderer {
       if (e.attack === 'pillar' && e.winding) {
         const up = { x: sh.x + side * 5 * k, y: sh.y - 10 * k }, fwd = { x: sh.x + side * 2 * k, y: sh.y + 2 * k };
         hand = { x: lerp(lerp(hand.x, up.x, lift), fwd.x, shove), y: lerp(lerp(hand.y, up.y, lift), fwd.y, shove) };
-      } else if (e.winding && side === e.side) {
-        hand = { x: sh.x + side * lerp(4, 9, w) * k, y: sh.y - lerp(0, 8, w) * k };
       }
       c.beginPath(); c.moveTo(sh.x, sh.y); c.lineTo(hand.x, hand.y); c.stroke();
       c.fillStyle = hit ? '#fff0c8' : '#d9a27a';
       c.beginPath(); c.arc(hand.x, hand.y, 1.6 * k, 0, 7); c.fill();
-      if (e.winding && e.attack === 'rock' && side === e.side) this.drawRock(hand.x, hand.y - 2 * k, (1 + 2.5 * w) * k, e.t);
     }
     // head: skin, dark topknot
     const hy = top - 5 * k;
@@ -483,22 +481,6 @@ export class Renderer {
     c.beginPath(); c.arc(x, hy - 1.5 * k, 4 * k, Math.PI, 0); c.fill();
     c.beginPath(); c.arc(x, hy - 5 * k, 1.6 * k, 0, 7); c.fill();
     c.globalAlpha = 1;
-  }
-
-  /** A lumpy stone. */
-  private drawRock(x: number, y: number, r: number, spin: number): void {
-    const c = this.ctx;
-    c.fillStyle = '#8a6a48';
-    c.strokeStyle = '#3b2a1a';
-    c.lineWidth = Math.max(1, r * 0.15);
-    c.beginPath();
-    for (let i = 0; i < 7; i++) {
-      const a = spin * 3 + (i / 7) * Math.PI * 2, rr = r * (0.8 + 0.2 * Math.sin(i * 2.7));
-      if (i === 0) c.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); else c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-    }
-    c.closePath(); c.fill(); c.stroke();
-    c.fillStyle = 'rgba(255,230,190,.25)';
-    c.beginPath(); c.arc(x - r * 0.3, y - r * 0.3, r * 0.3, 0, 7); c.fill();
   }
 
   /** Wooden training post with a straw body and a target for a head. */
@@ -534,12 +516,6 @@ export class Renderer {
     for (const p of g.projs) {
       if ((p.z > 1) !== far) continue;
       const q = this.project(p.x, p.y, p.z), r = p.r * q.s * this.u, set = p.kind === 'player' ? SPR.fire : SPR.spirit;
-      if (p.rock) {
-        c.globalCompositeOperation = 'source-over';
-        this.drawRock(q.x, q.y, r * 1.1, p.z);
-        c.globalCompositeOperation = 'lighter';
-        continue;
-      }
       c.drawImage(set[1], q.x - r * 2.4, q.y - r * 2.4, r * 4.8, r * 4.8);
       c.drawImage(set[0], q.x - r * 1.2, q.y - r * 1.2, r * 2.4, r * 2.4);
     }
@@ -766,14 +742,33 @@ export class Renderer {
   }
 
   /**
-   * A stone pillar: a tall column of rock rising out of the ground beside its earthbender, then
-   * sliding at you (the screen edge on its side flashes: see drawPillarWarnings). A high
-   * sweep: a spinning sheet of water at the height your eyes were, with a red line across the view.
+   * A stone pillar: a tall column of rock rising out of the ground in its lane, ploughing a furrow
+   * down it to you (the screen edge on its side glows softly while you're in its path). A high
+   * sweep: a wave of water rolling at you with its crest at the height your eyes were; its
+   * underside sits just above where your eyes must duck to.
    */
   private drawHazard(g: Game, h: Hazard): void {
     const c = this.ctx, u = this.u, near = clamp(1 - h.z / 6, 0, 1);
     if (h.kind === 'stonePillar') {
       const hw = TUNE.stonePillarHalfW;
+      // the furrow it will plough: its lane on the ground, from the pillar all the way to you
+      if (h.z > 0.2) {
+        const zs = [h.z, h.z * 0.66, h.z * 0.33, 0.2];
+        const edge = (dx: number) => zs.map(z => this.project(h.laneX + dx, FLOOR_Y, z));
+        const L = edge(-hw), Rt = edge(hw), fade = 0.35 + 0.45 * h.rise;
+        c.fillStyle = `rgba(70,45,22,${0.55 * fade})`;
+        c.beginPath();
+        L.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+        [...Rt].reverse().forEach(p => c.lineTo(p.x, p.y));
+        c.closePath(); c.fill();
+        c.strokeStyle = `rgba(215,165,105,${0.8 * fade})`;
+        c.lineWidth = 3;
+        for (const side of [L, Rt]) {
+          c.beginPath();
+          side.forEach((p, i) => (i ? c.lineTo(p.x + Math.sin(i * 5 + h.id) * 2, p.y) : c.moveTo(p.x, p.y)));
+          c.stroke();
+        }
+      }
       if (h.z < -0.5) return;
       const hgt = TUNE.pillarHeightStone * h.rise, base = this.project(h.x, FLOOR_Y, h.z), topP = this.project(h.x, FLOOR_Y - hgt, h.z);
       const w = hw * base.s * u;
@@ -798,28 +793,37 @@ export class Renderer {
       c.fillRect(base.x - w, topP.y, w * 0.5, base.y - topP.y);
       return;
     }
-    // the sweep: a flat spinning sheet across the field
-    if (h.z > 0) {
-      const l = this.project(g.cam.x - 120, h.y, h.z), r = this.project(g.cam.x + 120, h.y, h.z);
-      c.globalCompositeOperation = 'lighter';
-      const gr = c.createLinearGradient(0, l.y - 6 * u * l.s, 0, l.y + 6 * u * l.s);
-      gr.addColorStop(0, 'rgba(80,190,255,0)'); gr.addColorStop(0.5, `rgba(150,230,255,${0.5 + 0.4 * near})`); gr.addColorStop(1, 'rgba(80,190,255,0)');
-      c.fillStyle = gr;
-      c.fillRect(l.x, l.y - 6 * u * l.s, r.x - l.x, 12 * u * l.s);
-      c.globalCompositeOperation = 'source-over';
-    }
-    // warning: where it will cross your view, and how far you must duck
-    const y = this.project(0, h.y, 0).y;
-    c.strokeStyle = `rgba(255,80,70,${0.15 + 0.6 * near})`;
-    c.lineWidth = 3;
-    c.setLineDash([12, 8]);
-    c.beginPath(); c.moveTo(0, y); c.lineTo(this.W, y); c.stroke();
-    c.setLineDash([]);
+    // the sweep: a wave of water rolling at you, crest at your eye height, underside just above a duck
+    if (h.z <= -0.3) return;
+    const z = Math.max(0.05, h.z), crest = h.y - 4, under = h.y + TUNE.slabDuck - 2, N = 24;
+    const pts = (y: number, wav: number) => Array.from({ length: N + 1 }, (_, i) => {
+      const x = g.cam.x - 130 + (260 * i) / N;
+      return this.project(x, y + wav * Math.sin(i * 0.9 + this.t * 6 + h.id), z);
+    });
+    const top = pts(crest, 1.6), bot = pts(under, 0.6);
+    const body = c.createLinearGradient(0, top[0].y, 0, bot[0].y);
+    body.addColorStop(0, `rgba(170,235,255,${0.75 + 0.2 * near})`);
+    body.addColorStop(0.35, 'rgba(70,160,230,.7)');
+    body.addColorStop(1, 'rgba(30,70,150,.35)');
+    c.fillStyle = body;
+    c.beginPath();
+    top.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+    [...bot].reverse().forEach(p => c.lineTo(p.x, p.y));
+    c.closePath(); c.fill();
+    // foam along the crest
+    c.globalCompositeOperation = 'lighter';
+    c.strokeStyle = 'rgba(235,250,255,.85)';
+    c.lineWidth = Math.max(2, 1.4 * u * top[0].s);
+    c.beginPath();
+    top.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+    c.stroke();
+    c.globalCompositeOperation = 'source-over';
   }
 
   /**
    * While a stone pillar is coming down a lane you're standing in, the edge of the screen on its
-   * side flashes red, faster and stronger as it closes in; it stops once you've moved out of the way.
+   * side glows a soft red, slowly breathing and deepening as it closes in; it goes once you're out
+   * of the way. Gentle on purpose: a cue, not a jump scare.
    */
   private drawPillarWarnings(g: Game): void {
     const c = this.ctx, { W, H } = this;
@@ -831,8 +835,8 @@ export class Renderer {
         level = Math.max(level, h.owner !== null ? 0.35 * h.rise : 0.45 + 0.55 * clamp(1 - h.z / h.startZ, 0, 1));
       }
       if (level <= 0) continue;
-      const pulse = 0.5 + 0.5 * Math.sin(this.t * (6 + 8 * level));
-      const a = level * (0.25 + 0.35 * pulse), w = W * 0.45;
+      const breathe = 0.85 + 0.15 * Math.sin(this.t * 2.5);
+      const a = level * 0.28 * breathe, w = W * 0.3;
       const x0 = side < 0 ? 0 : W, x1 = side < 0 ? w : W - w;
       const gr = c.createLinearGradient(x0, 0, x1, 0);
       gr.addColorStop(0, `rgba(255,40,30,${a})`);

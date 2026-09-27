@@ -18,7 +18,9 @@ Run `npm run dev`, play with the camera in Chrome. Note the result of each item.
 - [ ] Sweeping both open hands up quickly raises a fire wall where they are; slow raises don't.
 - [ ] Gathering both open hands together and flinging them apart fires the ultimate; opening while already apart doesn't.
 - [ ] Pushing both open palms at the camera (or pushing out of the shield) rolls a fire wall — never the ultimate.
-- [ ] An earthbender's pillar: you can see him raise it and shove it, and leaning away dodges it with time to spare.
+- [ ] An earthbender's pillar clearly comes down your left or right (its furrow shows the track), and leaning away dodges it with time to spare.
+- [ ] The dodge cue turns green (✓ CLEAR) as soon as you're out of the way, for both pillars and the water wave.
+- [ ] Nothing flashes or shakes enough to startle you.
 - [ ] Enemies stay near the middle of the screen, where they're easy to aim at.
 - [ ] A high sweep: a small duck gets under it.
 - [ ] The view's lean and tilt feel big enough to play with, but not nauseating.
