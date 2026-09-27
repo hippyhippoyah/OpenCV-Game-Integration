@@ -1,0 +1,246 @@
+/**
+ * Small looping animations of each lesson's move, drawn in the lesson card: stylised hands (or a
+ * figure, for the dodges) doing the gesture, with arrows. Seen from your side, like your own hands.
+ */
+
+/** Hands are drawn this much bigger than their 16-unit base, to read at a glance. */
+const HAND = 1.6;
+const FIRE = '#ffb45e', SKIN = '#c98f68', SKIN_DARK = '#8a5a3c', LINE = 'rgba(255,226,184,.85)', STONE = '#8b6d4c', WATER = '#7fd6ff';
+
+/** 0 → 1 → 0 over a loop, eased, with a pause at each end. */
+const swing = (k: number) => { const x = Math.min(1, Math.max(0, (Math.sin(k * Math.PI * 2 - Math.PI / 2) + 1) / 2 * 1.3 - 0.15)); return x * x * (3 - 2 * x); };
+/** 0 → 1 quickly, hold, snap back: a strike. */
+const strike = (k: number) => (k < 0.25 ? k / 0.25 : k < 0.55 ? 1 : k < 0.75 ? 1 - (k - 0.55) / 0.2 : 0);
+
+export class LessonDemo {
+  private ctx: CanvasRenderingContext2D;
+  private w = 0;
+
+  constructor(private canvas: HTMLCanvasElement) {
+    this.ctx = canvas.getContext('2d')!;
+  }
+
+  /** Draw lesson `id` at time t (s). */
+  draw(id: string, t: number): void {
+    const dpr = Math.min(devicePixelRatio || 1, 2), cw = this.canvas.clientWidth, ch = this.canvas.clientHeight;
+    if (this.canvas.width !== Math.round(cw * dpr) || this.canvas.height !== Math.round(ch * dpr)) {
+      this.canvas.width = Math.round(cw * dpr);
+      this.canvas.height = Math.round(ch * dpr);
+    }
+    // drawn on a 150 × 112 stage, scaled to fit the canvas
+    const c = this.ctx, z = Math.min(cw / 150, ch / 112);
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, cw, ch);
+    c.setTransform(dpr * z, 0, 0, dpr * z, (dpr * (cw - 150 * z)) / 2, (dpr * (ch - 112 * z)) / 2);
+    const W = 150, H = 112, cx = W / 2;
+    this.w = W;
+    const k = (t % 2) / 2; // a 2 s loop
+    switch (id) {
+      case 'move': {
+        // lean left, lean right, duck — one after another
+        const ph = Math.floor((t % 6) / 2), s = swing(k);
+        const dx = ph === 0 ? -s * 26 : ph === 1 ? s * 26 : 0, dy = ph === 2 ? s * 18 : 0;
+        this.person(cx + dx, H * 0.34 + dy, dx * 0.012);
+        if (ph === 0) this.arrow(cx - 16, H * 0.3, cx - 44, H * 0.3);
+        if (ph === 1) this.arrow(cx + 16, H * 0.3, cx + 44, H * 0.3);
+        if (ph === 2) this.arrow(cx + 34, H * 0.2, cx + 34, H * 0.55);
+        break;
+      }
+      case 'punch': {
+        // right fist snaps out (grows toward you), fire leaves it
+        const s = strike(k);
+        this.fist(cx - 34, H * 0.62, 1);
+        this.fist(cx + 34 - s * 20, H * 0.62 - s * 22, 1 + s * 0.45);
+        if (s > 0.9) this.flame(cx + 8, H * 0.3, 8);
+        this.arrow(cx + 34, H * 0.75, cx + 12, H * 0.42, 0.5);
+        break;
+      }
+      case 'pillar': {
+        // a pillar slides down the right; the figure leans left out of its way
+        const s = swing(k);
+        this.stone(cx + 30, H * 0.9, 22, 46 * (0.7 + 0.3 * s));
+        this.person(cx - s * 26, H * 0.36, -s * 0.3);
+        this.arrow(cx - 8, H * 0.18, cx - 40, H * 0.18);
+        break;
+      }
+      case 'wave': {
+        // a wave at head height; the figure ducks under it
+        const s = swing(k);
+        this.person(cx, H * 0.3 + s * 22, 0);
+        this.waveBand(H * 0.24);
+        this.arrow(cx + 40, H * 0.35, cx + 40, H * 0.72);
+        break;
+      }
+      case 'shield': {
+        // both hands open and still, fire between them
+        const f = 0.8 + 0.2 * Math.sin(t * 9);
+        this.palm(cx - 36, H * 0.6, 1);
+        this.palm(cx + 36, H * 0.6, 1, true);
+        this.sheet(cx - 24, cx + 24, H * 0.62, 30 * f);
+        break;
+      }
+      case 'xblock': {
+        // forearms cross into an X
+        const s = swing(k);
+        this.forearm(cx - 34 + s * 30, H * 0.95, cx + 22 - s * 2 - (1 - s) * 40, H * 0.3 + (1 - s) * 16);
+        this.forearm(cx + 34 - s * 30, H * 0.95, cx - 22 + s * 2 + (1 - s) * 40, H * 0.3 + (1 - s) * 16);
+        if (s > 0.9) this.flame(cx, H * 0.55, 10);
+        break;
+      }
+      case 'palm': {
+        // one fist stays, the other hand is an open palm shoved forward: a pillar of fire rolls out
+        const s = strike(k);
+        this.fist(cx - 36, H * 0.62, 1);
+        this.palm(cx + 34 - s * 14, H * 0.62 - s * 12, 1 + s * 0.4, true);
+        if (s > 0.9) this.column(cx + 10, H * 0.42, 8, 26);
+        this.arrow(cx + 40, H * 0.9, cx + 20, H * 0.5, 0.5);
+        break;
+      }
+      case 'wall': {
+        // both palms sweep up from low; the wall of fire rises with them
+        const s = strike(k);
+        const y = H * 0.85 - s * H * 0.5;
+        this.palm(cx - 32, y, 0.9);
+        this.palm(cx + 32, y, 0.9, true);
+        if (s > 0.3) this.sheet(cx - 36, cx + 36, H * 0.95, (H * 0.95 - y) * 0.9);
+        this.arrow(cx + 50, H * 0.85, cx + 50, H * 0.3);
+        break;
+      }
+      case 'wallpush': {
+        // both palms at shoulder width shoved forward
+        const s = strike(k);
+        this.palm(cx - 36 + s * 6, H * 0.6 - s * 10, 1 + s * 0.35);
+        this.palm(cx + 36 - s * 6, H * 0.6 - s * 10, 1 + s * 0.35, true);
+        this.sheet(cx - 26, cx + 26, H * 0.5 - s * 10, 14 + s * 6);
+        this.arrow(cx, H * 0.95, cx, H * 0.7, 0.5);
+        break;
+      }
+      case 'ultimate': {
+        // palms gathered together, then flung wide
+        const s = strike(k);
+        const d = 14 + s * 44;
+        this.palm(cx - d, H * 0.58, 0.9);
+        this.palm(cx + d, H * 0.58, 0.9, true);
+        if (s > 0.6) this.disc(cx, H * 0.72, 30 + s * 30);
+        this.arrow(cx - 14, H * 0.3, cx - 50, H * 0.3, 0.8);
+        this.arrow(cx + 14, H * 0.3, cx + 50, H * 0.3, 0.8);
+        break;
+      }
+    }
+  }
+
+  // ---------- pieces ----------
+
+  private person(x: number, y: number, tilt: number): void {
+    const c = this.ctx;
+    c.save();
+    c.translate(x, y);
+    c.rotate(tilt);
+    c.fillStyle = LINE;
+    c.beginPath(); c.arc(0, 0, 9, 0, 7); c.fill();
+    c.beginPath(); c.moveTo(-22, 26); c.quadraticCurveTo(0, 8, 22, 26); c.lineTo(22, 40); c.lineTo(-22, 40); c.closePath(); c.fill();
+    c.restore();
+  }
+
+  private fist(x: number, y: number, s: number): void {
+    s *= HAND;
+    const c = this.ctx, w = 16 * s, h = 14 * s;
+    c.fillStyle = SKIN;
+    c.strokeStyle = SKIN_DARK;
+    c.lineWidth = 1.2;
+    c.beginPath(); c.roundRect(x - w / 2, y - h / 2, w, h, 4 * s); c.fill(); c.stroke();
+    for (let i = 1; i < 4; i++) { c.beginPath(); c.moveTo(x - w / 2 + (w * i) / 4, y - h / 2 + 1); c.lineTo(x - w / 2 + (w * i) / 4, y - h / 2 + h * 0.4); c.stroke(); }
+  }
+
+  /** An open palm, fingers up; `mirror` puts the thumb on the other side. */
+  private palm(x: number, y: number, s: number, mirror = false): void {
+    const c = this.ctx;
+    c.save();
+    c.translate(x, y);
+    s *= HAND;
+    c.scale(mirror ? -s : s, s);
+    c.fillStyle = SKIN;
+    c.strokeStyle = SKIN_DARK;
+    c.lineWidth = 1;
+    c.beginPath(); c.roundRect(-8, -6, 16, 14, 4); c.fill(); c.stroke();
+    [-6, -2, 2, 6].forEach((fx, i) => { c.beginPath(); c.roundRect(fx - 1.7, -18 + Math.abs(i - 1.5) * 2, 3.4, 13, 1.7); c.fill(); c.stroke(); });
+    c.beginPath(); c.roundRect(7, -3, 8, 3.4, 1.7); c.fill(); c.stroke();
+    c.restore();
+  }
+
+  private forearm(x0: number, y0: number, x1: number, y1: number): void {
+    const c = this.ctx;
+    c.strokeStyle = SKIN;
+    c.lineWidth = 12;
+    c.lineCap = 'round';
+    c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+    this.fist(x1, y1, 0.8);
+  }
+
+  private flame(x: number, y: number, r: number): void {
+    const c = this.ctx, g = c.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(255,245,210,1)'); g.addColorStop(0.4, 'rgba(255,170,70,.9)'); g.addColorStop(1, 'rgba(255,90,20,0)');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
+  }
+
+  /** A sheet of fire standing from y (bottom) up h. */
+  private sheet(x0: number, x1: number, y: number, h: number): void {
+    const c = this.ctx, g = c.createLinearGradient(0, y, 0, y - h);
+    g.addColorStop(0, 'rgba(255,190,90,.9)'); g.addColorStop(1, 'rgba(255,90,20,0)');
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(x0, y);
+    for (let i = 0; i <= 8; i++) c.lineTo(x0 + ((x1 - x0) * i) / 8, y - h * (0.7 + 0.3 * Math.sin(i * 2.1 + performance.now() / 90)));
+    c.lineTo(x1, y);
+    c.closePath(); c.fill();
+  }
+
+  private column(x: number, y: number, hw: number, h: number): void {
+    this.sheet(x - hw, x + hw, y + h / 2, h);
+  }
+
+  private disc(x: number, y: number, r: number): void {
+    const c = this.ctx;
+    c.strokeStyle = FIRE;
+    c.lineWidth = 3;
+    c.beginPath(); c.ellipse(x, y, r, r * 0.18, 0, 0, 7); c.stroke();
+  }
+
+  private stone(x: number, bottom: number, w: number, h: number): void {
+    const c = this.ctx;
+    c.fillStyle = STONE;
+    c.strokeStyle = '#3b2a1a';
+    c.lineWidth = 1.2;
+    c.beginPath(); c.moveTo(x - w / 2, bottom); c.lineTo(x - w / 2 + 2, bottom - h); c.lineTo(x + w / 2 - 3, bottom - h - 3); c.lineTo(x + w / 2, bottom); c.closePath(); c.fill(); c.stroke();
+  }
+
+  private waveBand(y: number): void {
+    const c = this.ctx;
+    c.fillStyle = 'rgba(80,170,230,.75)';
+    c.beginPath();
+    c.moveTo(0, y + 8);
+    for (let i = 0; i <= 12; i++) c.lineTo((this.w * i) / 12, y + Math.sin(i + performance.now() / 150) * 2);
+    c.lineTo(this.w, y + 8);
+    c.closePath(); c.fill();
+    c.strokeStyle = WATER;
+    c.lineWidth = 2;
+    c.beginPath();
+    for (let i = 0; i <= 12; i++) c[i ? 'lineTo' : 'moveTo']((this.w * i) / 12, y + Math.sin(i + performance.now() / 150) * 2);
+    c.stroke();
+  }
+
+  private arrow(x0: number, y0: number, x1: number, y1: number, alpha = 1): void {
+    const c = this.ctx, a = Math.atan2(y1 - y0, x1 - x0);
+    c.strokeStyle = `rgba(255,195,107,${alpha})`;
+    c.fillStyle = `rgba(255,195,107,${alpha})`;
+    c.lineWidth = 2.5;
+    c.lineCap = 'round';
+    c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1 - Math.cos(a) * 5, y1 - Math.sin(a) * 5); c.stroke();
+    c.beginPath();
+    c.moveTo(x1, y1);
+    c.lineTo(x1 - Math.cos(a - 0.5) * 9, y1 - Math.sin(a - 0.5) * 9);
+    c.lineTo(x1 - Math.cos(a + 0.5) * 9, y1 - Math.sin(a + 0.5) * 9);
+    c.closePath(); c.fill();
+  }
+}

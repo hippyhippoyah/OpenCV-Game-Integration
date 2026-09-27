@@ -28,3 +28,12 @@ choice. `?mode=tutorial|waves|training` skips it (`?dummies` = training).
 Implementation: `src/game/tutorial.ts` (`LESSONS`, `Tutorial`), driven from `main.ts` with each
 frame's game events; `Game.scripted()`, `addEnemy()`, `noDamage`, per-enemy `only` (attack) and
 `pace` (seconds between attacks) let a script run the field.
+
+## Revision: lesson card with move animations
+
+The lesson card sits at the top centre (it replaces the move-hint pill during the tutorial) with
+larger text, and shows a small looping animation of the move (`src/render/lessonDemo.ts`):
+stylised hands doing the gesture with arrows — a fist snapping out, a palm shoved forward, palms
+sweeping up, gathering and flinging — or, for the dodges, a figure leaning away from a pillar or
+ducking under a wave. Lessons made of separate steps (Move) show each as a chip that turns green
+with a tick when done.

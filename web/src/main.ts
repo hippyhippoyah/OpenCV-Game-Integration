@@ -9,6 +9,7 @@ import { Calibrator, type Calibration } from './intent/calibration';
 import { initialState, interpret, TUNING, type Cast, type Intent, type InterpretState, type Palm, type Punch } from './intent/interpret';
 import { DebugView } from './render/debug';
 import { Hud } from './render/hud';
+import { LessonDemo } from './render/lessonDemo';
 import { Renderer } from './render/renderer';
 
 const STEP = 1 / 60;
@@ -18,6 +19,7 @@ const show = (id: string, on = true) => $(id).classList.toggle('hidden', !on);
 const renderer = new Renderer($('game') as HTMLCanvasElement);
 const hud = new Hud();
 const debug = new DebugView($('pip') as HTMLCanvasElement, $('debugText'));
+const lessonDemo = new LessonDemo($('lessonDemo') as HTMLCanvasElement);
 
 type Mode = 'tutorial' | 'waves' | 'training';
 let phase: 'menu' | 'loading' | 'calibrating' | 'modes' | 'play' = 'menu';
@@ -98,6 +100,7 @@ function showModes(note = ''): void {
   game = null;
   tutorial = null;
   for (const id of ['calib', 'over', 'away', 'lesson', 'dodge', 'mockHelp']) show(id, false);
+  document.body.classList.remove('tutorial');
   $('modesNote').textContent = note;
   show('modesNote', !!note);
   show('modes');
@@ -118,6 +121,7 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
   phase = 'play';
   for (const id of ['calib', 'over', 'modes']) show(id, false);
   show('lesson', !!tutorial);
+  document.body.classList.toggle('tutorial', !!tutorial);
   drawLesson();
   if (tracker instanceof MockTracker && !mockHelpShown) {
     mockHelpShown = true;
@@ -135,6 +139,14 @@ function drawLesson(): void {
   $('lessonGoal').textContent = done ? '✓ Done — next lesson…' : l.goal;
   $('lessonCount').textContent = `${tutorial.done} / ${l.need}`;
   $('lessonFill').style.width = `${Math.round((tutorial.done / l.need) * 100)}%`;
+  const steps = $('lessonSteps');
+  steps.replaceChildren(...(l.steps ?? []).map(st => {
+    const el = document.createElement('span');
+    el.textContent = tutorial!.marksDone.has(st.mark) ? `✓ ${st.label}` : st.label;
+    el.classList.toggle('done', tutorial!.marksDone.has(st.mark));
+    return el;
+  }));
+  show('lessonSteps', !!l.steps);
   $('lesson').classList.toggle('done', done);
 }
 
@@ -210,6 +222,7 @@ function loop(now: number): void {
   if (f) onFrame(f);
   if (phase === 'play') stepGame(dt);
   renderer.render(phase === 'play' ? game : null, dt);
+  if (tutorial && phase === 'play') lessonDemo.draw(tutorial.lesson.id, now / 1000);
   debug.draw(lastFrame, intent, camera?.video ?? null);
   $('handsN').textContent = String(lastFrame?.hands.length ?? 0);
   $('headTag').textContent = headLabel(intent);

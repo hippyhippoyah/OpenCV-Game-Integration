@@ -27,12 +27,16 @@
       <pre id="debugText" class="hidden"></pre>
     </div>
     <div id="lesson" class="lesson hidden">
-      <div class="label" id="lessonStep"></div>
-      <h2 id="lessonTitle"></h2>
-      <p id="lessonHow"></p>
-      <div class="goal"><span id="lessonGoal"></span><b id="lessonCount"></b></div>
-      <div class="bar wide"><i id="lessonFill"></i></div>
-      <div class="muted keys"><kbd>N</kbd> skip · <kbd>B</kbd> back · <kbd>Esc</kbd> menu</div>
+      <canvas id="lessonDemo" aria-label="How to do the move"></canvas>
+      <div class="lessonText">
+        <div class="label" id="lessonStep"></div>
+        <h2 id="lessonTitle"></h2>
+        <p id="lessonHow"></p>
+        <div class="steps" id="lessonSteps"></div>
+        <div class="goal"><span id="lessonGoal"></span><b id="lessonCount"></b></div>
+        <div class="bar wide"><i id="lessonFill"></i></div>
+        <div class="muted keys"><kbd>N</kbd> skip · <kbd>B</kbd> back · <kbd>Esc</kbd> menu</div>
+      </div>
     </div>
     <div id="toasts"></div>
     <div id="dodge" class="dodge hidden"><b id="dodgeText"></b><i id="dodgeBar"></i></div>

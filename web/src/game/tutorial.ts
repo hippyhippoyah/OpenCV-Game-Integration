@@ -11,6 +11,8 @@ export interface Lesson {
   /** What to do to pass, with `need` as the count. */
   goal: string;
   need: number;
+  /** Lessons made of different things to do: each one, ticked off when its mark is reached. */
+  steps?: { mark: string; label: string }[];
   cast: Cast[];
   /** Set up anything else the lesson needs (e.g. charge the ultimate). */
   setup?(g: Game): void;
@@ -30,6 +32,7 @@ export const LESSONS: Lesson[] = [
     id: 'move', title: 'Move',
     how: 'Your head is your body here. Lean or step to the side to move; bend your knees to duck. The world tilts with you.',
     goal: 'Lean left, lean right, and duck', need: 3, cast: [],
+    steps: [{ mark: 'left', label: '← Lean left' }, { mark: 'right', label: 'Lean right →' }, { mark: 'duck', label: '↓ Duck' }],
     progress(g, _e, marks) {
       const before = marks.size;
       if (g.cam.x <= -20) marks.add('left');
