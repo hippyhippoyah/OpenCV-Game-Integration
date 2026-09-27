@@ -24,7 +24,7 @@ describe('Calibrator', () => {
   it('restarts when the body is lost', () => {
     const c = new Calibrator();
     for (let t = 0; t <= 1.0; t += 0.1) c.add(bodyFrame(t));
-    c.add({ t: 1.1, head: null, shoulderL: null, shoulderR: null, hands: [] });
+    c.add({ t: 1.1, head: null, shoulderL: null, shoulderR: null, hands: [], arms: { l: null, r: null }, face: null });
     expect(c.progress()).toBe(0);
   });
 });

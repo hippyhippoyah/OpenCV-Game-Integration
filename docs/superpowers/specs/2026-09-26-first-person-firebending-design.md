@@ -96,3 +96,18 @@ Replaces the palms-together summon and push-throw, which depended on weak depth 
   the debug panel; `TUNING.shieldNeedsEdgeOnPalms` can require palms facing each other for a shield.
   Hands are followed frame to frame so crossing punches keep their left/right labels.
 - **Practice mode:** `T` or `?dummies` swaps spirits for still, respawning training dummies.
+
+## Revision 2026-09-26: body tracking
+
+- **Arms** (pose): shoulder, elbow and wrist per side with confidence, labelled by the person's own
+  left/right. Wrists are still estimated when outside the picture.
+- **Hands belong to arms:** each detected hand is labelled by the nearest pose wrist (both matched
+  jointly); frame-to-frame continuity is only the fallback when no body is visible.
+- **Fallback:** when the hand tracker loses a hand, its position follows the pose wrist (palm placed
+  25% of a forearm past the wrist). `source` = `hand` / `arm` / `estimate`; `inView` false when the
+  wrist is outside the picture or low-confidence. Shield needs both hands in view.
+- **Arm extension:** elbow straightness in 3D (70° bent → 165° straight). A rise of 0.3 within 0.35 s
+  counts as punch motion, so punches register even when the hand barely moves on screen.
+- **Also recorded:** head turn/tilt (from nose, eyes, ears) and shoulder tilt.
+- **Feedback:** first-person arms bend at the tracked elbow; an edge marker shows where an
+  out-of-view hand is; the debug panel draws the arm skeleton and lists source/extension.

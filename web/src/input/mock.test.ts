@@ -40,6 +40,14 @@ describe('MockTracker', () => {
     expect(out.at(-1)!.shield).toBe(true);
   });
 
+  it('holding O takes the right hand out of the picture but keeps it tracked by its arm', () => {
+    const m = new MockTracker({ screenToView: (x: number, y: number) => ({ x: x - 640, y: y - 360 }) });
+    const last = run(m, 30, i => { if (i === 5) m.setKey('o', true); }).at(-1)!;
+    expect(last.hands.r!.inView).toBe(false);
+    expect(last.hands.r!.source).toBe('estimate');
+    expect(last.hands.l!.inView).toBe(true);
+  });
+
   it('leaning with D moves the camera right', () => {
     const m = new MockTracker(identity);
     m.setKey('d', true);

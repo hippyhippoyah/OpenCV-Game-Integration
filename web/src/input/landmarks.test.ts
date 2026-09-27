@@ -53,7 +53,7 @@ describe('toFrame', () => {
   });
 
   it('handles no person', () => {
-    expect(toFrame(0, [], undefined)).toEqual({ t: 0, head: null, shoulderL: null, shoulderR: null, hands: [] });
+    expect(toFrame(0, [], undefined)).toEqual({ t: 0, head: null, shoulderL: null, shoulderR: null, hands: [], arms: { l: null, r: null }, face: null });
   });
 });
 
@@ -71,5 +71,63 @@ describe('hand shape', () => {
   it('measures whether the palm faces the camera or is edge-on', () => {
     expect(palmFacing(worldHand(false, 'xy'))).toBeGreaterThan(0.9);
     expect(palmFacing(worldHand(false, 'zy'))).toBeLessThan(0.1);
+  });
+});
+
+describe('body', () => {
+  /** Raw (un-mirrored) pose: the person's left side (11/13/15) sits on the image's right. */
+  const fullPose = (): Landmark[] => {
+    const p = pose();
+    p[11] = { x: 0.6, y: 0.5, visibility: 1 };
+    p[12] = { x: 0.4, y: 0.5, visibility: 1 };
+    p[13] = { x: 0.65, y: 0.65, visibility: 0.9 };
+    p[14] = { x: 0.35, y: 0.65, visibility: 0.9 };
+    p[15] = { x: 0.7, y: 0.55, visibility: 0.9 };
+    p[16] = { x: -0.2, y: 0.8, visibility: 0.1 }; // right wrist estimated beyond the picture
+    return p;
+  };
+  const flatHand = (x: number, y: number): Landmark[] => Array.from({ length: 21 }, () => ({ x, y }));
+
+  it('labels arms by the body and keeps off-screen wrist estimates', () => {
+    const f = toFrame(0, [], fullPose());
+    expect(f.arms.l!.shoulder.x).toBeCloseTo(0.4);
+    expect(f.arms.l!.wrist.x).toBeCloseTo(0.3);
+    expect(f.arms.r!.wrist.x).toBeCloseTo(1.2);
+    expect(f.arms.r!.wrist.vis).toBeCloseTo(0.1);
+    expect(f.arms.l!.extension).toBeNull();
+  });
+
+  it('has no arms without visible shoulders', () => {
+    const p = fullPose();
+    p[11].visibility = 0.1;
+    expect(toFrame(0, [], p).arms.l).toBeNull();
+  });
+
+  it('measures arm straightness in 3D', () => {
+    const world: Landmark[] = Array.from({ length: 33 }, () => ({ x: 0, y: 0, z: 0 }));
+    world[11] = { x: 0.2, y: 0, z: 0 }; world[13] = { x: 0.2, y: 0.3, z: 0 }; world[15] = { x: 0.2, y: 0.3, z: -0.3 }; // bent 90°
+    world[12] = { x: -0.2, y: 0, z: 0 }; world[14] = { x: -0.2, y: 0, z: -0.3 }; world[16] = { x: -0.2, y: 0, z: -0.6 }; // straight at the camera
+    const f = toFrame(0, [], fullPose(), [], world);
+    expect(f.arms.r!.extension).toBeGreaterThan(0.9);
+    expect(f.arms.l!.extension).toBeLessThan(0.3);
+  });
+
+  it('matches each hand to the nearest wrist, whatever order the hands come in', () => {
+    const p = fullPose();
+    p[16] = { x: 0.25, y: 0.55, visibility: 0.9 };
+    const f = toFrame(0, [flatHand(0.27, 0.55), flatHand(0.72, 0.55)], p);
+    expect(f.hands.map(h => h.side)).toEqual(['r', 'l']);
+  });
+
+  it('reads head turn and tilt', () => {
+    const p = fullPose();
+    p[0] = { x: 0.5, y: 0.3, visibility: 1 };
+    p[2] = { x: 0.53, y: 0.28, visibility: 1 }; p[5] = { x: 0.47, y: 0.28, visibility: 1 };
+    p[7] = { x: 0.58, y: 0.3, visibility: 1 }; p[8] = { x: 0.42, y: 0.3, visibility: 1 };
+    const straight = toFrame(0, [], p).face!;
+    expect(straight.yaw).toBeCloseTo(0);
+    expect(straight.roll).toBeCloseTo(0);
+    p[0] = { x: 0.45, y: 0.3, visibility: 1 };
+    expect(toFrame(0, [], p).face!.yaw).toBeGreaterThan(0.2);
   });
 });

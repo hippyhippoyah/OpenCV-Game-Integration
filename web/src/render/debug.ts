@@ -48,6 +48,30 @@ export class DebugView {
         c.fillStyle = '#fff';
         c.beginPath(); c.arc(p.x, p.y, 5, 0, 7); c.fill();
       }
+      // arms: shoulder → elbow → wrist, faded where the model is unsure; a wrist outside the picture
+      // is pinned to the panel edge with a triangle pointing where it is
+      for (const arm of [f.arms.l, f.arms.r]) {
+        if (!arm) continue;
+        const pts = [arm.shoulder, arm.elbow, arm.wrist];
+        for (let i = 0; i < 2; i++) {
+          const a = P(pts[i]), b = P(pts[i + 1]);
+          c.strokeStyle = `rgba(157,255,207,${Math.max(0.2, Math.min(pts[i].vis, pts[i + 1].vis))})`;
+          c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+        }
+        const wp = P(arm.wrist), m = 6;
+        const q = { x: Math.max(m, Math.min(w - m, wp.x)), y: Math.max(m, Math.min(h - m, wp.y)) };
+        c.fillStyle = arm.wrist.vis >= 0.5 ? '#9dffcf' : '#ff9d6b';
+        if (q.x !== wp.x || q.y !== wp.y) {
+          const dir = Math.atan2(wp.y - q.y, wp.x - q.x);
+          c.beginPath();
+          c.moveTo(q.x + Math.cos(dir) * m, q.y + Math.sin(dir) * m);
+          c.lineTo(q.x + Math.cos(dir + 2.4) * m, q.y + Math.sin(dir + 2.4) * m);
+          c.lineTo(q.x + Math.cos(dir - 2.4) * m, q.y + Math.sin(dir - 2.4) * m);
+          c.closePath(); c.fill();
+        } else {
+          c.beginPath(); c.arc(q.x, q.y, 3, 0, 7); c.fill();
+        }
+      }
       // each hand: filled orange = open, red ring = fist; label shows openness and palm facing
       c.font = `${Math.round(h / 14)}px ui-monospace, Menlo, monospace`;
       const sorted = [...f.hands].sort((a, b) => a.center.x - b.center.x);
@@ -68,10 +92,14 @@ export class DebugView {
     if (this.detailed && intent) {
       const line = (name: string, h: Intent['hands']['l']) => h
         ? `${name} ${h.open ? 'open' : 'fist'} ${h.openness.toFixed(2)}  face ${h.facing.toFixed(2)}  speed ${Math.hypot(h.vel.x, h.vel.y).toFixed(0)}`
+          + `\n  ${h.source}${h.inView ? '' : ' (out of view)'}  arm ${h.extension === null ? '—' : h.extension.toFixed(2)}`
         : `${name} —`;
+      const deg = (r: number) => `${Math.round((r * 180) / Math.PI)}°`;
       this.text.textContent = [
         `present ${intent.present}  shield ${intent.shield}`,
-        `head x ${intent.head.x.toFixed(1)}  y ${intent.head.y.toFixed(1)}`,
+        `head x ${intent.head.x.toFixed(1)}  y ${intent.head.y.toFixed(1)}`
+          + (intent.face ? `  turn ${intent.face.yaw.toFixed(2)}  tilt ${deg(intent.face.roll)}` : ''),
+        `shoulders tilt ${deg(intent.bodyTilt)}`,
         line('L', intent.hands.l),
         line('R', intent.hands.r),
         f?.hands.length ? `size ${f.hands.map(x => x.size.toFixed(3)).join('  ')}` : '',

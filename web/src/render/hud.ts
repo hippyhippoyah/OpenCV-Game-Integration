@@ -15,8 +15,11 @@ export class Hud {
     const [name, hint] = g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
       : noHands ? ['NO HANDS', 'raise your fists into view']
         : ['GUARD', 'punch, then open your hand to shoot · open both hands to shield'];
+    const lost = (['l', 'r'] as const).filter(side => g.hands[side] && !g.hands[side]!.inView);
     $('modeName').textContent = name;
-    $('modeHint').textContent = hint;
+    $('modeHint').textContent = lost.length
+      ? `${lost.map(side => (side === 'l' ? 'left' : 'right')).join(' and ')} hand out of camera view`
+      : hint;
     $('shieldFill').style.width = `${Math.round(g.shield.energy * 100)}%`;
     $('shieldBar').classList.toggle('broken', g.shield.broken > 0);
     $('shieldState').textContent = g.shield.broken > 0 ? 'broken' : g.shield.on ? (TUNE.shieldInfinite ? 'holding · unlimited' : 'holding')

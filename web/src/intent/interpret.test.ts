@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { initialState, interpret, TUNING, type Intent } from './interpret';
 import type { Calibration } from './calibration';
-import { bodyFrame, hand, type HandSpec } from '../test/frames';
+import { arm, bodyFrame, hand, type HandSpec } from '../test/frames';
 import type { Vec2 } from '../math';
 
 const cal: Calibration = { head: { x: 0.5, y: 0.35 }, sw: 0.2 };
@@ -107,8 +107,61 @@ describe('interpret', () => {
   });
 
   it('reports nobody present without a head and shoulders', () => {
-    const r = interpret({ t: 0, head: null, shoulderL: null, shoulderR: null, hands: [] }, cal, initialState());
+    const r = interpret({ t: 0, head: null, shoulderL: null, shoulderR: null, hands: [], arms: { l: null, r: null }, face: null }, cal, initialState());
     expect(r.present).toBe(false);
     expect(r.hands.l).toBeNull();
+  });
+
+  describe('with the body tracked', () => {
+    it('uses the arms to tell the hands apart, even when they jump', () => {
+      const s = initialState();
+      interpret(bodyFrame(0, { hands: [hand(MID, SW, { ...GUARD_L, side: 'l' }), hand(MID, SW, { ...GUARD_R, side: 'r' })] }), cal, s);
+      // both hands swap sides at once: continuity alone would keep the old labels
+      let r!: Intent;
+      for (let i = 1; i <= 5; i++) r = interpret(bodyFrame(i / FPS, { hands: [hand(MID, SW, { ...GUARD_R, side: 'l' }), hand(MID, SW, { ...GUARD_L, side: 'r' })] }), cal, s);
+      expect(r.hands.l!.pos.x).toBeGreaterThan(r.hands.r!.pos.x);
+    });
+
+    it('keeps following a hand the hand tracker lost, from its arm', () => {
+      const s = initialState();
+      interpret(bodyFrame(0, { hands: [hand(MID, SW, { ...GUARD_R, side: 'r' })], arms: { r: arm(MID, SW, 'r', GUARD_R) } }), cal, s);
+      let r!: Intent;
+      for (let i = 1; i <= 30; i++) r = interpret(bodyFrame(i / FPS, { arms: { r: arm(MID, SW, 'r', { x: 0.6, y: -0.2 }) } }), cal, s);
+      expect(r.hands.r!.source).toBe('arm');
+      expect(r.hands.r!.inView).toBe(true);
+      expect(r.hands.r!.pos.x).toBeGreaterThan(view({ x: 0.6, y: 0 }).x); // palm sits just past the wrist
+      expect(r.hands.r!.elbow).not.toBeNull();
+    });
+
+    it('still knows where a hand is when it leaves the picture', () => {
+      const s = initialState();
+      let r!: Intent;
+      for (let i = 0; i <= 30; i++) r = interpret(bodyFrame(i / FPS, { arms: { r: arm(MID, SW, 'r', { x: 3.5, y: 0, vis: 0.1 }) } }), cal, s);
+      expect(r.hands.r).not.toBeNull();
+      expect(r.hands.r!.source).toBe('estimate');
+      expect(r.hands.r!.inView).toBe(false);
+      expect(r.hands.r!.pos.x).toBeGreaterThan(80);
+    });
+
+    it('counts a fast-straightening arm as a punch even when the hand barely moves on screen', () => {
+      const at = { x: 0.2, y: -0.2 };
+      const frame = (i: number, ext: number, open = 0) =>
+        bodyFrame(i / FPS, { hands: [hand(MID, SW, { ...GUARD_L, side: 'l' }), hand(MID, SW, { ...at, open, side: 'r' })], arms: { l: arm(MID, SW, 'l', GUARD_L), r: arm(MID, SW, 'r', at, ext) } });
+      const s = initialState();
+      const out = [
+        ...repeat(6, i => frame(i, 0.2)),
+        ...repeat(4, i => frame(6 + i, 0.2 + 0.18 * (i + 1))),
+        ...repeat(10, i => frame(10 + i, 0.92, 1)),
+      ].map(f => interpret(f, cal, s));
+      expect(punchesIn(out)).toHaveLength(1);
+      expect(out.at(-1)!.hands.r!.extension).toBeGreaterThan(0.8);
+    });
+
+    it('passes head turn and shoulder tilt through', () => {
+      const f = { ...bodyFrame(0), face: { yaw: 0.3, roll: 0.1 }, shoulderR: { x: 0.6, y: 0.52 } };
+      const r = interpret(f, cal, initialState());
+      expect(r.face).toEqual({ yaw: 0.3, roll: 0.1 });
+      expect(r.bodyTilt).toBeGreaterThan(0);
+    });
   });
 });

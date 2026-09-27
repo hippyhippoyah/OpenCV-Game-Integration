@@ -1,5 +1,5 @@
 import { arrival, FLOOR_Y, FOCAL, type Enemy, type Game, type GameEvent } from '../game/game';
-import { lerp, mulberry32, type Vec2 } from '../math';
+import { clamp, lerp, mulberry32, type Vec2 } from '../math';
 
 type Pal = 'fire' | 'spirit';
 interface Particle {
@@ -137,13 +137,14 @@ export class Renderer {
       this.drawHandLight(g);
       this.drawProjectiles(g, false);
       this.drawHands(g);
+      this.drawOffscreenHands(g);
     }
     this.drawParticles(false);
     if (g && !g.shield.on) {
       // a bright core in each open palm
       c.globalCompositeOperation = 'lighter';
       for (const h of [g.hands.l, g.hands.r]) {
-        if (!h?.open) continue;
+        if (!h?.open || !h.inView) continue;
         const p = this.viewToScreen(h.pos), r = 3 * u * (0.95 + 0.08 * Math.sin(this.t * 25));
         c.drawImage(SPR.fire[0], p.x - r, p.y - r, r * 2, r * 2);
       }
@@ -413,7 +414,7 @@ export class Renderer {
     const c = this.ctx, u = this.u, flicker = 0.9 + 0.1 * Math.sin(this.t * 20);
     c.globalCompositeOperation = 'lighter';
     for (const h of [g.hands.l, g.hands.r]) {
-      if (!h) continue;
+      if (!h?.inView) continue;
       const C = this.viewToScreen(h.pos), r = (h.open ? 32 : 12) * u;
       const gr = c.createRadialGradient(C.x, C.y, 0, C.x, C.y, r);
       gr.addColorStop(0, `rgba(255,140,60,${(h.open ? 0.26 : 0.14) * flicker})`); gr.addColorStop(1, 'rgba(255,120,40,0)');
@@ -439,8 +440,12 @@ export class Renderer {
     c.globalCompositeOperation = 'source-over';
   }
 
-  /** First-person forearm plus an open hand or a fist, in screen space. side: −1 left, +1 right. */
-  private handShape(c: CanvasRenderingContext2D, h: Vec2, side: number, grow: number, open: boolean): void {
+  /**
+   * First-person arm plus an open hand or a fist, in screen space. side: −1 left, +1 right.
+   * With a tracked elbow the forearm bends where yours does; the upper arm always runs off the
+   * bottom of the screen, since your shoulders are behind the camera.
+   */
+  private handShape(c: CanvasRenderingContext2D, h: Vec2, side: number, grow: number, open: boolean, elbowAt: Vec2 | null = null): void {
     const k = 1.5 * this.u, g = grow;
     c.lineCap = 'round';
     c.lineJoin = 'round';
@@ -448,10 +453,10 @@ export class Renderer {
       c.lineWidth = w + 2 * g;
       c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
     };
-    const elbow = { x: h.x + side * 16 * k, y: this.H + 14 * k };
-    const mid = { x: lerp(elbow.x, h.x, 0.55), y: lerp(elbow.y, h.y + 4 * k, 0.55) };
-    line(elbow.x, elbow.y, mid.x, mid.y, 9 * k);
-    line(mid.x, mid.y, h.x, h.y + 3.5 * k, 6.4 * k);
+    const shoulder = { x: (elbowAt?.x ?? h.x) + side * (elbowAt ? 10 : 16) * k, y: this.H + 14 * k };
+    const elbow = elbowAt ?? { x: lerp(shoulder.x, h.x, 0.55), y: lerp(shoulder.y, h.y + 4 * k, 0.55) };
+    line(shoulder.x, shoulder.y, elbow.x, elbow.y, 9 * k);
+    line(elbow.x, elbow.y, h.x, h.y + 3.5 * k, 6.4 * k);
     if (!open) {
       // fist: curled fingers with knuckle bumps, thumb wrapped across the front
       c.beginPath(); c.ellipse(h.x, h.y, 3.5 * k + g, 3.2 * k + g, 0, 0, 7); c.fill();
@@ -475,20 +480,20 @@ export class Renderer {
   private drawHands(g: Game): void {
     const hands = ([['l', -1], ['r', 1]] as const)
       .map(([side, sign]) => ({ h: g.hands[side], sign }))
-      .filter((x): x is { h: NonNullable<typeof x.h>; sign: -1 | 1 } => x.h !== null);
+      .filter((x): x is { h: NonNullable<typeof x.h>; sign: -1 | 1 } => x.h !== null && x.h.inView);
     if (!hands.length) return;
     const c = this.ctx, u = this.u, flicker = 0.9 + 0.1 * Math.sin(this.t * 20);
     // rim glow first, then the dark hands, lit on top by their own fire
     for (const { h, sign } of hands) {
       c.strokeStyle = c.fillStyle = `rgba(255,130,60,${(h.open ? 0.4 : 0.18) * flicker})`;
-      this.handShape(c, this.viewToScreen(h.pos), sign, 0.9 * u, h.open);
+      this.handShape(c, this.viewToScreen(h.pos), sign, 0.9 * u, h.open, h.elbow && this.viewToScreen(h.elbow));
     }
     const hl = this.handLayer.getContext('2d')!;
     hl.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     hl.globalCompositeOperation = 'source-over';
     hl.clearRect(0, 0, this.W, this.H);
     hl.strokeStyle = hl.fillStyle = g.inv > 0 && Math.sin(this.t * 40) > 0 ? '#3a1216' : '#150f19';
-    for (const { h, sign } of hands) this.handShape(hl, this.viewToScreen(h.pos), sign, 0, h.open);
+    for (const { h, sign } of hands) this.handShape(hl, this.viewToScreen(h.pos), sign, 0, h.open, h.elbow && this.viewToScreen(h.elbow));
     hl.globalCompositeOperation = 'source-atop';
     for (const { h } of hands) {
       const C = this.viewToScreen(h.pos), gr = hl.createRadialGradient(C.x, C.y - 3 * u, 0, C.x, C.y, 30 * u);
@@ -497,6 +502,38 @@ export class Renderer {
       hl.fillRect(0, 0, this.W, this.H);
     }
     c.drawImage(this.handLayer, 0, 0, this.W, this.H);
+  }
+
+  /** A hand outside the camera picture: a marker at the nearest screen edge, pointing toward it. */
+  private drawOffscreenHands(g: Game): void {
+    const c = this.ctx, u = this.u, margin = 6 * u;
+    for (const side of ['l', 'r'] as const) {
+      const h = g.hands[side];
+      if (!h || h.inView) continue;
+      const p = this.viewToScreen(h.pos);
+      const q = { x: clamp(p.x, margin, this.W - margin), y: clamp(p.y, margin, this.H - margin) };
+      const dir = Math.atan2(p.y - this.H / 2, p.x - this.W / 2), pulse = 0.6 + 0.4 * Math.sin(this.t * 6);
+      c.globalCompositeOperation = 'lighter';
+      const gr = c.createRadialGradient(q.x, q.y, 0, q.x, q.y, 6 * u);
+      gr.addColorStop(0, `rgba(255,140,60,${0.35 * pulse})`); gr.addColorStop(1, 'rgba(255,120,40,0)');
+      c.fillStyle = gr;
+      c.fillRect(q.x - 6 * u, q.y - 6 * u, 12 * u, 12 * u);
+      c.globalCompositeOperation = 'source-over';
+      c.save();
+      c.translate(q.x, q.y);
+      c.rotate(dir);
+      c.fillStyle = `rgba(255,190,120,${0.5 + 0.4 * pulse})`;
+      c.beginPath(); c.moveTo(3.2 * u, 0); c.lineTo(1 * u, -1.6 * u); c.lineTo(1 * u, 1.6 * u); c.closePath(); c.fill();
+      c.restore();
+      c.strokeStyle = 'rgba(255,190,120,.8)';
+      c.lineWidth = 2;
+      c.beginPath(); c.arc(q.x, q.y, 1.8 * u, 0, 7); c.stroke();
+      c.fillStyle = '#ffe2b8';
+      c.font = `600 ${Math.round(1.8 * u)}px Inter, sans-serif`;
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(side.toUpperCase(), q.x, q.y);
+    }
   }
 
   // ---------- particles ----------
@@ -515,7 +552,7 @@ export class Renderer {
   private emitFromState(g: Game, dt: number): void {
     // embers smoulder in closed fists; open hands pour out flame
     for (const h of [g.hands.l, g.hands.r]) {
-      if (!h || (h.open && g.shield.on)) continue;
+      if (!h?.inView || (h.open && g.shield.on)) continue;
       const w = g.handWorld(h.pos), vx0 = h.vel.x * 0.3, vy0 = h.vel.y * 0.3;
       if (h.open) {
         for (let i = nOf(110, dt); i > 0; i--) {

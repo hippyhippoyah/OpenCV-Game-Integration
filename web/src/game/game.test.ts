@@ -5,10 +5,10 @@ import { mulberry32 } from '../math';
 
 const SHOULDERS = { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } };
 const hs = (x: number, y: number, open = false): HandState =>
-  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1 });
+  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null });
 const guard = () => ({ l: hs(-12, 22), r: hs(12, 22) });
 const intent = (o: Partial<Intent> = {}): Intent =>
-  ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], shield: false, ...o });
+  ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], shield: false, face: null, bodyTilt: 0, ...o });
 const punch = (hand: Side, x: number, y: number): Punch => ({ hand, at: { x, y }, shoulder: SHOULDERS[hand] });
 const shieldUp = (y = 0) => intent({ hands: { l: hs(-15, y, true), r: hs(15, y, true) }, shield: true });
 const incoming = (x: number, y: number, id = 999): Proj =>

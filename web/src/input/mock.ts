@@ -1,6 +1,6 @@
-import type { HandObs, Tracker, TrackingFrame } from './types';
+import type { ArmObs, HandObs, Side, Tracker, TrackingFrame } from './types';
 import type { Calibration } from '../intent/calibration';
-import { TUNING, type Side } from '../intent/interpret';
+import { TUNING } from '../intent/interpret';
 import { clamp, lerp, type Vec2 } from '../math';
 
 /** The body the mock pretends to see, which is also its calibration. */
@@ -9,12 +9,15 @@ const MID = { x: 0.5, y: 0.5 }, SW = 0.2, HAND_SIZE = 0.08;
 /** Fists up at chest height, in view units. */
 const GUARD: Record<Side, Vec2> = { l: { x: -12, y: 22 }, r: { x: 12, y: 22 } };
 const EXTEND_S = 0.12, OPEN_HOLD_S = 0.25, SHIELD_HALF_WIDTH = 16;
+/** Where the right hand goes while O is held: out past the right edge of the picture. */
+const OUT_OF_VIEW: Vec2 = { x: 140, y: 10 };
 
 export interface ViewMapper { screenToView(x: number, y: number): Vec2 }
 
 /**
  * Pretends to be the camera. The mouse is where you aim; a punch drives that fist to the mouse
- * and opens it; holding Space opens both hands around the mouse (shield); A/D/S lean and duck.
+ * and opens it; holding Space opens both hands around the mouse (shield); A/D/S lean and duck;
+ * holding O swings the right hand out of the picture (only its arm is still tracked).
  */
 export class MockTracker implements Tracker {
   private mouse = { x: 0, y: 0 };
@@ -46,9 +49,15 @@ export class MockTracker implements Tracker {
     const aim = this.view.screenToView(this.mouse.x, this.mouse.y);
     const shield = this.keys.has(' ');
 
-    const hand = (side: Side): HandObs => {
+    const toNorm = (p: Vec2): Vec2 => ({
+      x: mid.x + (p.x / TUNING.handScaleX) * SW,
+      y: mid.y + ((p.y - TUNING.handOffsetY) / TUNING.handScaleY) * SW,
+    });
+    const hands: HandObs[] = [];
+    const arms: Record<Side, ArmObs | null> = { l: null, r: null };
+    for (const side of ['l', 'r'] as const) {
       const sign = side === 'l' ? -1 : 1;
-      let pos = GUARD[side], open = 0, grow = 0, facing = 1;
+      let pos = GUARD[side], open = 0, grow = 0, facing = 1, ext = 0.25;
       const start = this.punchStart[side];
       const since = start === null ? null : t - start;
       if (since !== null && since > EXTEND_S + OPEN_HOLD_S) this.punchStart[side] = null;
@@ -56,24 +65,35 @@ export class MockTracker implements Tracker {
         pos = { x: aim.x + sign * SHIELD_HALF_WIDTH, y: aim.y };
         open = 1;
         facing = 0.2;
+        ext = 0.8;
       } else if (since !== null && since <= EXTEND_S + OPEN_HOLD_S) {
         const e = clamp(since / EXTEND_S, 0, 1);
         pos = { x: lerp(GUARD[side].x, aim.x, e), y: lerp(GUARD[side].y, aim.y, e) };
         grow = 0.3 * e;
         open = since >= EXTEND_S ? 1 : 0;
+        ext = 0.25 + 0.65 * e;
       }
-      return {
-        center: { x: mid.x + (pos.x / TUNING.handScaleX) * SW, y: mid.y + ((pos.y - TUNING.handOffsetY) / TUNING.handScaleY) * SW },
-        size: HAND_SIZE * (1 + grow),
-        open,
-        facing,
+      const away = side === 'r' && this.keys.has('o');
+      if (away) pos = OUT_OF_VIEW;
+      const palm = toNorm(pos), shoulder = { x: mid.x + (sign * SW) / 2, y: mid.y };
+      const wrist = { x: palm.x, y: palm.y + 0.1 * SW };
+      const elbow = { x: lerp(shoulder.x, wrist.x, 0.5), y: lerp(shoulder.y, wrist.y, 0.5) + 0.35 * SW * (1 - ext) };
+      const inPicture = wrist.x >= 0 && wrist.x <= 1 && wrist.y >= 0 && wrist.y <= 1;
+      arms[side] = {
+        shoulder: { ...shoulder, vis: 1 },
+        elbow: { ...elbow, vis: 0.9 },
+        wrist: { ...wrist, vis: inPicture ? 0.9 : 0.1 },
+        extension: ext,
       };
-    };
+      if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open, facing, side });
+    }
     return {
       t, head,
-      shoulderL: { x: mid.x - SW / 2, y: mid.y },
-      shoulderR: { x: mid.x + SW / 2, y: mid.y },
-      hands: [hand('l'), hand('r')],
+      shoulderL: arms.l!.shoulder,
+      shoulderR: arms.r!.shoulder,
+      hands,
+      arms,
+      face: { yaw: 0, roll: 0 },
     };
   }
 
