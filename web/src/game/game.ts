@@ -24,8 +24,17 @@ export const TUNE = {
   aimAssist: 1, assistRadius: 22,
   /** Fire wall: stands at wallDepth where your hands were, blocks attacks crossing it, burns for wallLifeS. */
   wallDepth: 2.5, wallHalfWidth: 55, wallLifeS: 4, wallCooldownS: 1,
-  /** Ultimate: clears every enemy and incoming attack, then recharges. */
-  ultimateCooldownS: 12,
+  /**
+   * Ultimate: a flat blade of fire spreads out from the hands at their height, cutting down every
+   * enemy and incoming attack it reaches, then recharges. Its reach grows at bladeSpeed depth
+   * units/s; sideways, bladeWidthPerDepth world units count as one depth unit (a wide, flat disc).
+   */
+  ultimateCooldownS: 12, bladeSpeed: 16, bladeWidthPerDepth: 30, bladeMaxR: 18,
+  /**
+   * How far below the hands the blade sweeps, as a fraction of the way to the floor. At hand height
+   * the disc would be almost at eye level and look like a thin line; lower, you see it as a layer.
+   */
+  bladeDrop: 0.45,
   /** Testing: the shield never drains or breaks. */
   shieldInfinite: true,
   shieldDrainPerS: 0.33, shieldRegenPerS: 0.22, shieldBlockCost: 0.18, shieldBrokenS: 1.2, shieldReach: 8,
@@ -47,7 +56,7 @@ export interface Proj {
   resolved: boolean;
 }
 
-type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate';
+type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
   | { type: 'punch'; x: number; y: number; z: number; side: Side }
@@ -55,6 +64,9 @@ export type GameEvent =
   | { type: 'wave'; wave: number };
 
 export type Rand = () => number;
+
+/** The ultimate's spinning disc of fire: centred at the hands (world x, y), reach r in depth units. */
+export interface Blade { id: number; x: number; y: number; r: number }
 
 /** A standing wall of fire across the courtyard. */
 export interface Wall { id: number; x: number; z: number; halfW: number; life: number }
@@ -87,6 +99,7 @@ export class Game {
   enemies: Enemy[] = [];
   projs: Proj[] = [];
   walls: Wall[] = [];
+  blades: Blade[] = [];
   /** Seconds until the ultimate is ready again. */
   ultimateIn = 0;
   /** Tests turn this off to control enemies by hand. */
@@ -136,6 +149,7 @@ export class Game {
     for (const c of intent.casts) this.cast(c);
     for (const w of this.walls) w.life -= dt;
     this.walls = this.walls.filter(w => w.life > 0);
+    this.updateBlades(dt);
     this.updateWaves(dt);
     this.updateEnemies(dt);
     this.updateProjs(dt);
@@ -231,16 +245,31 @@ export class Game {
     }
     if (this.ultimateIn > 0) return;
     this.ultimateIn = TUNE.ultimateCooldownS;
-    for (const e of this.enemies) {
-      if (e.hp <= 0) continue;
-      e.hp = 0;
-      e.flash = 1;
-      this.score += 100;
-      this.emit('killEnemy', e.x, e.y, e.z);
-    }
-    this.projs = this.projs.filter(p => p.kind === 'player');
     const at = this.handWorld(c.at);
+    const y = at.y + (FLOOR_Y - at.y) * TUNE.bladeDrop;
+    this.blades.push({ id: this.nextId++, x: at.x, y, r: 0 });
     this.emit('ultimate', at.x, at.y, 0);
+  }
+
+  /** Grow each blade and cut down whatever its edge has reached. */
+  private updateBlades(dt: number): void {
+    const reach = (b: Blade, x: number, z: number) => Math.hypot((x - b.x) / TUNE.bladeWidthPerDepth, z) <= b.r;
+    for (const b of this.blades) {
+      b.r += TUNE.bladeSpeed * dt;
+      for (const e of this.enemies) {
+        if (e.hp <= 0 || !reach(b, e.x, e.z)) continue;
+        e.hp = 0;
+        e.flash = 1;
+        this.score += 100;
+        this.emit('killEnemy', e.x, e.y, e.z);
+      }
+      this.projs = this.projs.filter(p => {
+        if (p.kind !== 'enemy' || !reach(b, p.x, Math.max(p.z, 0))) return true;
+        this.emit('cut', p.x, p.y, p.z);
+        return false;
+      });
+    }
+    this.blades = this.blades.filter(b => b.r < TUNE.bladeMaxR);
   }
 
   /** The living enemy that appears closest to `aim` on screen, if within assist range. */

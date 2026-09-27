@@ -1,4 +1,4 @@
-import { arrival, FLOOR_Y, FOCAL, type Enemy, type Game, type GameEvent, type Wall } from '../game/game';
+import { arrival, FLOOR_Y, FOCAL, TUNE, type Blade, type Enemy, type Game, type GameEvent, type Wall } from '../game/game';
 import type { Side } from '../input/types';
 import { clamp, lerp, mulberry32, type Vec2 } from '../math';
 
@@ -11,8 +11,8 @@ interface Particle {
 /** How far each background layer shifts when your head moves (1 = as much as the floor at your feet). */
 const PAR_SKY = 0.03, PAR_MID = 0.16;
 const MAX_PARTICLES = 3200;
-/** How long a hand keeps burning after it attacks; how long the ultimate's shockwave lasts. */
-const FLARE_S = 0.35, NOVA_S = 0.9;
+/** How long a hand keeps burning after it attacks. */
+const FLARE_S = 0.35;
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const nOf = (rate: number, dt: number) => { const x = rate * dt; return Math.floor(x) + (Math.random() < x % 1 ? 1 : 0); };
 
@@ -55,8 +55,7 @@ export class Renderer {
   private flash = 0;
   /** Seconds of fire left in each hand after it attacks (hands only burn while doing something). */
   private flare: Record<Side, number> = { l: 0, r: 0 };
-  /** The ultimate's shockwave: screen origin and age in seconds. */
-  private nova: { x: number; y: number; t: number } | null = null;
+
   private cam: Vec2 = { x: 0, y: 0 };
   private sky = document.createElement('canvas');
   private mid = document.createElement('canvas');
@@ -114,14 +113,12 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.3);
         this.flare = { l: FLARE_S * 1.5, r: FLARE_S * 1.5 };
         break;
-      case 'ultimate': {
-        const p = this.project(e.x, e.y, 0);
-        this.nova = { x: p.x, y: p.y, t: 0 };
-        this.burst(e.x, e.y, 0.5, 'fire', 160, 110);
-        this.shake = 1;
+      case 'ultimate':
+        this.burst(e.x, e.y, 0.3, 'fire', 60, 50);
+        this.shake = 0.8;
         this.flare = { l: FLARE_S * 3, r: FLARE_S * 3 };
         break;
-      }
+      case 'cut': this.burst(e.x, e.y, e.z, 'fire', 16, 30); break;
       case 'hitEnemy':
       case 'killEnemy': this.burst(e.x, e.y, e.z, 'fire', 30, 40); break;
       case 'clash': this.burst(e.x, e.y, e.z, 'spirit', 24, 34); break;
@@ -142,7 +139,7 @@ export class Renderer {
     this.shake = Math.max(0, this.shake - dt * 2.5);
     this.flash = Math.max(0, this.flash - dt * 2);
     this.flare = { l: Math.max(0, this.flare.l - dt), r: Math.max(0, this.flare.r - dt) };
-    if (this.nova && (this.nova.t += dt) > NOVA_S) this.nova = null;
+
 
     const c = this.ctx, { W, H, M, u } = this;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -161,6 +158,7 @@ export class Renderer {
     if (g) {
       this.drawProjectiles(g, true);
       this.drawLandingMarkers(g);
+      g.blades.forEach(b => this.drawBlade(b));
       this.drawHandLight(g);
       this.drawProjectiles(g, false);
       this.drawHands(g);
@@ -178,7 +176,6 @@ export class Renderer {
       }
       c.globalCompositeOperation = 'source-over';
     }
-    if (this.nova) this.drawNova(this.nova);
 
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.drawImage(this.vig, 0, 0, W, H);
@@ -563,18 +560,49 @@ export class Renderer {
     c.globalCompositeOperation = 'source-over';
   }
 
-  /** The ultimate: a ring of fire racing out from your hands across the whole screen. */
-  private drawNova(n: { x: number; y: number; t: number }): void {
-    const c = this.ctx, k = n.t / NOVA_S, r = k * Math.hypot(this.W, this.H), alpha = 1 - k;
+  /** A point on a blade's rim: angle 0 = your right, π/2 = straight ahead, π = your left. */
+  private bladePoint(b: Blade, angle: number, r = b.r): { x: number; y: number } {
+    return this.project(b.x + Math.cos(angle) * r * TUNE.bladeWidthPerDepth, b.y, Math.max(0.05, Math.sin(angle) * r));
+  }
+
+  /**
+   * The ultimate: a flat, spinning disc of fire at hand height, spreading out like a saw blade.
+   * Drawn as a thin sheet with a bright rim and tooth marks racing around the edge.
+   */
+  private drawBlade(b: Blade): void {
+    const c = this.ctx, fade = 1 - (b.r / TUNE.bladeMaxR) ** 3, N = 64;
+    const rim = Array.from({ length: N + 1 }, (_, i) => this.bladePoint(b, (Math.PI * i) / N));
+    const path = (pts: { x: number; y: number }[]) => {
+      c.beginPath();
+      pts.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+    };
     c.globalCompositeOperation = 'lighter';
-    const gr = c.createRadialGradient(n.x, n.y, Math.max(0, r - 40 * this.u), n.x, n.y, r);
-    gr.addColorStop(0, 'rgba(255,120,40,0)');
-    gr.addColorStop(0.8, `rgba(255,170,80,${0.55 * alpha})`);
-    gr.addColorStop(1, 'rgba(255,230,160,0)');
-    c.fillStyle = gr;
-    c.fillRect(0, 0, this.W, this.H);
-    c.fillStyle = `rgba(255,120,40,${0.25 * alpha * alpha})`;
-    c.fillRect(0, 0, this.W, this.H);
+    // the sheet: brighter toward the rim
+    for (const [k, a] of [[1, 0.1], [0.8, 0.08], [0.55, 0.06]] as const) {
+      path(Array.from({ length: N + 1 }, (_, i) => this.bladePoint(b, (Math.PI * i) / N, b.r * k)));
+      c.closePath();
+      c.fillStyle = `rgba(255,130,50,${a * fade})`;
+      c.fill();
+    }
+    // the rim: a wide glow and a hot core
+    path(rim);
+    c.lineJoin = 'round';
+    c.strokeStyle = `rgba(255,110,40,${0.35 * fade})`;
+    c.lineWidth = 3.2 * this.u;
+    c.stroke();
+    c.strokeStyle = `rgba(255,225,160,${0.9 * fade})`;
+    c.lineWidth = 0.9 * this.u;
+    c.stroke();
+    // saw teeth sweeping around the rim
+    const teeth = 36, spin = (this.t * 5) % ((2 * Math.PI) / teeth);
+    c.strokeStyle = `rgba(255,240,200,${0.8 * fade})`;
+    c.lineWidth = 0.5 * this.u;
+    for (let i = 0; i < teeth; i++) {
+      const a = (Math.PI * i) / teeth + spin;
+      if (a > Math.PI) continue;
+      const p = this.bladePoint(b, a), q = this.bladePoint(b, a - 0.06, b.r * 0.9);
+      c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(q.x, q.y); c.stroke();
+    }
     c.globalCompositeOperation = 'source-over';
   }
 
@@ -632,6 +660,18 @@ export class Renderer {
       for (let i = nOf(140 * Math.min(1, flare), dt); i > 0; i--) {
         const a = Math.random() * 6.283, d = Math.sqrt(Math.random()) * 1.8;
         this.emit(w.x + Math.cos(a) * d, w.y - 2 + Math.sin(a) * d, 0, rnd(-5, 5) + vx0, rnd(-18, -6) + vy0, 0, rnd(0.3, 0.55), rnd(2.2, 3.6));
+      }
+    }
+    // sparks flung off the ultimate's spinning rim
+    for (const b of g.blades) {
+      const fade = 1 - b.r / TUNE.bladeMaxR, w = TUNE.bladeWidthPerDepth;
+      for (let i = nOf(600 * fade, dt); i > 0; i--) {
+        const a = Math.random() * Math.PI, z = Math.max(0.05, Math.sin(a) * b.r);
+        const s = FOCAL / (FOCAL + z);
+        // tangent to the rim (spin) plus outward, in world units scaled to stay visible far away
+        this.emit(b.x + Math.cos(a) * b.r * w, b.y + rnd(-1, 1), z,
+          (-Math.sin(a) * 90 + Math.cos(a) * 40) / s, rnd(-8, 2), Math.cos(a) * 4 + Math.sin(a) * TUNE.bladeSpeed * 0.5,
+          rnd(0.18, 0.4), rnd(2, 3.5) / Math.sqrt(s), 'fire', 0.15);
       }
     }
     // standing fire walls

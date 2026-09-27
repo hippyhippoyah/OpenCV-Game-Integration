@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bodyHit, Game, TUNE, type Proj } from './game';
+import { bodyHit, FLOOR_Y, Game, TUNE, type Proj } from './game';
 import type { HandState, Intent, Punch, Side } from '../intent/interpret';
 import { mulberry32 } from '../math';
 
@@ -140,18 +140,37 @@ describe('Game', () => {
   });
 
   describe('ultimate', () => {
-    const ultimate = intent({ casts: [{ kind: 'ultimate', at: { x: 0, y: 0 } }] });
+    const ultimate = intent({ casts: [{ kind: 'ultimate', at: { x: 0, y: 10 } }] });
+    const enemyAt = (id: number, z: number, x = 0) =>
+      ({ id, x, y: 33, z, hp: 2, t: 0, appear: 1, dying: 0, flash: 0, cd: 99, winding: false, wind: 0, side: 1 as const, phase: 0 });
 
-    it('clears every enemy and every incoming attack', () => {
-      const g = new Game(mulberry32(2));
-      run(g, 4, intent());
-      expect(g.enemies.filter(e => e.hp > 0).length).toBeGreaterThan(0);
-      g.projs.push(incoming(0, 0));
-      g.drainEvents();
+    it('sends out a flat blade of fire, below the hands, that grows until it has swept the field', () => {
+      const g = quietGame();
       g.step(1 / 60, ultimate);
+      expect(g.blades).toHaveLength(1);
+      expect(g.blades[0].y).toBeGreaterThan(10);
+      expect(g.blades[0].y).toBeLessThan(FLOOR_Y);
+      const r0 = g.blades[0].r;
+      run(g, 0.2, intent());
+      expect(g.blades[0].r).toBeGreaterThan(r0);
+      run(g, 2, intent());
+      expect(g.blades).toHaveLength(0);
+      expect(g.drainEvents().some(e => e.type === 'ultimate')).toBe(true);
+    });
+
+    it('cuts down near enemies before far ones, then every enemy and incoming attack', () => {
+      const g = quietGame();
+      g.enemies.push(enemyAt(1, 4), enemyAt(2, 11, 150));
+      g.projs.push({ ...incoming(0, 0), z: 8, vz: -1 });
+      g.step(1 / 60, ultimate);
+      run(g, 0.35, intent());
+      expect(g.enemies.find(e => e.id === 1)!.hp).toBe(0);
+      expect(g.enemies.find(e => e.id === 2)!.hp).toBeGreaterThan(0);
+      run(g, 1, intent());
       expect(g.enemies.every(e => e.hp <= 0)).toBe(true);
       expect(g.projs.filter(p => p.kind === 'enemy')).toHaveLength(0);
-      expect(g.drainEvents().some(e => e.type === 'ultimate')).toBe(true);
+      expect(g.score).toBeGreaterThanOrEqual(200);
+      expect(g.hp).toBe(TUNE.maxHp);
     });
 
     it('has to recharge before it can be used again', () => {
@@ -159,12 +178,15 @@ describe('Game', () => {
       expect(g.ultimateCharge).toBe(1);
       g.step(1 / 60, ultimate);
       expect(g.ultimateCharge).toBeLessThan(0.01);
-      run(g, 2, intent()); // dummies are back
+      run(g, 3, intent()); // dummies are cut down, then come back
+      expect(g.enemies.every(e => e.hp > 0)).toBe(true);
       g.step(1 / 60, ultimate);
+      run(g, 1, intent());
       expect(g.enemies.every(e => e.hp > 0)).toBe(true);
       run(g, TUNE.ultimateCooldownS, intent());
       expect(g.ultimateCharge).toBe(1);
       g.step(1 / 60, ultimate);
+      run(g, 1, intent());
       expect(g.enemies.every(e => e.hp <= 0)).toBe(true);
     });
   });

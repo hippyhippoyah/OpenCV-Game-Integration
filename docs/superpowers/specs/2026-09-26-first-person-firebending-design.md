@@ -131,8 +131,11 @@ Replaces the palms-together summon and push-throw, which depended on weak depth 
 - **Fire wall:** both hands open, then both rise ≥ 14 view units within 0.4 s (measured only after
   both are open) → a wall at depth 2.5 where the hands are, ±55 world units wide, for 4 s. It
   blocks enemy attacks crossing it; your fireballs pass through. 1 s cooldown.
-- **Ultimate:** both hands open, then spread apart ≥ 24 view units within 0.4 s → every enemy
-  destroyed (+100 each) and every incoming attack cleared. 12 s recharge (HUD meter).
+- **Ultimate:** both hands open, then spread apart ≥ 24 view units within 0.4 s → a flat, spinning
+  disc of fire (a saw blade) spreads out from the hands, dropped 45% of the way to the floor so it
+  reads as a layer rather than an edge-on line. It grows at 16 depth units/s (30 world units
+  sideways per depth unit) and cuts down every enemy (+100) and incoming attack its rim reaches,
+  near ones first. 12 s recharge (HUD meter).
 - **Shield** now needs both open hands held still (< 35 view units/s) for 0.15 s to come up, so a
   sweep or spread doesn't raise it; once up it stays while both hands are open.
 - **Fire only when doing something:** idle fists and open hands stay dark (faint rim only). Hands
