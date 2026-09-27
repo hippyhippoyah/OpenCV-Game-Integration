@@ -149,16 +149,16 @@ export class Tutorial {
   finished = false;
   private marks = new Set<string>();
 
-  constructor(private g: Game, start = 0) {
+  constructor(private g: Game, start = 0, private lessons: Lesson[] = LESSONS) {
     g.scripted();
     this.go(start);
   }
 
-  get lesson(): Lesson { return LESSONS[this.index]; }
+  get lesson(): Lesson { return this.lessons[this.index]; }
 
   /** Start lesson i (clamped), from scratch. */
   go(i: number): void {
-    this.index = Math.max(0, Math.min(LESSONS.length - 1, i));
+    this.index = Math.max(0, Math.min(this.lessons.length - 1, i));
     this.done = 0;
     this.completedFor = null;
     this.finished = false;
@@ -169,7 +169,7 @@ export class Tutorial {
   }
 
   next(): void {
-    if (this.index === LESSONS.length - 1) this.finished = true;
+    if (this.index === this.lessons.length - 1) this.finished = true;
     else this.go(this.index + 1);
   }
 
