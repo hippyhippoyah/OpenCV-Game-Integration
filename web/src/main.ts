@@ -60,6 +60,8 @@ let ghostAlphaNow = 1;
 let prevCampaignState: string | null = null;
 /** True while the campaign's practice/fight is paused via Esc (see stepCampaign & togglePause). */
 let campPaused = false;
+/** The campaign reset button's first click arms it (see #campReset). */
+let resetArmed = false;
 const params = new URLSearchParams(location.search);
 /** Skip the mode menu with ?mode=tutorial|waves|training|campaign (?dummies = training). */
 const startMode: Mode | null = params.has('dummies') ? 'training'
@@ -127,7 +129,12 @@ function showModes(note = ''): void {
   renderer.scene = 'night';
   for (const id of ['calib', 'over', 'away', 'lesson', 'dodge', 'mockHelp']) show(id, false);
   document.body.classList.remove('tutorial', 'exploring');
-  $('campaignLabel').textContent = Object.keys(progress.data.stops).length > 0 ? 'Continue' : 'Campaign';
+  const started = Object.keys(progress.data.stops).length > 0 || progress.data.scrolls.length > 0;
+  $('campaignLabel').textContent = started ? 'Continue' : 'Campaign';
+  show('campReset', started);
+  resetArmed = false;
+  $('campReset').textContent = 'Reset campaign progress';
+  $('campReset').classList.remove('confirm');
   $('modesNote').textContent = note;
   show('modesNote', !!note);
   show('modes');
@@ -374,6 +381,17 @@ LESSONS.forEach((l, i) => {
   b.textContent = `${i + 1}. ${l.title}`;
   b.addEventListener('click', () => beginPlay('tutorial', i));
   $('lessonChips').appendChild(b);
+});
+/** Reset asks twice: the first click arms it, the second wipes scrolls, stops and flames. */
+$('campReset').addEventListener('click', () => {
+  if (!resetArmed) {
+    resetArmed = true;
+    $('campReset').textContent = 'Click again to erase all scrolls, stops and flames';
+    $('campReset').classList.add('confirm');
+    return;
+  }
+  progress.reset();
+  showModes('Campaign progress reset — Chapter 1 starts fresh.');
 });
 $('mockHelpClose').addEventListener('click', () => show('mockHelp', false));
 $('campWalk').addEventListener('click', () => campaign?.walkOn());

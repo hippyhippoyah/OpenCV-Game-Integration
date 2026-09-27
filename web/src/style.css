@@ -162,3 +162,5 @@ body.tutorial #pill { display: none; }
 .camp .scroll.locked { opacity: .35; }
 body.campaign #pill, body.campaign .tr .wave { display: none; }
 body.exploring .hud .tl, body.exploring .hud .tr, body.exploring .hud .bl, body.exploring .hud .br, body.exploring #pill, body.exploring #dodge, body.exploring #away { display: none; }
+button.linkish { justify-self: end; margin-top: -4px; padding: 2px 4px; background: none; border: none; box-shadow: none; color: var(--muted); font-size: 12px; text-decoration: underline; cursor: pointer; }
+button.linkish.confirm { color: #ff9a7a; }
