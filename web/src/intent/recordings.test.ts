@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import punchesCloseRaw from '../../recordings/punches-close.json?raw';
 import punches2Raw from '../../recordings/punches-2.json?raw';
 import leaningRaw from '../../recordings/leaning.json?raw';
+import swayingRaw from '../../recordings/swaying.json?raw';
 import { initialState, interpret, TUNING, type Intent } from './interpret';
 import type { TrackingFrame } from '../input/types';
 import type { Calibration } from './calibration';
@@ -33,10 +34,14 @@ function replay(raw: string) {
 const punchTimes = (out: ReturnType<typeof replay>) => out.flatMap(o => o.intent.punches.map(p => ({ t: o.t, hand: p.hand, headSpeed: o.headSpeed })));
 
 describe('real-camera recordings', () => {
-  it('still catches every punch in two punching sessions', () => {
-    // counted by hand from the traces: alternating jabs, all clearly toward the camera
+  it('still catches the punches in two punching sessions', () => {
+    // alternating jabs from a steady stance: every one
     expect(punchTimes(replay(punchesCloseRaw)).length).toBeGreaterThanOrEqual(15);
-    expect(punchTimes(replay(punches2Raw)).length).toBeGreaterThanOrEqual(19);
+    // punching while moving about: all but three slow 2–3 cm drifts (shaped like a sway), and the
+    // sharp ones thrown mid-lean (e.g. 14 cm in 0.1 s at 5.8 s) still land
+    const p2 = punchTimes(replay(punches2Raw));
+    expect(p2.length).toBeGreaterThanOrEqual(17);
+    expect(p2.some(x => x.hand === 'l' && Math.abs(x.t - 5.84) < 0.15)).toBe(true);
   });
 
   it('does not punch while leaning quickly', () => {
@@ -44,5 +49,10 @@ describe('real-camera recordings', () => {
     // the three that fired mid-lean before (3.5 s, 5.1 s, 6.75 s: head moving 125–140 units/s)
     for (const at of [3.5, 5.11, 6.75]) expect(p.some(x => Math.abs(x.t - at) < 0.2), `${at} s`).toBe(false);
     expect(p.filter(x => x.headSpeed > 100)).toEqual([]);
+  });
+
+  it('does not punch while swaying from side to side', () => {
+    // no punches at all: the whole clip is swaying (it fired 9 before, at the turnarounds)
+    expect(punchTimes(replay(swayingRaw))).toEqual([]);
   });
 });

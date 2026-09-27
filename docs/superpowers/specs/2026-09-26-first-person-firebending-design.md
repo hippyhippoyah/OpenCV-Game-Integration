@@ -337,3 +337,11 @@ Three K recordings (in `web/recordings/`, replayed by `src/intent/recordings.tes
 The real camera jitters about 4× less than the simulated one, so the simulator stays the
 pessimistic check; its rapid-snap test now allows one missed snap in a burst, and opening a palm
 mid-push is checked to 1.5 m (about 2 in 3 at 1.8 m, as before).
+
+**Swaying (revised):** swaying side to side still fired punches at each turnaround — the head
+slows to turn just as the leaning-side fist sits furthest forward (13–20 cm out). The lean
+allowance now follows the fastest the head moved in the last 0.5 s (so it holds through the
+turnaround), at 1.5 mm per unit/s over 70; and a sharp jolt (≥ 9 cm within 0.1 s — swaying moved
+a fist at most ~6 cm) is a punch even while moving. On the recordings: swaying 9 → 0 punches;
+steady punching 15/15; punching while moving 17 of 20 (the three lost are slow 2–3 cm drifts
+shaped like a sway).

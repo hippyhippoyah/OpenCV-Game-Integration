@@ -123,9 +123,16 @@ export const TUNING = {
    * Leaning, stepping or ducking moves your fists too (a lean twists the torso), which the reach
    * reading can't tell from a punch. While the head moves faster than leanFreeSpeed (view
    * units/s), a punch or palm push needs leanPenalty m more forward movement per unit/s over it.
+   * It uses the fastest the head moved in the last leanMemoryS, so it holds through the turnaround
+   * at the end of a sway — the moment the leaning-side fist sits furthest forward.
    * Punches thrown from a steady stance measured under ~65 on a real camera; fast leans 125–140.
    */
-  leanFreeSpeed: 70, leanPenalty: 0.0012, headSpeedRate: 15,
+  leanFreeSpeed: 70, leanPenalty: 0.0015, headSpeedRate: 15, leanMemoryS: 0.5,
+  /**
+   * An unmistakably sharp jolt — sharpJolt m forward within sharpWindowS — is a punch even while
+   * the body moves (swaying on a real camera moved a fist at most ~6 cm in 0.1 s).
+   */
+  sharpJolt: 0.09, sharpWindowS: 0.1,
   /**
    * Live punch and push sensitivity ([ and ] in game): thresholds are divided by this. Tuned and tested
    * at 1; the default is set higher by preference (more misses caught, some more misfires).
@@ -286,15 +293,16 @@ export interface InterpretState {
   bodyDist: OneEuro;
   /** This camera's reach wobble per metre² of distance. */
   noiseCoef: number;
-  /** How fast the head (your body) is moving, view units/s, smoothed. */
+  /** How fast the head (your body) is moving, view units/s, smoothed; and its recent history. */
   headSpeed: number;
+  headSpeeds: { t: number; v: number }[];
 }
 
 export const initialState = (): InterpretState => ({
   head: null, l: null, r: null, lastT: null, pending: [], palmPending: [], bothOpenAt: null, stillSince: null, shieldOn: false,
   castReadyAt: -Infinity, lastCastT: -Infinity, crossedSince: null,
   shoulderSpan: null, bodyDist: new OneEuro(TUNING.bodyDepthMinCutoff, TUNING.bodyDepthBeta), noiseCoef: TUNING.noiseCoefStart,
-  headSpeed: 0,
+  headSpeed: 0, headSpeeds: [],
 });
 
 const SIDES = ['l', 'r'] as const;
@@ -345,8 +353,11 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     const v = Math.hypot(s.head.x - headBefore.x, s.head.y - headBefore.y) / dt;
     s.headSpeed = lerp(s.headSpeed, v, Math.min(1, dt * TUNING.headSpeedRate));
   }
-  // moving your body makes fists move too: attacks need more while it does
-  const leanExtra = TUNING.leanPenalty * Math.max(0, s.headSpeed - TUNING.leanFreeSpeed);
+  s.headSpeeds.push({ t: f.t, v: s.headSpeed });
+  while (s.headSpeeds.length && f.t - s.headSpeeds[0].t > TUNING.leanMemoryS) s.headSpeeds.shift();
+  // moving your body makes fists move too: attacks need more while it does (and just after)
+  const recentSpeed = Math.max(...s.headSpeeds.map(x => x.v));
+  const leanExtra = TUNING.leanPenalty * Math.max(0, recentSpeed - TUNING.leanFreeSpeed);
   const shoulders = { l: toView(f.shoulderL), r: toView(f.shoulderR) };
 
   // How far away the body is: learned shoulder width in metres over its apparent width, filtered.
@@ -452,7 +463,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         const rise = reachRise(tr, TUNING.quickWindowS);
         const otherRise = o && o.reach !== null ? reachRise(o, TUNING.quickWindowS) : 0;
         const settled = tr.reachSince !== null && f.t - tr.reachSince >= TUNING.reachWarmupS;
-        jolt = settled && tr.armed && f.t - tr.lastPunchT >= TUNING.refireS && rise >= need.rise && rise - otherRise >= need.lead;
+        // while the body moves, the lean allowance raises the bar, but a sharp jolt still counts
+        const sharp = leanExtra > 0 && reachRise(tr, TUNING.sharpWindowS) >= TUNING.sharpJolt;
+        jolt = settled && tr.armed && f.t - tr.lastPunchT >= TUNING.refireS && (rise >= need.rise || sharp) && rise - otherRise >= need.lead;
         fire = jolt && tr.openness < TUNING.clearlyOpen;
         // only movement since this hand's last punch or push counts (not the tail of that one)
         const push = palmPushRise(tr.hist, TUNING.palmPushWindowS, tr.lastPunchT);
