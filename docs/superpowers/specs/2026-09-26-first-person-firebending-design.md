@@ -384,3 +384,9 @@ ahead. Shield burst is removed. Mock: G holds the right fist at the hip.
 fist raised ≥ 32 view units (1 shoulder width) above its shoulder — about eye or temple height,
 above a guard at the chin — and held still. (The hip pose still uses the elbow's flare or arm bend,
 either being enough.)
+
+**Ear pose (revised again):** measured against the tracked head rather than a fixed height: the
+fist counts as up by the ear when it's at head level — no more than 4 view units below the face —
+and held still. On the recordings a guard sits 7–26 under the head (reaching head level only at a
+punch's peak, which isn't held). The simulated guard sits unrealistically at head level, so the
+charge tests use a shoulder-height guard.

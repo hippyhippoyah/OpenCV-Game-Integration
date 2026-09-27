@@ -51,7 +51,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'charge', title: 'Charged punch',
-    how: 'Hold a fist still at your hip (elbow bent back) or raised up by your ear (about eye height) for a moment: it glows, then burns blue. Punch, and a blue fireball flies out — bigger, faster, twice as strong.',
+    how: 'Hold a fist still at your hip (elbow bent back) or raised up by your ear (at head level) for a moment: it glows, then burns blue. Punch, and a blue fireball flies out — bigger, faster, twice as strong.',
     goal: 'Throw charged punches', need: 2,
     cast: [{ tag: 'dummy', kind: 'dummy', x: 0, z: 7 }],
     progress: (_g, events) => combos(events, 'charged'),

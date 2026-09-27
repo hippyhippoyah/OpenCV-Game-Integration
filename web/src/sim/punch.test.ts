@@ -160,18 +160,24 @@ describe('X block on a simulated webcam', () => {
 });
 
 describe('charged punches on a simulated webcam', () => {
-  /** A fist down at the hip (elbow flared back), and raised up by the ear. */
+  /** A fist down at the hip (elbow flared back), and raised up by the ear at head level. */
   const HIP: Reach = { out: 0.04, up: -0.36, fwd: -0.04 };
-  const EAR: Reach = { out: -0.06, up: 0.32, fwd: 0.04 };
+  const EAR: Reach = { out: -0.06, up: 0.22, fwd: 0.04 };
+  /**
+   * The simulated guard holds the fists at head level on screen; a real guard sits lower (7–26 view
+   * units under the head on the recordings), so these tests use one at the shoulders.
+   */
+  const GUARD: Reach = { ...POSES.guard, up: 0.02 };
+  const JAB: Reach = { ...POSES.jab, up: 0.0 };
   /** Right fist: guard, into `pose` at 1.5 s (over 0.2 s), held for `hold`, then a jab. */
   const chargeThenJab = (distance: number, pose: Reach, hold: number) => (t: number) => {
     const into = 1.5, out = into + 0.2 + hold;
-    const reach = t < into ? POSES.guard
-      : t < into + 0.2 ? lerpReach(POSES.guard, pose, (t - into) / 0.2)
+    const reach = t < into ? GUARD
+      : t < into + 0.2 ? lerpReach(GUARD, pose, (t - into) / 0.2)
       : t < out ? pose
-      : t < out + 0.16 ? lerpReach(pose, POSES.jab, (t - out) / 0.16)
-      : t < out + 0.35 ? POSES.jab : lerpReach(POSES.jab, POSES.guard, (t - out - 0.35) / 0.2);
-    return guardState(distance, { r: { reach } });
+      : t < out + 0.16 ? lerpReach(pose, JAB, (t - out) / 0.16)
+      : t < out + 0.35 ? JAB : lerpReach(JAB, GUARD, (t - out - 0.35) / 0.2);
+    return guardState(distance, { l: { reach: GUARD }, r: { reach } });
   };
   const charges = (out: Intent[]) => out.flatMap(o => o.punches.map(p => !!p.charged));
   const everCharged = (out: Intent[]) => out.some(o => (o.hands.l?.charge ?? 0) >= 1 || (o.hands.r?.charge ?? 0) >= 1);
@@ -193,7 +199,7 @@ describe('charged punches on a simulated webcam', () => {
 
   it('both fists at the hips charge both', () => {
     eachCase((distance, seed) => {
-      const out = perform(t => guardState(distance, t < 1.5 ? {} : { l: { reach: HIP }, r: { reach: HIP } }), 3, { seed });
+      const out = perform(t => guardState(distance, t < 1.5 ? { l: { reach: GUARD }, r: { reach: GUARD } } : { l: { reach: HIP }, r: { reach: HIP } }), 3, { seed });
       expect(out.at(-1)!.hands.l!.charge, `${distance} m seed ${seed}`).toBe(1);
       expect(out.at(-1)!.hands.r!.charge, `${distance} m seed ${seed}`).toBe(1);
       expect(out.flatMap(o => o.punches), 'holding the pose does not punch').toHaveLength(0);
@@ -203,12 +209,20 @@ describe('charged punches on a simulated webcam', () => {
   describe('does not charge', () => {
     const never = (name: string, script: (distance: number) => (t: number) => BodyState, seconds = 4) =>
       it(name, () => eachCase((distance, seed) => expect(everCharged(perform(script(distance), seconds, { seed })), `${distance} m seed ${seed}`).toBe(false)));
-    never('standing in guard', d => () => guardState(d));
-    never('jabs, crosses and uppercuts', d => combo(d, [[1.2, 'r', POSES.jab], [1.8, 'l', POSES.cross], [2.4, 'r', POSES.uppercut], [3.0, 'l', POSES.uppercut]]));
+    never('standing in guard', d => () => guardState(d, { l: { reach: GUARD }, r: { reach: GUARD } }));
+    never('jabs, crosses and uppercuts', d => t => {
+      const moves: [number, 'l' | 'r', Reach][] = [[1.2, 'r', JAB], [1.8, 'l', POSES.cross], [2.4, 'r', POSES.uppercut], [3.0, 'l', POSES.uppercut]];
+      const reachFor = (side: 'l' | 'r') => {
+        const m = moves.filter(([t0, s]) => s === side && t0 <= t).at(-1);
+        if (!m || t > m[0] + 0.5) return GUARD;
+        return t < m[0] + 0.12 ? lerpReach(GUARD, m[2], (t - m[0]) / 0.12) : t < m[0] + 0.24 ? m[2] : lerpReach(m[2], GUARD, (t - m[0] - 0.24) / 0.2);
+      };
+      return guardState(d, { l: { reach: reachFor('l') }, r: { reach: reachFor('r') } });
+    });
     never('arms hanging down relaxed', d => () => guardState(d, { l: { reach: { out: 0.02, up: -0.55, fwd: 0.04 } }, r: { reach: { out: 0.02, up: -0.55, fwd: 0.04 } } }));
     never('lowering the arms to rest and raising them again', d => t => {
       const k = t < 1.5 ? 0 : t < 2 ? (t - 1.5) / 0.5 : t < 3 ? 1 : Math.max(0, 1 - (t - 3) / 0.5);
-      const reach = lerpReach(POSES.guard, { out: 0.02, up: -0.55, fwd: 0.04 }, k);
+      const reach = lerpReach(GUARD, { out: 0.02, up: -0.55, fwd: 0.04 }, k);
       return guardState(d, { l: { reach }, r: { reach } });
     });
   });

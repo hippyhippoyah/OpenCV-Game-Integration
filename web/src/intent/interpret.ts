@@ -145,13 +145,13 @@ export const TUNING = {
    * - at the hip: the fist hipBelow…hipBelowMax below the shoulder, with the elbow flared out
    *   elbowFlare past it or the arm bent (extension under hipMaxExtension) — unlike a relaxed arm
    *   hanging straight down;
-   * - cocked by the ear: the fist raised earAbove above the shoulder — about eye or temple height,
-   *   above a guard at the chin (jabs and uppercuts pass through up there, but aren't held).
-   *   The pose's elbow reading was too wobbly to use.
+   * - up by the ear: the fist at head level — no lower than earBelowHead under the head (the face
+   *   the tracker sees) — above a guard at the chin; jabs and uppercuts pass through up there, but
+   *   aren't held. (The pose's elbow reading was too wobbly to use.)
    * The fist must be held nearly still (screen speed under chargeMaxSpeed).
    */
   chargeHoldS: 0.5, chargeKeepS: 1.5, chargeMaxSpeed: 35,
-  hipBelow: 28, hipBelowMax: 60, elbowFlare: 8, hipMaxExtension: 0.5, earAbove: 32,
+  hipBelow: 28, hipBelowMax: 60, elbowFlare: 8, hipMaxExtension: 0.5, earBelowHead: 4,
   /**
    * Live punch and push sensitivity ([ and ] in game): thresholds are divided by this. Tuned and tested
    * at 1; the default is set higher by preference (more misses caught, some more misfires).
@@ -381,6 +381,8 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
   const recentSpeed = Math.max(...s.headSpeeds.map(x => x.v));
   const leanExtra = TUNING.leanPenalty * Math.max(0, recentSpeed - TUNING.leanFreeSpeed);
   const shoulders = { l: toView(f.shoulderL), r: toView(f.shoulderR) };
+  /** Where the head (face) is, in the same view units as the hands. */
+  const headView = toView(f.head);
 
   // How far away the body is: learned shoulder width in metres over its apparent width, filtered.
   let bodyDist: number | null = null;
@@ -476,7 +478,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       const tr = s[side], o = s[other(side)];
       if (!tr) continue;
       // (a fist at the hip may be below the picture: charging still counts it)
-      updateCharge(tr, side, shoulders[side], f.t, recentSpeed > TUNING.leanFreeSpeed);
+      updateCharge(tr, side, shoulders[side], headView, f.t, recentSpeed > TUNING.leanFreeSpeed);
       if (tr.source === 'estimate') continue;
       let fire = false, jolt = false, shove = false;
       if (tr.reach !== null) {
@@ -590,11 +592,11 @@ function heldStill(o: Track, pushing: Track): boolean {
   return palmPushRise(o.hist, w, o.lastPunchT) < TUNING.palmOtherStill * palmPushRise(pushing.hist, w);
 }
 
-/** Is this fist in a charging pose: down at the hip (elbow flared or arm bent), or raised up by the ear? */
-export function chargePose(tr: HandState, side: Side, shoulder: Vec2): 'hip' | 'ear' | null {
+/** Is this fist in a charging pose: down at the hip (elbow flared or arm bent), or up at head level by the ear? */
+export function chargePose(tr: HandState, side: Side, shoulder: Vec2, head: Vec2): 'hip' | 'ear' | null {
   if (tr.openness >= TUNING.clearlyOpen) return null;
   const out = side === 'l' ? -1 : 1, below = tr.pos.y - shoulder.y;
-  if (tr.source === 'hand' && -below >= TUNING.earAbove) return 'ear';
+  if (tr.source === 'hand' && tr.pos.y - head.y <= TUNING.earBelowHead) return 'ear';
   const flared = !!tr.elbow && (tr.elbow.x - tr.pos.x) * out >= TUNING.elbowFlare;
   if (below >= TUNING.hipBelow && below <= TUNING.hipBelowMax && (flared || (tr.extension ?? 1) < TUNING.hipMaxExtension)) return 'hip';
   return null;
@@ -604,9 +606,9 @@ export function chargePose(tr: HandState, side: Side, shoulder: Vec2): 'hip' | '
  * Charged punch: fills `charge` 0 → 1 while the fist is held still in a charging pose (with the
  * body steady); a full charge lasts chargeKeepS after it leaves the pose.
  */
-function updateCharge(tr: Track, side: Side, shoulder: Vec2, t: number, bodyMoving: boolean): void {
+function updateCharge(tr: Track, side: Side, shoulder: Vec2, head: Vec2, t: number, bodyMoving: boolean): void {
   const fist = tr.openness < TUNING.clearlyOpen;
-  const held = !bodyMoving && Math.hypot(tr.vel.x, tr.vel.y) < TUNING.chargeMaxSpeed && chargePose(tr, side, shoulder) !== null;
+  const held = !bodyMoving && Math.hypot(tr.vel.x, tr.vel.y) < TUNING.chargeMaxSpeed && chargePose(tr, side, shoulder, head) !== null;
   if (held) {
     tr.chamberSince ??= t;
     // a full charge stays full; otherwise it fills while held
