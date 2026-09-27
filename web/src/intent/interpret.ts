@@ -1,6 +1,8 @@
 import type { BodyPoint, HandObs, Side, TrackingFrame } from '../input/types';
 import type { Calibration } from './calibration';
 import { clamp, dist, lerp, type Vec2 } from '../math';
+import { OneEuro } from './oneEuro';
+import { FOCAL_H } from '../input/landmarks';
 
 /**
  * View space: world units relative to the eyes, x right, y down.
@@ -25,6 +27,13 @@ export interface HandState {
   extension: number | null;
   /** Fist-punch mode: this arm has been pulled back and can punch again. */
   punchReady: boolean;
+  /** How far the hand is in front of the shoulders (m, filtered), and its guard baseline; null without 3D data. */
+  reach: number | null;
+  reachBase: number | null;
+  /** How much that reading wobbles while the fist is still (m): grows with distance from the camera. */
+  reachNoise: number | null;
+  /** Where a punch from this hand would go: sideways/vertical tangent from its 3D position; null if unknown. */
+  aimDir: Vec2 | null;
 }
 
 export type { Side };
@@ -36,7 +45,7 @@ export interface Punch {
   /** Where the hand was (view space) when the punch fired. */
   at: Vec2;
   shoulder: Vec2;
-  /** Aim from the 3D arm: sideways/vertical tangent of the punch angle; null without 3D pose. */
+  /** Aim from the fist's 3D position: sideways/vertical tangent of the punch angle; null if unknown. */
   dir: Vec2 | null;
 }
 
@@ -59,6 +68,8 @@ export interface Intent {
   punches: Punch[];
   /** Both hands held open. */
   shield: boolean;
+  /** Forearms crossed in front of the chest. */
+  xBlock: boolean;
   casts: Cast[];
   /** Head turn/tilt, when the face is clearly visible. */
   face: TrackingFrame['face'];
@@ -71,16 +82,52 @@ export const TUNING = {
    * What fires a punch. 'extend': a fist driven out by a fast-straightening arm (the hand stays
    * closed). 'open': a fist that opens at the end of a fast move.
    */
-  punchTrigger: 'open' as PunchTrigger,
-  /** 'extend': fire once the arm straightens past extendFireAbove (after rising by punchExtendRise); re-arm below extendRearmBelow. */
-  extendFireAbove: 0.75, extendRearmBelow: 0.5, extendConfirmS: 0.05,
+  punchTrigger: 'extend' as PunchTrigger,
+  /**
+   * Fist punches, from how far each fist is in front of the shoulders (metres): fire when a fist is
+   * reachFire past your guard baseline, came forward by reachRise within punchWindowS, and leads
+   * the other fist by reachLead; re-arm once back within reachRearm of the baseline.
+   */
+  reachFire: 0.12, reachRise: 0.14, reachLead: 0.06, reachRearm: 0.08, extendConfirmS: 0.05,
+  /**
+   * Thresholds scale with each fist's own measured wobble (so a far-away, noisy fist can't misfire):
+   * rise ≥ max(reachRise, noiseRise × wobble), past guard ≥ max(reachFire, noiseFire × wobble),
+   * lead ≥ max(reachLead, noiseLead × wobble). Above reachNoiseMax, fist punches are unreliable.
+   */
+  noiseRise: 12, noiseFire: 8, noiseLead: 5, reachNoiseMax: 0.017,
+  /**
+   * The wobble comes from the camera and grows with distance², so it is modelled as
+   * noiseCoef × (distance to the body)². noiseCoef starts at noiseCoefStart and learns this camera's
+   * floor from both fists while they are in guard (falling quickly, rising slowly).
+   */
+  noiseCoefStart: 0.006, noiseCoefDownRate: 1, noiseCoefUpRate: 0.15,
+  /** The guard baseline follows a resting fist at this rate (1/s), and drops quickly if the fist is further back. */
+  reachBaseRate: 0.7, reachBaseDropRate: 3,
+  /** Fallback without 3D hand data: fire once the arm straightens past extendFireAbove; re-arm below extendRearmBelow. */
+  extendFireAbove: 0.75, extendRearmBelow: 0.5,
+  /** Shoulder half-width (m) and a full punch's reach (m), for aiming from a fist's position. */
+  shoulderHalfM: 0.19, punchReachM: 0.45,
+  /**
+   * One Euro filters: smoothing at rest (Hz) and how quickly it loosens with speed — for hand
+   * positions (view units), hand distance (m) and body distance (m, slower: bodies move slower).
+   */
+  posMinCutoff: 1, posBeta: 0.015, handDepthMinCutoff: 1.5, handDepthBeta: 1, bodyDepthMinCutoff: 0.8, bodyDepthBeta: 0.3,
+  /** Shoulder width in metres doesn't change: it is learned at this rate (1/s) instead of re-read each frame. */
+  shoulderSpanRate: 0.5,
+  /** Arm labels are overridden when following hands frame to frame is this much (view units) more consistent. */
+  relabelMargin: 12,
+  /**
+   * X block: forearms crossed — each wrist past the body's centre line by xCrossSw shoulder widths
+   * (a cross punch moves only one), wrists no lower than xMaxWristSw below the shoulders — for xHoldS.
+   */
+  xCrossSw: 0.05, xMaxWristSw: 1.0, xHoldS: 0.08,
   leanUnitsPerSw: 40, maxLean: 30,
   duckUnitsPerSw: 40, minDuck: -10, maxDuck: 25,
   /** Hand offset from the shoulder centre (in shoulder widths) × scale = view units. */
   handScaleX: 40, handScaleY: 32, handOffsetY: 20,
   /** Hands below this (view y) are resting, not attacking. */
   raisedAboveY: 40,
-  /** Exponential smoothing rate, 1/s. Higher = snappier but jittery. */
+  /** Head smoothing rate, 1/s. Higher = snappier but jittery. */
   smoothing: 18,
   lostGraceS: 0.5,
   /** Openness hysteresis: open above openAbove, back to a fist below fistBelow. */
@@ -110,7 +157,28 @@ export const TUNING = {
 interface Track extends HandState {
   armed: boolean;
   lastSeen: number;
-  hist: { t: number; x: number; y: number; speed: number; size: number | null; ext: number | null }[];
+  hist: { t: number; x: number; y: number; speed: number; size: number | null; ext: number | null; reach: number | null }[];
+  filters: { x: OneEuro; y: OneEuro; depth: OneEuro; bx: OneEuro; by: OneEuro };
+  /** Filtered 3D palm position (m, relative to the shoulder centre). */
+  body3: { x: number; y: number; z: number } | null;
+  /** Reach wobble tracking: slow average, recent mean deviation from it. */
+  reachSlow: number | null;
+  reachDev: number;
+  /** When this hand last threw a punch (its reading takes a while to settle afterwards). */
+  lastPunchT: number;
+  /** Hand tracker palm − pose-wrist palm estimate, so switching between them doesn't jump. */
+  armOffset: Vec2;
+}
+
+/** What a frame says about one hand. */
+interface HandInput {
+  pos: Vec2;
+  /** The hand tracker's view (shape, size); null when following the pose wrist. */
+  h: HandObs | null;
+  size: number | null;
+  ext: number | null;
+  /** Filtered distance from the camera to the shoulders, m (null without 3D data). */
+  bodyDist: number | null;
 }
 
 export interface InterpretState {
@@ -125,10 +193,18 @@ export interface InterpretState {
   stillSince: number | null;
   shieldOn: boolean;
   castReadyAt: number;
+  crossedSince: number | null;
+  /** Learned shoulder width (m) and the filtered distance to the shoulders (m). */
+  shoulderSpan: number | null;
+  bodyDist: OneEuro;
+  /** This camera's reach wobble per metre² of distance. */
+  noiseCoef: number;
 }
 
 export const initialState = (): InterpretState => ({
-  head: null, l: null, r: null, lastT: null, pending: [], bothOpenAt: null, stillSince: null, shieldOn: false, castReadyAt: -Infinity,
+  head: null, l: null, r: null, lastT: null, pending: [], bothOpenAt: null, stillSince: null, shieldOn: false,
+  castReadyAt: -Infinity, crossedSince: null,
+  shoulderSpan: null, bodyDist: new OneEuro(TUNING.bodyDepthMinCutoff, TUNING.bodyDepthBeta), noiseCoef: TUNING.noiseCoefStart,
 });
 
 const SIDES = ['l', 'r'] as const;
@@ -141,7 +217,8 @@ const snapshot = (t: Track | null): HandState | null =>
   t && {
     pos: { ...t.pos }, vel: { ...t.vel }, openness: t.openness, open: t.open, facing: t.facing,
     source: t.source, inView: t.inView, elbow: t.elbow && { ...t.elbow }, extension: t.extension,
-    punchReady: t.armed,
+    punchReady: t.armed, reach: t.reach, reachBase: t.reachBase, reachNoise: t.reach === null ? null : t.reachNoise,
+    aimDir: t.aimDir && { ...t.aimDir },
   };
 const inPicture = (p: BodyPoint) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
 
@@ -154,9 +231,10 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     s.pending = [];
     s.bothOpenAt = s.stillSince = null;
     s.shieldOn = false;
+    s.crossedSince = null;
     return {
       present: false, head: s.head ? { ...s.head } : { x: 0, y: 0 }, hands: { l: null, r: null },
-      shoulders: null, punches: [], shield: false, casts: [], face: null, bodyTilt: 0,
+      shoulders: null, punches: [], shield: false, xBlock: false, casts: [], face: null, bodyTilt: 0,
     };
   }
   const sw = dist(f.shoulderL, f.shoulderR) || cal.sw;
@@ -172,26 +250,51 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
   }, k);
   const shoulders = { l: toView(f.shoulderL), r: toView(f.shoulderR) };
 
+  // How far away the body is: learned shoulder width in metres over its apparent width, filtered.
+  let bodyDist: number | null = null;
+  if (f.body) {
+    s.shoulderSpan = s.shoulderSpan === null ? f.body.span3 : lerp(s.shoulderSpan, f.body.span3, Math.min(1, dt * TUNING.shoulderSpanRate));
+    bodyDist = s.bodyDist.filter((FOCAL_H * s.shoulderSpan) / f.body.span2, dt);
+  }
+
   // Hands labelled by the arm they belong to; without a body, follow them from frame to frame.
   const obs = f.hands.slice(0, 2).map(h => ({ pos: toView(h.center), h }));
   const labelled = obs.length > 0 && obs.every(o => o.h.side) && new Set(obs.map(o => o.h.side)).size === obs.length;
-  const picked = labelled ? bySide(obs.map(o => o.h.side!)) : assign(obs.map(o => o.pos), s.l, s.r, dt);
+  let picked = labelled ? bySide(obs.map(o => o.h.side!)) : assign(obs.map(o => o.pos), s.l, s.r, dt);
+  // Two hands overlapping in the picture (a cross passing the other fist) can get each other's arm
+  // label; keep following them frame to frame when that is clearly more consistent.
+  if (labelled && obs.length === 2 && s.l && s.r && picked.l !== null && picked.r !== null) {
+    const near = (t: Track, i: number) => dist({ x: t.pos.x + t.vel.x * dt, y: t.pos.y + t.vel.y * dt }, obs[i].pos);
+    const byLabel = near(s.l, picked.l) + near(s.r, picked.r), swapped = near(s.l, picked.r) + near(s.r, picked.l);
+    if (swapped + TUNING.relabelMargin < byLabel) picked = { l: picked.r, r: picked.l };
+  }
   const opened: Side[] = [];
   for (const side of SIDES) {
     const arm = f.arms[side], i = picked[side];
     const ext = arm?.extension ?? null;
+    // where the pose wrist puts the palm (just past the wrist, along the forearm)
+    const armPalm = arm && (() => {
+      const w = toView(arm.wrist), e = toView(arm.elbow);
+      return { x: w.x + (w.x - e.x) * TUNING.palmBeyondWrist, y: w.y + (w.y - e.y) * TUNING.palmBeyondWrist };
+    })();
     if (i !== null) {
       const o = obs[i];
-      const r = updateTrack(s[side], o.pos, o.h, o.h.size / sw, ext, f.t, dt, k);
+      const r = updateTrack(s[side], { pos: o.pos, h: o.h, size: o.h.size / sw, ext, bodyDist }, f.t, dt, k);
       s[side] = r.track;
       r.track.source = 'hand';
       r.track.inView = true;
+      if (armPalm) {
+        const off = { x: o.pos.x - armPalm.x, y: o.pos.y - armPalm.y };
+        r.track.armOffset = { x: lerp(r.track.armOffset.x, off.x, 0.3), y: lerp(r.track.armOffset.y, off.y, 0.3) };
+      }
       if (r.opened) opened.push(side);
-    } else if (arm) {
-      // The hand tracker lost this hand (blur, edge of frame): follow the pose wrist instead.
-      const w = toView(arm.wrist), e = toView(arm.elbow);
-      const palm = { x: w.x + (w.x - e.x) * TUNING.palmBeyondWrist, y: w.y + (w.y - e.y) * TUNING.palmBeyondWrist };
-      const tr = updateTrack(s[side], palm, null, null, ext, f.t, dt, k).track;
+    } else if (arm && armPalm) {
+      // The hand tracker lost this hand (blur, edge of frame): follow the pose wrist instead,
+      // keeping the last offset between the two (fading) so the hand doesn't jump.
+      const prev = s[side], fade = Math.exp(-dt / 1.0);
+      const offset = prev ? { x: prev.armOffset.x * fade, y: prev.armOffset.y * fade } : { x: 0, y: 0 };
+      const tr = updateTrack(prev, { pos: { x: armPalm.x + offset.x, y: armPalm.y + offset.y }, h: null, size: null, ext, bodyDist }, f.t, dt, k).track;
+      tr.armOffset = offset;
       tr.inView = arm.wrist.vis >= TUNING.minWristVis && inPicture(arm.wrist);
       tr.source = tr.inView ? 'arm' : 'estimate';
       s[side] = tr;
@@ -199,20 +302,62 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       s[side] = null;
     }
     const tr = s[side];
-    if (tr) tr.elbow = arm ? toView(arm.elbow) : null;
+    if (tr) {
+      tr.elbow = arm ? toView(arm.elbow) : null;
+      tr.aimDir = aimFromBody(tr, side) ?? aimDir(arm?.reach ?? null);
+    }
   }
+
+  // Learn this camera's wobble floor from fists resting in guard, and predict each fist's wobble.
+  if (bodyDist !== null) {
+    // only fists genuinely at rest: back in guard, not moving across the screen, not just after a punch
+    const resting = (t: Track) => t.armed && t.reach !== null && t.reachBase !== null && t.source === 'hand'
+      && t.reach - t.reachBase < TUNING.reachRearm && Math.hypot(t.vel.x, t.vel.y) < 30 && f.t - t.lastPunchT > 0.8;
+    const samples = SIDES.map(side => s[side]).filter((t): t is Track => !!t && resting(t))
+      .map(t => t.reachDev / (bodyDist * bodyDist));
+    if (samples.length) {
+      const sample = samples.reduce((a, b) => a + b, 0) / samples.length;
+      const rate = sample < s.noiseCoef ? TUNING.noiseCoefDownRate : TUNING.noiseCoefUpRate;
+      s.noiseCoef = lerp(s.noiseCoef, sample, Math.min(1, dt * rate));
+    }
+    for (const side of SIDES) { const t = s[side]; if (t) t.reachNoise = s.noiseCoef * bodyDist * bodyDist; }
+  }
+
+  // X block: forearms crossed in front of the chest (from the pose, which tracks fists well).
+  const al = f.arms.l, ar = f.arms.r;
+  const crossed = al && ar
+    ? al.wrist.x > mid.x + TUNING.xCrossSw * sw && ar.wrist.x < mid.x - TUNING.xCrossSw * sw
+      && Math.max(al.wrist.y, ar.wrist.y) < mid.y + TUNING.xMaxWristSw * sw
+    : !!s.l && !!s.r && s.l.pos.x > s.r.pos.x + 4 && Math.max(s.l.pos.y, s.r.pos.y) < TUNING.raisedAboveY;
+  if (!crossed) s.crossedSince = null;
+  else if (s.crossedSince === null) s.crossedSince = f.t;
+  const xBlock = s.crossedSince !== null && f.t - s.crossedSince >= TUNING.xHoldS;
 
   const extendMode = TUNING.punchTrigger === 'extend';
   const confirmS = extendMode ? TUNING.extendConfirmS : TUNING.punchConfirmS;
-  if (extendMode) {
-    // A fist driven out by a fast-straightening arm; pull the arm back to re-arm.
+  if (xBlock) {
+    s.pending = [];
+  } else if (extendMode) {
+    // A fist driven out in front of the body, ahead of the other fist; pull it back to re-arm.
     for (const side of SIDES) {
-      const tr = s[side];
-      if (!tr || tr.extension === null || tr.source === 'estimate') continue;
-      if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
-      else if (tr.armed && !tr.open && tr.extension >= TUNING.extendFireAbove
-        && extensionRise(tr) >= TUNING.punchExtendRise && tr.pos.y < TUNING.raisedAboveY) {
+      const tr = s[side], o = s[other(side)];
+      if (!tr || tr.source === 'estimate') continue;
+      let fire = false;
+      if (tr.reach !== null && tr.reachBase !== null) {
+        const past = tr.reach - tr.reachBase, noise = tr.reachNoise ?? 0;
+        if (past < TUNING.reachRearm) tr.armed = true;
+        const leads = !o || o.reach === null || tr.reach - o.reach >= Math.max(TUNING.reachLead, TUNING.noiseLead * noise);
+        fire = tr.armed && leads
+          && past >= Math.max(TUNING.reachFire, TUNING.noiseFire * noise)
+          && reachRise(tr) >= Math.max(TUNING.reachRise, TUNING.noiseRise * noise);
+      } else if (tr.extension !== null) {
+        // no 3D hand data: fall back to the arm straightening
+        if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
+        fire = tr.armed && tr.extension >= TUNING.extendFireAbove && extensionRise(tr) >= TUNING.punchExtendRise;
+      }
+      if (fire && !tr.open && tr.pos.y < TUNING.raisedAboveY) {
         tr.armed = false;
+        tr.lastPunchT = f.t;
         s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t });
       }
     }
@@ -230,14 +375,14 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     const tr = s[p.hand];
     if (!tr || s[other(p.hand)]?.open || (extendMode && tr.open)) return false;
     if (f.t - p.t < confirmS) return true;
-    punches.push({ hand: p.hand, at: { ...tr.pos }, shoulder: p.shoulder, dir: aimDir(f.arms[p.hand]?.reach ?? null) });
+    punches.push({ hand: p.hand, at: { ...tr.pos }, shoulder: p.shoulder, dir: tr.aimDir && { ...tr.aimDir } });
     return false;
   });
 
   // Two open hands: a quick sweep up is a fire wall, a quick spread is the ultimate, held still is the shield.
   const casts: Cast[] = [];
   const l = s.l, r = s.r;
-  const bothOpen = !!l && !!r && l.inView && r.inView && l.open && r.open;
+  const bothOpen = !xBlock && !!l && !!r && l.inView && r.inView && l.open && r.open;
   if (!bothOpen) {
     s.bothOpenAt = s.stillSince = null;
     s.shieldOn = false;
@@ -260,7 +405,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
   const shield = s.shieldOn;
 
   return {
-    present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, shield, casts,
+    present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, shield, xBlock, casts,
     face: f.face, bodyTilt: Math.atan2(f.shoulderR.y - f.shoulderL.y, f.shoulderR.x - f.shoulderL.x),
   };
 }
@@ -274,6 +419,18 @@ function twoHandGesture(l: Track, r: Track, from: number): CastKind | null {
   if (rise >= TUNING.wallRise && rise > spread) return 'wall';
   if (spread >= TUNING.ultimateSpread && spread > rise) return 'ultimate';
   return null;
+}
+
+/**
+ * Aim from the fist's 3D position relative to its own shoulder: its sideways/vertical offset over
+ * how far forward it is (at least a full punch's reach, so a fist resting in guard previews where a
+ * straight punch from there would land). A straight jab goes straight; a cross goes across.
+ */
+function aimFromBody(tr: Track, side: Side): Vec2 | null {
+  const b = tr.body3;
+  if (!b) return null;
+  const shoulderX = side === 'l' ? -TUNING.shoulderHalfM : TUNING.shoulderHalfM, forward = Math.max(b.z, TUNING.punchReachM);
+  return { x: (b.x - shoulderX) / forward, y: b.y / forward };
 }
 
 /** Sideways/vertical tangent of the punch angle from the 3D shoulder → wrist direction. */
@@ -315,29 +472,51 @@ function assign(obs: Vec2[], l: Track | null, r: Track | null, dt: number): Reco
 }
 
 /**
- * Move a track to a new position. `h` (the hand tracker's view of the hand) updates its shape;
- * without it — following the pose wrist — the last known shape is kept.
+ * Move a track to a new position. `in.h` (the hand tracker's view of the hand) updates its shape
+ * and 3D position; without it — following the pose wrist — the last known shape is kept.
  */
-function updateTrack(
-  tr: Track | null, pos: Vec2, h: HandObs | null, size: number | null, ext: number | null, t: number, dt: number, k: number,
-): { track: Track; opened: boolean } {
+function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, k: number): { track: Track; opened: boolean } {
+  const { pos, h, size, ext, bodyDist } = input;
+  const b3 = h?.body3 ?? null, depth = h?.depth ?? null;
+  // how far in front of the shoulders: filtered body distance − filtered hand distance
+  const reachNow = (t: Track) => (depth !== null && bodyDist !== null ? bodyDist - t.filters.depth.filter(depth, dt) : null);
   if (!tr) {
     // A hand that appears already open doesn't count as opening.
     const open = h ? h.open : 0;
+    const filters = {
+      x: new OneEuro(TUNING.posMinCutoff, TUNING.posBeta), y: new OneEuro(TUNING.posMinCutoff, TUNING.posBeta),
+      depth: new OneEuro(TUNING.handDepthMinCutoff, TUNING.handDepthBeta),
+      bx: new OneEuro(TUNING.handDepthMinCutoff, TUNING.handDepthBeta), by: new OneEuro(TUNING.handDepthMinCutoff, TUNING.handDepthBeta),
+    };
+    filters.x.filter(pos.x, 0); filters.y.filter(pos.y, 0);
+    if (b3) { filters.bx.filter(b3.x, 0); filters.by.filter(b3.y, 0); }
     const track: Track = {
       pos: { ...pos }, vel: { x: 0, y: 0 }, openness: open, open: open >= 0.5, facing: h ? h.facing : 1,
       source: 'hand', inView: true, elbow: null, extension: ext, punchReady: true, armed: true, lastSeen: t,
-      hist: [{ t, x: pos.x, y: pos.y, speed: 0, size, ext }],
+      reach: null, reachBase: null, reachNoise: 0.02, reachSlow: null, reachDev: 0.02, lastPunchT: -Infinity,
+      aimDir: null, body3: b3 && { ...b3 },
+      armOffset: { x: 0, y: 0 }, filters,
+      hist: [],
     };
+    track.reach = reachNow(track);
+    track.reachBase = track.reach;
+    if (track.body3 && track.reach !== null) track.body3.z = track.reach;
+    track.hist.push({ t, x: pos.x, y: pos.y, speed: 0, size, ext, reach: track.reach });
     return { track, opened: false };
   }
   const prev = tr.pos;
-  tr.pos = smooth(prev, pos, k);
+  tr.pos = { x: tr.filters.x.filter(pos.x, dt), y: tr.filters.y.filter(pos.y, dt) };
   if (dt > 0) {
     const kv = 1 - Math.exp(-12 * dt);
     tr.vel = { x: lerp(tr.vel.x, (tr.pos.x - prev.x) / dt, kv), y: lerp(tr.vel.y, (tr.pos.y - prev.y) / dt, kv) };
   }
   tr.extension = ext === null ? null : tr.extension === null ? ext : lerp(tr.extension, ext, k);
+  const reach = reachNow(tr);
+  if (reach !== null && b3) {
+    tr.reach = reach;
+    tr.body3 = { x: tr.filters.bx.filter(b3.x, dt), y: tr.filters.by.filter(b3.y, dt), z: reach };
+    updateReachBase(tr, dt);
+  }
   let opened = false;
   if (h) {
     tr.openness = lerp(tr.openness, h.open, k);
@@ -346,10 +525,38 @@ function updateTrack(
     else if (tr.open && tr.openness < TUNING.fistBelow) tr.open = false;
   }
   tr.lastSeen = t;
-  tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension });
+  tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension, reach: reach !== null ? tr.reach : null });
   const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS);
   while (tr.hist.length && t - tr.hist[0].t > keepS) tr.hist.shift();
   return { track: tr, opened };
+}
+
+/**
+ * The guard baseline: where this fist rests. It follows a fist that is back in guard and still,
+ * and drops quickly if the fist sits further back than it thought. Also tracks the reading's
+ * wobble floor: it drops quickly whenever the fist is still, and creeps up only slowly.
+ */
+function updateReachBase(tr: Track, dt: number): void {
+  if (tr.reach === null) return;
+  tr.reachSlow = tr.reachSlow === null ? tr.reach : lerp(tr.reachSlow, tr.reach, Math.min(1, dt * 3));
+  tr.reachDev = lerp(tr.reachDev, Math.abs(tr.reach - tr.reachSlow), Math.min(1, dt * 1));
+  if (tr.reachBase === null) { tr.reachBase = tr.reach; return; }
+  const still = Math.hypot(tr.vel.x, tr.vel.y) < 40;
+  if (tr.reach < tr.reachBase) tr.reachBase = lerp(tr.reachBase, tr.reach, Math.min(1, dt * TUNING.reachBaseDropRate));
+  else if (tr.armed && still && tr.reach - tr.reachBase < TUNING.reachRearm * 1.5) {
+    tr.reachBase = lerp(tr.reachBase, tr.reach, Math.min(1, dt * TUNING.reachBaseRate));
+  }
+}
+
+/** How far the fist came forward within the recent window (largest rise from an earlier low), metres. */
+function reachRise(tr: Track): number {
+  let low = Infinity, rise = 0;
+  for (const h of punchWindow(tr)) {
+    if (h.reach === null) continue;
+    low = Math.min(low, h.reach);
+    rise = Math.max(rise, h.reach - low);
+  }
+  return rise;
 }
 
 /** History samples within the punch window (the history itself is kept longer, for casts). */

@@ -5,10 +5,10 @@ import { mulberry32 } from '../math';
 
 const SHOULDERS = { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } };
 const hs = (x: number, y: number, open = false): HandState =>
-  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true });
+  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true, reach: null, reachBase: null, reachNoise: null, aimDir: null });
 const guard = () => ({ l: hs(-12, 22), r: hs(12, 22) });
 const intent = (o: Partial<Intent> = {}): Intent =>
-  ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], shield: false, casts: [], face: null, bodyTilt: 0, ...o });
+  ({ present: true, head: { x: 0, y: 0 }, hands: guard(), shoulders: SHOULDERS, punches: [], shield: false, xBlock: false, casts: [], face: null, bodyTilt: 0, ...o });
 const punch = (hand: Side, x: number, y: number, dir: Punch['dir'] = null): Punch => ({ hand, at: { x, y }, shoulder: SHOULDERS[hand], dir });
 const shieldUp = (y = 0) => intent({ hands: { l: hs(-15, y, true), r: hs(15, y, true) }, shield: true });
 const incoming = (x: number, y: number, id = 999): Proj =>
@@ -188,6 +188,41 @@ describe('Game', () => {
       g.step(1 / 60, ultimate);
       run(g, 1, intent());
       expect(g.enemies.every(e => e.hp <= 0)).toBe(true);
+    });
+  });
+
+  describe('X block', () => {
+    const crossed = () => intent({ hands: { l: hs(6, 14), r: hs(-6, 14) }, xBlock: true });
+
+    it('blocks attacks at your head and your body while the arms are crossed', () => {
+      const g = quietGame();
+      g.projs.push(incoming(0, 0), incoming(0, 30, 1000));
+      run(g, 0.2, crossed());
+      expect(g.hp).toBe(TUNE.maxHp);
+      expect(g.drainEvents().filter(e => e.type === 'blocked')).toHaveLength(2);
+    });
+
+    it('shows no threats while it is up', () => {
+      const g = quietGame();
+      const p = incoming(0, 0);
+      g.projs.push(p);
+      g.step(1 / 60, crossed());
+      expect(g.xBlock).toBe(true);
+      expect(g.isThreat(p)).toBe(false);
+    });
+  });
+
+  describe('aim preview', () => {
+    it('points where a punch from that fist would go, and the punch goes there', () => {
+      const g = new Game(mulberry32(3), 70, true);
+      g.drainEvents();
+      const i = intent();
+      g.step(1 / 60, i);
+      const preview = g.previewAim('r', { x: 0, y: 8 }, null);
+      expect(preview.target).not.toBeNull();
+      g.step(1 / 60, intent({ punches: [punch('r', 0, 8)] }));
+      run(g, 1, intent());
+      expect(g.drainEvents().some(e => (e.type === 'hitEnemy' || e.type === 'killEnemy'))).toBe(true);
     });
   });
 

@@ -109,8 +109,9 @@ export class DebugView {
   }
 
   /**
-   * Per-arm extension bars along the bottom: orange tick = fires a fist punch, green tick = re-arms.
-   * The dot is lit while that arm is ready to punch.
+   * Per-fist bars along the bottom: how far the fist is past its guard (0–0.4 m), with the orange
+   * tick where a fist punch fires (it rises with the measured wobble) and the green tick where it
+   * re-arms. The dot is lit while that fist is ready. Without 3D data: arm straightness instead.
    */
   private drawArmMeters(intent: Intent): void {
     const c = this.ctx, w = this.canvas.width, h = this.canvas.height;
@@ -120,21 +121,34 @@ export class DebugView {
     c.textAlign = 'left';
     c.fillStyle = '#cfe';
     c.fillText(`punch: ${TUNING.punchTrigger === 'extend' ? 'fist' : 'open hand'}  (P)`, w * 0.04, y - font * 0.4);
+    const noiseY = y - font * 0.4;
+    const noises: string[] = [];
     (['l', 'r'] as const).forEach((side, i) => {
       const hand = intent.hands[side], x0 = w * (0.04 + i * 0.5), bw = w * 0.42;
       c.fillStyle = 'rgba(255,255,255,.1)';
       c.fillRect(x0, y, bw, barH);
-      const ext = hand?.extension;
-      if (ext !== null && ext !== undefined) {
+      const byReach = hand && hand.reach !== null && hand.reachBase !== null;
+      const RANGE = 0.4, noise = hand?.reachNoise ?? 0;
+      const value = byReach ? (hand!.reach! - hand!.reachBase!) / RANGE : hand?.extension ?? null;
+      const marks = byReach
+        ? [[TUNING.reachRearm / RANGE, '#9dffcf'], [Math.max(TUNING.reachFire, TUNING.noiseFire * noise) / RANGE, '#ff7a3d']] as const
+        : [[TUNING.extendRearmBelow, '#9dffcf'], [TUNING.extendFireAbove, '#ff7a3d']] as const;
+      if (value !== null) {
         c.fillStyle = hand!.punchReady ? '#ffb347' : '#8a6a4a';
-        c.fillRect(x0, y, bw * ext, barH);
+        c.fillRect(x0, y, bw * Math.max(0, Math.min(1, value)), barH);
       }
-      for (const [at, col] of [[TUNING.extendRearmBelow, '#9dffcf'], [TUNING.extendFireAbove, '#ff7a3d']] as const) {
+      for (const [at, col] of marks) {
         c.fillStyle = col;
-        c.fillRect(x0 + bw * at - 1, y - 2, 2, barH + 4);
+        c.fillRect(x0 + bw * Math.min(1, at) - 1, y - 2, 2, barH + 4);
       }
+      if (byReach) noises.push(`${side.toUpperCase()} ±${Math.round(noise * 100)}cm`);
       c.fillStyle = hand?.punchReady ? '#ffb347' : '#444';
       c.beginPath(); c.arc(x0 - barH * 0.1 + bw + barH * 0.9, y + barH / 2, barH * 0.45, 0, 7); c.fill();
     });
+    if (noises.length) {
+      c.textAlign = 'right';
+      c.fillStyle = '#cfe';
+      c.fillText(noises.join('  '), w * 0.96, noiseY);
+    }
   }
 }

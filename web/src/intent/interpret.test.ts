@@ -29,7 +29,7 @@ function rightPunch(to: HandSpec): Pair[] {
 }
 
 describe('interpret', () => {
-  afterEach(() => { TUNING.punchTrigger = 'open'; });
+  afterEach(() => { TUNING.punchTrigger = 'extend'; });
 
   it('maps hands relative to the shoulders, independent of distance to the camera', () => {
     const at = (mid: Vec2, sw: number) =>
@@ -215,13 +215,17 @@ describe('interpret', () => {
   });
 
   describe('with the body tracked', () => {
-    it('uses the arms to tell the hands apart, even when they jump', () => {
+    it('uses the arms to tell the hands apart, even when they start crossed', () => {
+      const r = interpret(bodyFrame(0, { hands: [hand(MID, SW, { ...GUARD_R, side: 'l' }), hand(MID, SW, { ...GUARD_L, side: 'r' })] }), cal, initialState());
+      expect(r.hands.l!.pos.x).toBeGreaterThan(r.hands.r!.pos.x);
+    });
+
+    it('ignores a label flip that would make both hands teleport', () => {
       const s = initialState();
       interpret(bodyFrame(0, { hands: [hand(MID, SW, { ...GUARD_L, side: 'l' }), hand(MID, SW, { ...GUARD_R, side: 'r' })] }), cal, s);
-      // both hands swap sides at once: continuity alone would keep the old labels
       let r!: Intent;
       for (let i = 1; i <= 5; i++) r = interpret(bodyFrame(i / FPS, { hands: [hand(MID, SW, { ...GUARD_R, side: 'l' }), hand(MID, SW, { ...GUARD_L, side: 'r' })] }), cal, s);
-      expect(r.hands.l!.pos.x).toBeGreaterThan(r.hands.r!.pos.x);
+      expect(r.hands.l!.pos.x).toBeLessThan(r.hands.r!.pos.x);
     });
 
     it('keeps following a hand the hand tracker lost, from its arm', () => {

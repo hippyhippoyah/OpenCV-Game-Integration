@@ -5,8 +5,12 @@ Run `npm run dev`, play with the camera in Chrome. Note the result of each item.
 - [ ] Frame rate (corner panel) stays ≥ 30 fps while playing.
 - [ ] Fire follows your hands without noticeable lag.
 - [ ] Fists read as FIST and open hands as OPEN in the corner panel at 1 m, 1.5 m and 2.5 m.
-- [ ] Fist punches (default) fire every time — straight at the camera, a cross, and a hook — and the
-      arm meter in the corner crosses the orange mark on each one.
+- [ ] At about 1.5 m, fist punches (default) fire every time — jabs straight at the camera and crosses —
+      and the corner bar for that fist crosses its orange mark. Note the ±cm wobble shown there.
+- [ ] Standing, weaving and leaning in guard never fire. The on-screen fists don't jitter.
+- [ ] The aim reticle sits on the enemy you'd hit, and punches go there.
+- [ ] Standing ~2.5 m away shows "step closer" rather than firing phantom punches.
+- [ ] Crossing your forearms raises the X block; a single cross punch doesn't.
 - [ ] Reaching slowly, stretching, or holding an arm out does not fire; pulling back re-arms (dot lights).
 - [ ] With `P` (open-hand style), a punch that opens at the end fires every time.
 - [ ] Opening a still fist does not fire; the shot goes roughly where your hand was when it opened.

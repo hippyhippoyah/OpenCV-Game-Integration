@@ -140,3 +140,35 @@ Replaces the palms-together summon and push-throw, which depended on weak depth 
   sweep or spread doesn't raise it; once up it stays while both hands are open.
 - **Fire only when doing something:** idle fists and open hands stay dark (faint rim only). Hands
   burn for 0.35 s after a punch, while shielding, and after a cast.
+
+## Revision 2026-09-27: fist punches rebuilt on reach-from-size; X block
+
+**Why the old fist punch failed:** the 3D pose depth for an arm pointing at the camera is shallow
+(a straight arm reads bent); the "hand size" cue used the wrist→knuckle length, which shrinks when
+the knuckles face the camera; positions jittered; and aim came from that same shallow depth.
+
+**How far each fist is in front of the body (metres):**
+- Hand distance from the camera = its apparent size ÷ real size (MediaPipe 3D hand landmarks),
+  from a least-squares fit of all 21 points for a fist (rigid 3D shape) or of the palm plate for
+  an open hand — exact at any hand angle. Body distance = the same with the shoulders, using a
+  learned (constant) shoulder width. Assumed focal length 1.05 picture heights; comparisons don't
+  depend on it.
+- reach = filtered body distance − filtered hand distance (One Euro filters; bodies slow, fists fast).
+
+**Fist punch** (default; `P` switches to open-hand): a closed fist that is past its learned guard
+baseline, came forward quickly, and leads the other fist. Thresholds scale with the reading's
+wobble, modelled as (camera coefficient, learned from fists at rest) × distance², so a far,
+noisy fist can't misfire; re-arm by pulling back. Aim = the fist's sideways/vertical offset from
+its own shoulder over its reach (≥ 0.45 m), shared with an on-screen reticle per ready fist.
+
+**Tested against a synthetic webcam** (`src/sim/`: a 3D body, camera projection, landmark noise,
+shallow pose depth, blur dropouts): jabs and crosses caught ~100% up to 1.8 m (uppercuts to
+1.5 m), no misfires from standing, weaving, leaning, slow reaches, two-handed pushes, the shield or
+the X block at any distance up to 2.5 m. Beyond ~1.8 m punches are missed rather than misfiring,
+and the HUD asks the player to step closer. Hooks (little forward motion) aren't detected.
+
+**Also:** hand positions use One Euro filtering and no longer jump when falling back to the pose
+wrist; arm labels are overridden by frame-to-frame continuity when they'd teleport a hand.
+
+**X block:** each wrist crossed past the body's centre line (a cross punch moves only one), wrists
+raised, held 0.08 s → blocks every attack that reaches you; draws a fiery X.

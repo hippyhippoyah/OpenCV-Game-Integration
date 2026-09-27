@@ -36,6 +36,13 @@ export interface HandObs {
   facing: number;
   /** The arm this hand belongs to (nearest pose wrist), when a body is visible. */
   side?: Side;
+  /**
+   * Palm centre in metres relative to the shoulder centre, from apparent sizes: x right on screen,
+   * y down, z = how far in front of the shoulders. Null without 3D landmarks.
+   */
+  body3?: { x: number; y: number; z: number } | null;
+  /** Distance from the camera to the hand, metres (from its apparent vs real size); null without 3D landmarks. */
+  depth?: number | null;
 }
 
 /** One tracked camera frame. Camera and mock trackers both produce these. */
@@ -50,6 +57,11 @@ export interface TrackingFrame {
   arms: Record<Side, ArmObs | null>;
   /** Head turn (+ = nose toward screen right, in ear-widths) and tilt (radians); null if unsure. */
   face: { yaw: number; roll: number } | null;
+  /**
+   * Raw shoulder measurements for the body's distance: real width (m, from the 3D pose) and
+   * apparent width (picture heights). Null without 3D pose landmarks.
+   */
+  body?: { span3: number; span2: number } | null;
 }
 
 export interface Tracker {

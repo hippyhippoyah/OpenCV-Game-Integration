@@ -7,6 +7,9 @@ const $ = (id: string) => document.getElementById(id)!;
 export class Hud {
   /** `hands` is the live tracking, so the HUD is right even before the game has stepped (e.g. paused). */
   update(g: Game, hands: Intent['hands'] = g.hands): void {
+    // fist punches read how big each fist looks; from too far away that reading is too shaky
+    const tooFar = TUNING.punchTrigger === 'extend'
+      && (['l', 'r'] as const).some(side => (hands[side]?.reachNoise ?? 0) > TUNING.reachNoiseMax);
     $('hpFill').style.width = `${g.hp}%`;
     $('score').textContent = String(g.score);
     $('wave').textContent = g.practice ? 'Practice dummies' : `Wave ${g.wave}`;
@@ -14,8 +17,10 @@ export class Hud {
     const noHands = !hands.l && !hands.r;
     pill.classList.toggle('off', noHands);
     pill.classList.toggle('shield', g.shield.on);
-    const [name, hint] = g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
+    const [name, hint] = g.xBlock ? ['X BLOCK', 'arms crossed: blocking everything that reaches you']
+      : g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
       : noHands ? ['NO HANDS', 'raise your fists into view']
+      : tooFar ? ['GUARD', 'step closer (about 1.5 m) so fist punches can see your fists clearly']
         : ['GUARD', `${TUNING.punchTrigger === 'extend' ? 'punch' : 'punch & open'}: shoot · still open hands: shield · sweep up: wall · spread: ultimate`];
     const lost = (['l', 'r'] as const).filter(side => hands[side] && !hands[side]!.inView);
     $('modeName').textContent = name;

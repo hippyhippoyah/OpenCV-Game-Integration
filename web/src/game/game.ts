@@ -100,6 +100,10 @@ export class Game {
   projs: Proj[] = [];
   walls: Wall[] = [];
   blades: Blade[] = [];
+  /** Forearms crossed: everything that reaches you is blocked. */
+  xBlock = false;
+  /** Last known shoulder positions (view space), for aiming. */
+  shoulders: Record<Side, Vec2> = { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } };
   /** Seconds until the ultimate is ready again. */
   ultimateIn = 0;
   /** Tests turn this off to control enemies by hand. */
@@ -139,6 +143,8 @@ export class Game {
   step(dt: number, intent: Intent): void {
     this.cam = { ...intent.head };
     this.hands = intent.hands;
+    this.xBlock = intent.xBlock;
+    if (intent.shoulders) this.shoulders = intent.shoulders;
     this.inv = Math.max(0, this.inv - dt);
     this.punchCool = { l: Math.max(0, this.punchCool.l - dt), r: Math.max(0, this.punchCool.r - dt) };
     this.wallCool = Math.max(0, this.wallCool - dt);
@@ -168,6 +174,7 @@ export class Game {
 
   /** Would this incoming attack hit you if you stayed exactly as you are? */
   isThreat(p: Proj): boolean {
+    if (this.xBlock) return false;
     const a = arrival(p), v = { x: a.x - this.cam.x, y: a.y - this.cam.y };
     return bodyHit(v, p.r) && !this.shieldCovers(v, p.r);
   }
@@ -202,25 +209,40 @@ export class Game {
   }
 
   /** Fire leaves the opened hand toward where it points: its screen position, bent further along shoulder → hand. */
+  /**
+   * Where a punch from `at` (view space) would go: the fist's screen position, bent by the punch
+   * direction, then snapped onto a nearby target. Returns the world point it flies to (at `depth`)
+   * and the target, if any. The game and the on-screen aim reticle both use this.
+   */
+  aimFor(at: Vec2, shoulder: Vec2, dir: Vec2 | null): { point: Vec2; depth: number; target: Enemy | null } {
+    let aim = { x: at.x + (at.x - shoulder.x) * TUNE.aimSkewX, y: at.y + (at.y - shoulder.y) * TUNE.aimSkewY };
+    if (dir) {
+      const along = { x: at.x + dir.x * TUNE.aimDirScale, y: at.y + dir.y * TUNE.aimDirScale };
+      aim = { x: lerp(aim.x, along.x, TUNE.aimDirWeight), y: lerp(aim.y, along.y, TUNE.aimDirWeight) };
+    }
+    let depth = TUNE.aimDepth;
+    const target = this.pickTarget(aim);
+    if (target) {
+      const s = depthScale(target.z);
+      aim = { x: lerp(aim.x, (target.x - this.cam.x) * s, TUNE.aimAssist), y: lerp(aim.y, (target.y - this.cam.y) * s, TUNE.aimAssist) };
+      depth = target.z;
+    }
+    // the world point that appears at `aim` on screen at that depth
+    const s = depthScale(depth);
+    return { point: { x: this.cam.x + aim.x / s, y: Math.min(FLOOR_Y - 4, this.cam.y + aim.y / s) }, depth, target };
+  }
+
+  /** What a punch from this hand, as it is now, would hit (for the aim reticle). */
+  previewAim(side: Side, at: Vec2, dir: Vec2 | null): { point: Vec2; depth: number; target: Enemy | null } {
+    return this.aimFor(at, this.shoulders[side], dir);
+  }
+
   private punch(p: Punch): void {
     if (this.punchCool[p.hand] > 0) return;
     this.punchCool[p.hand] = TUNE.punchCooldownS;
     const start = this.handWorld(p.at);
-    let aim = { x: p.at.x + (p.at.x - p.shoulder.x) * TUNE.aimSkewX, y: p.at.y + (p.at.y - p.shoulder.y) * TUNE.aimSkewY };
-    if (p.dir) {
-      const along = { x: p.at.x + p.dir.x * TUNE.aimDirScale, y: p.at.y + p.dir.y * TUNE.aimDirScale };
-      aim = { x: lerp(aim.x, along.x, TUNE.aimDirWeight), y: lerp(aim.y, along.y, TUNE.aimDirWeight) };
-    }
-    let depth = TUNE.aimDepth;
-    const tgt = this.pickTarget(aim);
-    if (tgt) {
-      const s = depthScale(tgt.z);
-      aim = { x: lerp(aim.x, (tgt.x - this.cam.x) * s, TUNE.aimAssist), y: lerp(aim.y, (tgt.y - this.cam.y) * s, TUNE.aimAssist) };
-      depth = tgt.z;
-    }
-    // Head for the world point that appears at `aim` on screen at that depth.
-    const s = depthScale(depth), T = (depth - TUNE.launchZ) / TUNE.fireballSpeed;
-    const target = { x: this.cam.x + aim.x / s, y: Math.min(FLOOR_Y - 4, this.cam.y + aim.y / s) };
+    const { point: target, depth } = this.aimFor(p.at, p.shoulder, p.dir);
+    const T = (depth - TUNE.launchZ) / TUNE.fireballSpeed;
     this.projs.push({
       id: this.nextId++, kind: 'player', x: start.x, y: start.y, z: TUNE.launchZ,
       vx: (target.x - start.x) / T, vy: (target.y - start.y) / T, vz: TUNE.fireballSpeed, r: TUNE.fireballRadius, resolved: false,
@@ -430,6 +452,11 @@ export class Game {
   /** Returns true if the projectile was absorbed (blocked or hit you). */
   private resolveIncoming(q: Proj): boolean {
     const v = { x: q.x - this.cam.x, y: q.y - this.cam.y };
+    if (this.xBlock && bodyHit(v, q.r * 2)) {
+      this.score += 15;
+      this.emit('blocked', q.x, q.y, 0);
+      return true;
+    }
     if (this.shieldCovers(v, q.r)) {
       this.shield.energy = Math.max(0, this.shield.energy - TUNE.shieldBlockCost);
       this.score += 15;

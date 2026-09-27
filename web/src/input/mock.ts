@@ -1,6 +1,7 @@
 import type { ArmObs, HandObs, Side, Tracker, TrackingFrame } from './types';
 import type { Calibration } from '../intent/calibration';
 import { TUNING, type CastKind } from '../intent/interpret';
+import { FOCAL_H } from './landmarks';
 import { clamp, lerp, type Vec2 } from '../math';
 
 /** The body the mock pretends to see, which is also its calibration. */
@@ -11,6 +12,10 @@ const GUARD: Record<Side, Vec2> = { l: { x: -12, y: 22 }, r: { x: 12, y: 22 } };
 const EXTEND_S = 0.12, OPEN_HOLD_S = 0.25, SHIELD_HALF_WIDTH = 16;
 /** Two-hand casts: open hands move for CAST_MOVE_S, then stay open for CAST_HOLD_S. */
 const CAST_MOVE_S = 0.25, CAST_HOLD_S = 0.3;
+/** The mock body stands this far away (m) with shoulders this wide (m); fists rest this far in front (m). */
+const MOCK_DISTANCE = 1.5, MOCK_SHOULDERS_M = 0.38, GUARD_REACH_M = 0.25, PUNCH_REACH_M = 0.52;
+/** Crossed forearms: each fist on the other side (view units). */
+const XBLOCK: Record<Side, Vec2> = { l: { x: 9, y: 12 }, r: { x: -9, y: 12 } };
 /** Where the right hand goes while O is held: out past the right edge of the picture. */
 const OUT_OF_VIEW: Vec2 = { x: 140, y: 10 };
 
@@ -19,7 +24,7 @@ export interface ViewMapper { screenToView(x: number, y: number): Vec2 }
 /**
  * Pretends to be the camera. The mouse is where you aim; a punch drives that fist to the mouse
  * (opening it at the end in the open-hand punch style); holding Space opens both hands around the mouse (shield); A/D/S lean and duck;
- * W sweeps open hands up (fire wall); U spreads open hands apart (ultimate);
+ * W sweeps open hands up (fire wall); U spreads open hands apart (ultimate); X crosses the arms;
  * holding O swings the right hand out of the picture (only its arm is still tracked).
  */
 export class MockTracker implements Tracker {
@@ -66,7 +71,7 @@ export class MockTracker implements Tracker {
     const arms: Record<Side, ArmObs | null> = { l: null, r: null };
     for (const side of ['l', 'r'] as const) {
       const sign = side === 'l' ? -1 : 1;
-      let pos = GUARD[side], open = 0, grow = 0, facing = 1, ext = 0.25;
+      let pos = GUARD[side], open = 0, grow = 0, facing = 1, ext = 0.25, reachM = GUARD_REACH_M;
       const start = this.punchStart[side];
       const since = start === null ? null : t - start;
       if (since !== null && since > EXTEND_S + OPEN_HOLD_S) this.punchStart[side] = null;
@@ -77,11 +82,14 @@ export class MockTracker implements Tracker {
           : { x: aim.x + sign * lerp(4, 34, e), y: aim.y };      // from together, spreading apart
         open = 1;
         ext = 0.6;
+      } else if (this.keys.has('x')) {
+        pos = XBLOCK[side];
       } else if (shield) {
         pos = { x: aim.x + sign * SHIELD_HALF_WIDTH, y: aim.y };
         open = 1;
         facing = 0.2;
         ext = 0.8;
+        reachM = 0.32;
       } else if (since !== null && since <= EXTEND_S + OPEN_HOLD_S) {
         const e = clamp(since / EXTEND_S, 0, 1);
         pos = { x: lerp(GUARD[side].x, aim.x, e), y: lerp(GUARD[side].y, aim.y, e) };
@@ -89,6 +97,7 @@ export class MockTracker implements Tracker {
         // a real punch stays a fist; only the open-hand style opens at the end
         open = TUNING.punchTrigger === 'open' && since >= EXTEND_S ? 1 : 0;
         ext = 0.25 + 0.65 * e;
+        reachM = GUARD_REACH_M + (PUNCH_REACH_M - GUARD_REACH_M) * e;
       }
       const away = side === 'r' && this.keys.has('o');
       if (away) pos = OUT_OF_VIEW;
@@ -104,7 +113,9 @@ export class MockTracker implements Tracker {
         // shoulder → wrist, pushed toward the camera as the arm straightens (metres-ish)
         reach: { x: (wrist.x - shoulder.x) * 1.5, y: (wrist.y - shoulder.y) * 1.5, z: -0.6 * ext },
       };
-      if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open, facing, side });
+      // metres relative to the shoulder centre, for the reach-from-size detection
+      const body3 = { x: (pos.x / TUNING.handScaleX) * MOCK_SHOULDERS_M, y: ((pos.y - TUNING.handOffsetY) / TUNING.handScaleY) * MOCK_SHOULDERS_M, z: reachM };
+      if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open, facing, side, body3, depth: MOCK_DISTANCE - reachM });
     }
     return {
       t, head,
@@ -113,6 +124,7 @@ export class MockTracker implements Tracker {
       hands,
       arms,
       face: { yaw: 0, roll: 0 },
+      body: { span3: MOCK_SHOULDERS_M, span2: (FOCAL_H * MOCK_SHOULDERS_M) / MOCK_DISTANCE },
     };
   }
 

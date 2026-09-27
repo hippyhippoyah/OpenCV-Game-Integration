@@ -36,7 +36,7 @@ describe('MockTracker', () => {
         expect(Math.abs(punches[0].at.y - 5)).toBeLessThan(6);
         expect(out.some(o => o.hands.r!.open)).toBe(style === 'open');
       } finally {
-        TUNING.punchTrigger = 'open';
+        TUNING.punchTrigger = 'extend';
       }
     });
   }
@@ -65,6 +65,21 @@ describe('MockTracker', () => {
     expect(last.hands.r!.inView).toBe(false);
     expect(last.hands.r!.source).toBe('estimate');
     expect(last.hands.l!.inView).toBe(true);
+  });
+
+  it('fist punches go through the same reach-from-size detection as the camera', () => {
+    const m = new MockTracker(identity);
+    m.setMouse(5, 5);
+    const out = run(m, 40, i => { if (i === 5) m.punch('r'); });
+    expect(out[3].hands.r!.reach).not.toBeNull();
+    expect(out.flatMap(o => o.punches)).toHaveLength(1);
+  });
+
+  it('holding X crosses the arms into an X block', () => {
+    const m = new MockTracker(identity);
+    const out = run(m, 20, i => { if (i === 3) m.setKey('x', true); });
+    expect(out.at(-1)!.xBlock).toBe(true);
+    expect(out.flatMap(o => o.punches)).toHaveLength(0);
   });
 
   it('leaning with D moves the camera right', () => {

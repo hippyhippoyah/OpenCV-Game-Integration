@@ -53,7 +53,7 @@ describe('toFrame', () => {
   });
 
   it('handles no person', () => {
-    expect(toFrame(0, [], undefined)).toEqual({ t: 0, head: null, shoulderL: null, shoulderR: null, hands: [], arms: { l: null, r: null }, face: null });
+    expect(toFrame(0, [], undefined)).toEqual({ t: 0, head: null, shoulderL: null, shoulderR: null, hands: [], arms: { l: null, r: null }, face: null, body: null });
   });
 });
 
@@ -139,5 +139,36 @@ describe('body', () => {
     expect(straight.roll).toBeCloseTo(0);
     p[0] = { x: 0.45, y: 0.3, visibility: 1 };
     expect(toFrame(0, [], p).face!.yaw).toBeGreaterThan(0.2);
+  });
+});
+
+describe('how far each hand is in front of the body', () => {
+  // imported lazily so the rest of this file doesn't depend on the simulator
+  const sim = () => import('../sim/synthetic');
+
+  it("reads each fist's reach from palm size vs shoulder size, at any distance and fist angle", async () => {
+    const { ASPECT, POSES, SyntheticCamera, guardState } = await sim();
+    const cam = new SyntheticCamera({ handNoise: 0, poseNoise: 0, handWorldNoise: 0, poseWorldNoise: 0 });
+    for (const distance of [1.5, 2.5]) {
+      const reachOf = (reach: typeof POSES.guard) => {
+        const raw = cam.raw(guardState(distance, { r: { reach } }), 0);
+        const f = toFrame(0, raw.hands, raw.pose, raw.handsWorld, raw.poseWorld, ASPECT);
+        return f.hands.find(h => h.side === 'r')!.body3!;
+      };
+      const guard = reachOf(POSES.guard), jab = reachOf(POSES.jab), cross = reachOf(POSES.cross);
+      for (const [pos, reach] of [[guard, POSES.guard], [jab, POSES.jab], [cross, POSES.cross]] as const) {
+        // measured at the palm, a few cm past the wrist the pose is defined by
+        expect(pos.z, `${distance} m`).toBeGreaterThan(reach.fwd - 0.03);
+        expect(pos.z, `${distance} m`).toBeLessThan(reach.fwd + 0.12);
+      }
+      expect(jab.z - guard.z, `${distance} m`).toBeGreaterThan(0.2);
+      expect(cross.x, 'a right cross ends up left of centre').toBeLessThan(0);
+      expect(guard.x, 'the right fist guards on the right').toBeGreaterThan(0);
+    }
+  });
+
+  it('has no 3D position without MediaPipe world landmarks', () => {
+    const f = toFrame(0, [Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5 }))], pose());
+    expect(f.hands[0].body3).toBeNull();
   });
 });

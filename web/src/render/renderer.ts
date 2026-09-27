@@ -1,5 +1,6 @@
 import { arrival, FLOOR_Y, FOCAL, TUNE, type Blade, type Enemy, type Game, type GameEvent, type Wall } from '../game/game';
 import type { Side } from '../input/types';
+import { TUNING } from '../intent/interpret';
 import { clamp, lerp, mulberry32, type Vec2 } from '../math';
 
 type Pal = 'fire' | 'spirit';
@@ -161,6 +162,8 @@ export class Renderer {
       g.blades.forEach(b => this.drawBlade(b));
       this.drawHandLight(g);
       this.drawProjectiles(g, false);
+      this.drawAimReticles(g);
+      if (g.xBlock) this.drawXBlock(g);
       this.drawHands(g);
       this.drawOffscreenHands(g);
     }
@@ -477,8 +480,12 @@ export class Renderer {
    * With a tracked elbow the forearm bends where yours does; the upper arm always runs off the
    * bottom of the screen, since your shoulders are behind the camera.
    */
-  private handShape(c: CanvasRenderingContext2D, h: Vec2, side: number, grow: number, open: boolean, elbowAt: Vec2 | null = null): void {
-    const k = 1.5 * this.u, g = grow;
+  private handShape(
+    c: CanvasRenderingContext2D, h: Vec2, side: number, grow: number, open: boolean, elbowAt: Vec2 | null = null,
+    /** > 1 draws the hand bigger, e.g. a fist punching toward you. */
+    scale = 1,
+  ): void {
+    const k = 1.5 * this.u * scale, g = grow;
     c.lineCap = 'round';
     c.lineJoin = 'round';
     const line = (x1: number, y1: number, x2: number, y2: number, w: number) => {
@@ -509,6 +516,11 @@ export class Renderer {
     line(tx, ty, tx + Math.cos(ta) * 3.6 * k, ty + Math.sin(ta) * 3.6 * k, 1.9 * k);
   }
 
+  /** 0 → 1 as a fist drives out from guard to a full punch. */
+  private punchOut(h: NonNullable<Game['hands']['l']>): number {
+    return h.reach === null || h.reachBase === null || h.open ? 0 : clamp((h.reach - h.reachBase) / 0.3, 0, 1);
+  }
+
   private drawHands(g: Game): void {
     const hands = ([['l', -1], ['r', 1]] as const)
       .map(([side, sign]) => ({ h: g.hands[side], sign, burn: this.burning(g, side) }))
@@ -519,14 +531,16 @@ export class Renderer {
     // idle hands keep only a faint warm rim so you can see them; burning hands glow
     for (const { h, sign, burn } of hands) {
       c.strokeStyle = c.fillStyle = `rgba(255,130,60,${(0.12 + 0.3 * burn) * flicker})`;
-      this.handShape(c, this.viewToScreen(h.pos), sign, 0.9 * u, h.open, h.elbow && this.viewToScreen(h.elbow));
+      this.handShape(c, this.viewToScreen(h.pos), sign, 0.9 * u, h.open, h.elbow && this.viewToScreen(h.elbow), 1 + 0.5 * this.punchOut(h));
     }
     const hl = this.handLayer.getContext('2d')!;
     hl.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     hl.globalCompositeOperation = 'source-over';
     hl.clearRect(0, 0, this.W, this.H);
     hl.strokeStyle = hl.fillStyle = g.inv > 0 && Math.sin(this.t * 40) > 0 ? '#3a1216' : '#150f19';
-    for (const { h, sign } of hands) this.handShape(hl, this.viewToScreen(h.pos), sign, 0, h.open, h.elbow && this.viewToScreen(h.elbow));
+    for (const { h, sign } of hands) {
+      this.handShape(hl, this.viewToScreen(h.pos), sign, 0, h.open, h.elbow && this.viewToScreen(h.elbow), 1 + 0.5 * this.punchOut(h));
+    }
     hl.globalCompositeOperation = 'source-atop';
     for (const { h, burn } of hands) {
       const C = this.viewToScreen(h.pos), gr = hl.createRadialGradient(C.x, C.y - 3 * u, 0, C.x, C.y, 30 * u);
@@ -535,6 +549,51 @@ export class Renderer {
       hl.fillRect(0, 0, this.W, this.H);
     }
     c.drawImage(this.handLayer, 0, 0, this.W, this.H);
+  }
+
+  /**
+   * Fist punches: a small ring on whatever a punch from each ready fist would hit (or where it
+   * would fly), so you can line up before you throw. Uses the game's own aim.
+   */
+  private drawAimReticles(g: Game): void {
+    if (TUNING.punchTrigger !== 'extend' || g.shield.on || g.xBlock) return;
+    const c = this.ctx, u = this.u;
+    for (const side of ['l', 'r'] as const) {
+      const h = g.hands[side];
+      if (!h?.inView || h.open || !h.punchReady) continue;
+      const aim = g.previewAim(side, h.pos, h.aimDir);
+      const p = aim.target ? this.project(aim.target.x, aim.target.y, aim.target.z) : this.project(aim.point.x, aim.point.y, aim.depth);
+      const r = (aim.target ? 9 : 3) * u * p.s + 1.2 * u;
+      c.strokeStyle = aim.target ? 'rgba(255,190,110,.75)' : 'rgba(255,190,110,.35)';
+      c.lineWidth = 2;
+      c.beginPath(); c.arc(p.x, p.y, r, 0, 7); c.stroke();
+      // a tick on the side of the fist that's aiming
+      const dx = side === 'l' ? -1 : 1;
+      c.beginPath(); c.moveTo(p.x + dx * r, p.y); c.lineTo(p.x + dx * (r + 1.2 * u), p.y); c.stroke();
+    }
+  }
+
+  /** Crossed forearms: a big X of fire across the hands. */
+  private drawXBlock(g: Game): void {
+    const { l, r } = g.hands;
+    if (!l || !r) return;
+    const c = this.ctx, u = this.u, a = this.viewToScreen(l.pos), b = this.viewToScreen(r.pos);
+    const C = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 4 * u }, L = 24 * u, flick = 0.85 + 0.15 * Math.sin(this.t * 22);
+    c.globalCompositeOperation = 'lighter';
+    const gr = c.createRadialGradient(C.x, C.y, 0, C.x, C.y, L * 1.4);
+    gr.addColorStop(0, `rgba(255,150,60,${0.35 * flick})`); gr.addColorStop(1, 'rgba(255,100,30,0)');
+    c.fillStyle = gr;
+    c.fillRect(C.x - L * 1.4, C.y - L * 1.4, L * 2.8, L * 2.8);
+    c.lineCap = 'round';
+    for (const [w, col] of [[5 * u, `rgba(255,110,40,${0.45 * flick})`], [2.2 * u, `rgba(255,190,110,${0.8 * flick})`], [0.8 * u, 'rgba(255,245,215,.95)']] as const) {
+      c.strokeStyle = col;
+      c.lineWidth = w;
+      c.beginPath();
+      c.moveTo(C.x - L, C.y - L); c.lineTo(C.x + L, C.y + L);
+      c.moveTo(C.x + L, C.y - L); c.lineTo(C.x - L, C.y + L);
+      c.stroke();
+    }
+    c.globalCompositeOperation = 'source-over';
   }
 
   /** A glowing curtain behind a fire wall's flames, fading as it burns out. */
@@ -672,6 +731,15 @@ export class Renderer {
         this.emit(b.x + Math.cos(a) * b.r * w, b.y + rnd(-1, 1), z,
           (-Math.sin(a) * 90 + Math.cos(a) * 40) / s, rnd(-8, 2), Math.cos(a) * 4 + Math.sin(a) * TUNE.bladeSpeed * 0.5,
           rnd(0.18, 0.4), rnd(2, 3.5) / Math.sqrt(s), 'fire', 0.15);
+      }
+    }
+    // flames licking off the X block
+    if (g.xBlock && g.hands.l && g.hands.r) {
+      const m = { x: (g.hands.l.pos.x + g.hands.r.pos.x) / 2, y: (g.hands.l.pos.y + g.hands.r.pos.y) / 2 - 4 };
+      const w = g.handWorld(m);
+      for (let i = nOf(260, dt); i > 0; i--) {
+        const k = rnd(-24, 24), diag = Math.random() < 0.5 ? 1 : -1;
+        this.emit(w.x + k, w.y + k * diag, 0.2, rnd(-4, 4), rnd(-22, -8), 0, rnd(0.2, 0.4), rnd(2, 3.5));
       }
     }
     // standing fire walls

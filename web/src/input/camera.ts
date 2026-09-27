@@ -72,7 +72,8 @@ export class CameraTracker implements Tracker {
     const hands = this.hands.detectForVideo(this.video, now);
     const pose = this.pose.detectForVideo(this.video, now);
     this.lastRaw = { hands: hands.landmarks, handsWorld: hands.worldLandmarks, pose: pose.landmarks[0] ?? [], poseWorld: pose.worldLandmarks[0] ?? [] };
-    return toFrame(now / 1000, hands.landmarks, pose.landmarks[0], hands.worldLandmarks, pose.worldLandmarks[0]);
+    const aspect = this.video.videoWidth && this.video.videoHeight ? this.video.videoWidth / this.video.videoHeight : 4 / 3;
+    return toFrame(now / 1000, hands.landmarks, pose.landmarks[0], hands.worldLandmarks, pose.worldLandmarks[0], aspect);
   }
 
   dispose(): void {
