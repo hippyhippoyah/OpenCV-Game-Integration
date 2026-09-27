@@ -71,6 +71,12 @@ export interface Enemy {
   attack?: AttackKind;
   /** Earthbender (stone pillars) instead of a water spirit. */
   earth?: boolean;
+  /** Scripted (tutorial): always uses this attack. */
+  only?: AttackKind;
+  /** Scripted (tutorial): which of the lesson's enemies this is. */
+  tag?: string;
+  /** Scripted (tutorial): seconds between attacks. */
+  pace?: number;
   /** Practice target: never moves or attacks, respawns in its slot. */
   dummy?: boolean;
   slot?: number;
@@ -164,6 +170,10 @@ export class Game {
   spawning = true;
   /** Dummies instead of attacking spirits. */
   practice = false;
+  /** Tutorial: attacks still land (and show) but cost no health. */
+  noDamage = false;
+  /** Shown instead of the wave number (e.g. "Tutorial"). */
+  label: string | null = null;
 
   private events: GameEvent[] = [];
   private toSpawn = 0;
@@ -181,6 +191,38 @@ export class Game {
   constructor(private rand: Rand = Math.random, public viewHalfW = 70, practice = false) {
     if (practice) this.setPractice(true);
     else this.startWave();
+  }
+
+  /**
+   * Hand the field over to a script (the tutorial): nothing spawns by itself, the field is cleared,
+   * and you can't lose.
+   */
+  scripted(): void {
+    this.spawning = false;
+    this.practice = false;
+    this.noDamage = true;
+    this.clearField();
+  }
+
+  /** Remove every enemy and every attack in flight. */
+  clearField(): void {
+    this.enemies = [];
+    this.projs = [];
+    this.hazards = [];
+    this.pillars = [];
+    this.blades = [];
+    this.walls = [];
+  }
+
+  /** Put an enemy on the field (scripts): a dummy, a water spirit or an earthbender. */
+  addEnemy(o: { kind: 'dummy' | 'spirit' | 'earth'; x: number; z: number; only?: AttackKind; tag?: string; hp?: number; cd?: number; pace?: number }): Enemy {
+    const e: Enemy = {
+      id: this.nextId++, x: o.x, y: FLOOR_Y - 30, z: o.z, hp: o.hp ?? TUNE.enemyHp, t: 0, appear: 0, dying: 0, flash: 0,
+      cd: o.kind === 'dummy' ? Infinity : o.cd ?? 1.5, winding: false, wind: 0, side: 1, phase: this.rnd(0, 6),
+      dummy: o.kind === 'dummy' || undefined, earth: o.kind === 'earth' || undefined, only: o.only, tag: o.tag, pace: o.pace,
+    };
+    this.enemies.push(e);
+    return e;
   }
 
   /** Switch between practice dummies and spirit waves, clearing the field. */
@@ -409,7 +451,7 @@ export class Game {
   }
 
   private hurt(x: number, y: number): void {
-    this.hp = Math.max(0, this.hp - TUNE.hitDamage);
+    if (!this.noDamage) this.hp = Math.max(0, this.hp - TUNE.hitDamage);
     this.inv = TUNE.invulnS;
     this.emit('playerHit', x, y, 0);
     if (this.hp <= 0) {
@@ -612,7 +654,7 @@ export class Game {
           this.enemyAttack(e);
           e.winding = false;
           e.attack = undefined;
-          e.cd = this.rnd(baseCd, baseCd + 1.5);
+          e.cd = e.pace ?? this.rnd(baseCd, baseCd + 1.5);
           e.side = e.side === 1 ? -1 : 1;
         }
       }
@@ -620,6 +662,7 @@ export class Game {
   }
 
   private pickAttack(e: Enemy): AttackKind {
+    if (e.only) return e.only;
     if (e.earth) return 'pillar';
     return this.rand() < TUNE.slabShare ? 'slab' : 'orb';
   }

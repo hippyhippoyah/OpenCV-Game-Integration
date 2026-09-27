@@ -26,6 +26,14 @@
       <div class="pipinfo"><span>HEAD <em id="headTag">—</em></span><span>HANDS <em id="handsN">0</em></span><span id="fps"></span></div>
       <pre id="debugText" class="hidden"></pre>
     </div>
+    <div id="lesson" class="lesson hidden">
+      <div class="label" id="lessonStep"></div>
+      <h2 id="lessonTitle"></h2>
+      <p id="lessonHow"></p>
+      <div class="goal"><span id="lessonGoal"></span><b id="lessonCount"></b></div>
+      <div class="bar wide"><i id="lessonFill"></i></div>
+      <div class="muted keys"><kbd>N</kbd> skip · <kbd>B</kbd> back · <kbd>Esc</kbd> menu</div>
+    </div>
     <div id="toasts"></div>
     <div id="dodge" class="dodge hidden"><b id="dodgeText"></b><i id="dodgeBar"></i></div>
     <div id="banner"></div>
@@ -35,8 +43,9 @@
 
   <div class="card" id="start">
     <h1>Firebending</h1>
-    <p>Bend fire with your hands in front of your webcam. You look through your own eyes. Keep your fists up in guard and punch to shoot fire where your fist goes (works best about 1.5 m from the camera). Cross your forearms for an X block. Hold both hands open and still for a flame shield; sweep open hands up for a fire wall; spread open hands apart fast to unleash your ultimate. Lean and duck to dodge.</p>
-    <p class="muted">Stand about 1.5–2 m back so your head, shoulders and hands are all in view. Press <kbd>T</kbd> in game to switch to practice dummies that don't fight back, <kbd>[</kbd> / <kbd>]</kbd> to make fist punches stricter / easier to trigger, and <kbd>P</kbd> to switch to open-hand punches (open your hand at the end of the punch). <kbd>K</kbd> records 10 s of tracking data for debugging.</p>
+    <p>Bend fire with your hands in front of your webcam, seen through your own eyes. Punch, push and sweep fire at water spirits and earthbenders; lean and duck to dodge.</p>
+    <p>New here? Pick the <b>Tutorial</b> after calibrating: it teaches every move, one lesson at a time. Or go straight to endless <b>Waves</b>, or <b>Training</b> on dummies.</p>
+    <p class="muted">Stand about 1.5 m back so your head, shoulders and hands are all in view. In game: <kbd>Esc</kbd> menu, <kbd>[</kbd> / <kbd>]</kbd> punch sensitivity, <kbd>K</kbd> record tracking for debugging.</p>
     <div class="actions">
       <button id="camBtn">Play with camera</button>
       <button id="mockBtn" class="secondary">Mouse &amp; keys</button>
@@ -52,6 +61,19 @@
     <h1>Calibrating</h1>
     <p>Stand where you'll play, face the screen with your arms relaxed, and hold still.</p>
     <div class="bar wide"><i id="calibFill"></i></div>
+  </div>
+
+  <div class="card hidden" id="modes">
+    <h1>Choose your path</h1>
+    <p id="modesNote" class="hidden"></p>
+    <div class="modes">
+      <button class="mode" data-mode="tutorial"><b>Tutorial</b><span>Learn each move, one lesson at a time. Nothing can hurt you here.</span></button>
+      <button class="mode" data-mode="waves"><b>Waves</b><span>Endless water spirits and earthbenders. How long can you last?</span></button>
+      <button class="mode" data-mode="training"><b>Training</b><span>Practice dummies that never fight back. Try anything.</span></button>
+    </div>
+    <div class="label" style="margin-top:18px">Or jump to a lesson</div>
+    <div class="chips" id="lessonChips"></div>
+    <p class="muted" style="margin:14px 0 0"><kbd>Esc</kbd> in game brings you back here.</p>
   </div>
 
   <div class="card hidden" id="mockHelp">
@@ -79,7 +101,7 @@
   <div class="card hidden" id="over">
     <h1>Extinguished</h1>
     <p>The spirits got through. Final score: <b id="overScore">0</b></p>
-    <div class="actions"><button id="againBtn">Rekindle</button><span class="muted"><kbd>R</kbd> restart · <kbd>C</kbd> recalibrate</span></div>
+    <div class="actions"><button id="againBtn">Rekindle</button><button id="menuBtn" class="secondary">Menu</button><span class="muted"><kbd>R</kbd> restart · <kbd>C</kbd> recalibrate</span></div>
   </div>
 </body>
 </html>

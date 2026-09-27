@@ -1,6 +1,7 @@
 import './style.css';
 import { downloadRecording, Recorder } from './debug/recorder';
 import { Game } from './game/game';
+import { LESSONS, Tutorial } from './game/tutorial';
 import { CameraError, CameraTracker } from './input/camera';
 import { bindMockControls, MOCK_CALIBRATION, MockTracker } from './input/mock';
 import type { Tracker, TrackingFrame } from './input/types';
@@ -18,7 +19,12 @@ const renderer = new Renderer($('game') as HTMLCanvasElement);
 const hud = new Hud();
 const debug = new DebugView($('pip') as HTMLCanvasElement, $('debugText'));
 
-let phase: 'menu' | 'loading' | 'calibrating' | 'play' = 'menu';
+type Mode = 'tutorial' | 'waves' | 'training';
+let phase: 'menu' | 'loading' | 'calibrating' | 'modes' | 'play' = 'menu';
+let mode: Mode = 'waves';
+let tutorial: Tutorial | null = null;
+/** The mouse & keys help is shown once, the first time you play with them. */
+let mockHelpShown = false;
 let tracker: Tracker | null = null;
 let camera: CameraTracker | null = null;
 let calibrator = new Calibrator();
@@ -32,8 +38,9 @@ let pendingPalms: Palm[] = [];
 let lastFrame: TrackingFrame | null = null;
 let game: Game | null = null;
 const params = new URLSearchParams(location.search);
-/** Dummies instead of spirits; toggled with T, or start with ?dummies. */
-let practice = params.has('dummies');
+/** Skip the mode menu with ?mode=tutorial|waves|training (?dummies = training). */
+const startMode: Mode | null = params.has('dummies') ? 'training'
+  : (['tutorial', 'waves', 'training'] as const).find(m => m === params.get('mode')) ?? null;
 /** Fist punches by arm extension (default) or open-hand punches; toggled with P, or start with ?punch=open. */
 if (params.get('punch') === 'open') TUNING.punchTrigger = 'open';
 let acc = 0, last = performance.now(), fpsTime = 0, fpsFrames = 0;
@@ -53,8 +60,8 @@ function startMock(): void {
   calibration = MOCK_CALIBRATION;
   show('start', false);
   show('status', false);
-  show('mockHelp');
-  beginPlay();
+  if (startMode) beginPlay(startMode);
+  else showModes();
 }
 
 async function startCamera(): Promise<void> {
@@ -85,17 +92,50 @@ function beginCalibration(): void {
   $('calibFill').style.width = '0%';
 }
 
-function beginPlay(): void {
+/** The mode menu (after calibrating, or Esc in game). `note` is shown above the choices. */
+function showModes(note = ''): void {
+  phase = 'modes';
+  game = null;
+  tutorial = null;
+  for (const id of ['calib', 'over', 'away', 'lesson', 'dodge', 'mockHelp']) show(id, false);
+  $('modesNote').textContent = note;
+  show('modesNote', !!note);
+  show('modes');
+}
+
+function beginPlay(m: Mode = mode, lesson = 0): void {
+  mode = m;
   istate = initialState();
   intent = null;
   pendingPunches = [];
   pendingCasts = [];
   pendingPalms = [];
   acc = 0;
-  game = new Game(Math.random, renderer.viewHalfW, practice);
+  // training (and the tutorial, which then takes the field over) start with dummies, not a wave
+  game = new Game(Math.random, renderer.viewHalfW, m !== 'waves');
+  tutorial = m === 'tutorial' ? new Tutorial(game, lesson) : null;
+  if (tutorial) game.label = 'Tutorial';
   phase = 'play';
-  show('calib', false);
-  show('over', false);
+  for (const id of ['calib', 'over', 'modes']) show(id, false);
+  show('lesson', !!tutorial);
+  drawLesson();
+  if (tracker instanceof MockTracker && !mockHelpShown) {
+    mockHelpShown = true;
+    show('mockHelp');
+  }
+}
+
+/** The lesson panel: which lesson, how to do it, and how far along the goal you are. */
+function drawLesson(): void {
+  if (!tutorial) return;
+  const l = tutorial.lesson, done = tutorial.completedFor !== null;
+  $('lessonStep').textContent = `Lesson ${tutorial.index + 1} of ${LESSONS.length}`;
+  $('lessonTitle').textContent = l.title;
+  $('lessonHow').textContent = l.how;
+  $('lessonGoal').textContent = done ? '✓ Done — next lesson…' : l.goal;
+  $('lessonCount').textContent = `${tutorial.done} / ${l.need}`;
+  $('lessonFill').style.width = `${Math.round((tutorial.done / l.need) * 100)}%`;
+  $('lesson').classList.toggle('done', done);
 }
 
 function onFrame(f: TrackingFrame): void {
@@ -105,7 +145,8 @@ function onFrame(f: TrackingFrame): void {
     const result = calibrator.result();
     if (result) {
       calibration = result;
-      beginPlay();
+      if (startMode) beginPlay(startMode);
+      else showModes();
     }
   } else if (phase === 'play' && calibration) {
     intent = interpret(f, calibration, istate);
@@ -130,13 +171,19 @@ function stepGame(dt: number): void {
     pendingPalms = [];
     acc -= STEP;
   }
-  for (const e of game.drainEvents()) {
+  const events = game.drainEvents();
+  for (const e of events) {
     renderer.onEvent(e);
     hud.onEvent(e);
     if (e.type === 'gameOver') {
       $('overScore').textContent = String(game.score);
       show('over');
     }
+  }
+  if (tutorial) {
+    if (tutorial.update(dt, events)) hud.toast('✓ LESSON COMPLETE', 'good');
+    if (tutorial.finished) { showModes('Tutorial complete — you know every move. Try the waves!'); return; }
+    drawLesson();
   }
   hud.update(game, intent.hands);
 }
@@ -172,7 +219,17 @@ function loop(now: number): void {
 $('camBtn').addEventListener('click', () => void startCamera());
 $('mockBtn').addEventListener('click', startMock);
 $('statusFallback').addEventListener('click', startMock);
-$('againBtn').addEventListener('click', beginPlay);
+$('againBtn').addEventListener('click', () => beginPlay());
+$('menuBtn').addEventListener('click', () => showModes());
+for (const b of document.querySelectorAll<HTMLButtonElement>('button.mode')) {
+  b.addEventListener('click', () => beginPlay(b.dataset.mode as Mode));
+}
+LESSONS.forEach((l, i) => {
+  const b = document.createElement('button');
+  b.textContent = `${i + 1}. ${l.title}`;
+  b.addEventListener('click', () => beginPlay('tutorial', i));
+  $('lessonChips').appendChild(b);
+});
 $('mockHelpClose').addEventListener('click', () => show('mockHelp', false));
 addEventListener('resize', () => {
   renderer.resize();
@@ -197,9 +254,15 @@ addEventListener('keydown', e => {
     TUNING.punchSensitivity = Math.round(Math.min(2.5, Math.max(0.5, TUNING.punchSensitivity + (k === ']' ? 0.1 : -0.1))) * 10) / 10;
     hud.toast(`PUNCH SENSITIVITY ×${TUNING.punchSensitivity.toFixed(1)}`, 'cool');
   }
-  if (k === 't' && game?.state === 'play') {
-    practice = !game.practice;
-    game.setPractice(practice);
+  if (k === 't' && game?.state === 'play' && mode !== 'tutorial') {
+    game.setPractice(!game.practice);
+    mode = game.practice ? 'training' : 'waves';
+  }
+  if (k === 'escape' && phase === 'play') showModes();
+  if (tutorial && phase === 'play' && (k === 'n' || k === 'b')) {
+    if (k === 'n') tutorial.next(); else tutorial.back();
+    if (tutorial.finished) showModes('Tutorial complete — you know every move. Try the waves!');
+    else drawLesson();
   }
   if (k === 'r' && game?.state === 'over') beginPlay();
   if (k === 'c' && camera && phase === 'play') beginCalibration();

@@ -95,7 +95,32 @@ button { font: 600 14px Inter, sans-serif; color: #1a0c05; cursor: pointer; bord
 button.secondary { background: rgba(255,255,255,.08); color: var(--ui); box-shadow: none; border: 1px solid var(--line); }
 .muted { color: var(--muted); font-size: 12px; }
 
+.modes { display: grid; gap: 10px; }
+button.mode { text-align: left; display: block; width: 100%; padding: 14px 16px; background: rgba(255,255,255,.05);
+  color: var(--ui); border: 1px solid var(--line); box-shadow: none; transition: background .12s, border-color .12s; }
+button.mode:hover, button.mode:focus-visible { background: rgba(255,160,90,.14); border-color: rgba(255,170,110,.5); outline: none; }
+button.mode b { display: block; font-family: Cinzel, serif; font-size: 18px; color: var(--accent-2); }
+button.mode span { display: block; margin-top: 3px; font-weight: 400; font-size: 13px; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chips button { padding: 5px 10px; font-size: 12px; font-weight: 500; background: rgba(255,255,255,.06); color: var(--ui);
+  border: 1px solid var(--line); box-shadow: none; }
+.chips button:hover { background: rgba(255,160,90,.14); }
+
+.lesson { position: absolute; left: 16px; top: 64px; width: min(300px, calc(100vw - 32px)); box-sizing: border-box; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(6px);
+  transition: border-color .2s, box-shadow .2s; }
+.lesson h2 { margin: 4px 0 6px; font-family: Cinzel, serif; font-size: 20px; color: #ffe2b8; }
+.lesson p { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--ui); }
+.lesson .goal { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--accent-2); }
+.lesson .goal b { font-variant-numeric: tabular-nums; }
+.lesson .bar > i { background: linear-gradient(90deg, #ff8a3d, #ffc36b); }
+.lesson .keys { margin-top: 10px; }
+.lesson.done { border-color: rgba(120,230,150,.6); box-shadow: 0 0 24px rgba(80,230,130,.25); }
+.lesson.done .goal { color: #9ef0b4; }
+.lesson.done .bar > i { background: #9ef0b4; }
+
 @media (max-width: 760px) {
   .pill { top: 92px; }
+  .lesson { top: auto; bottom: 150px; }
   .score { font-size: 26px; }
 }

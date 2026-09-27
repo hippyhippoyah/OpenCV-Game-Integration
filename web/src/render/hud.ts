@@ -12,7 +12,7 @@ export class Hud {
       && (['l', 'r'] as const).some(side => (hands[side]?.reachNoise ?? 0) > TUNING.reachNoiseMax);
     $('hpFill').style.width = `${g.hp}%`;
     $('score').textContent = String(g.score);
-    $('wave').textContent = g.practice ? 'Practice dummies' : `Wave ${g.wave}`;
+    $('wave').textContent = g.label ?? (g.practice ? 'Practice dummies' : `Wave ${g.wave}`);
     const pill = $('pill');
     const noHands = !hands.l && !hands.r;
     pill.classList.toggle('off', noHands);
