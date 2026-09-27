@@ -18,13 +18,16 @@ Chapter 1 stands on its own: playable start to finish in 15–20 minutes, in sho
 
 The game alternates between two ways of playing, and the switch between them is a designed moment:
 
-- **Explore — keyboard and mouse, first person.** WASD to walk, mouse to look (pointer lock), E to
-  interact, M for the map, Tab for scrolls. You sit at the computer. This is the rest between
-  fights: walking the path, reading Ren's lines, picking up scrolls, choosing when to fight.
+- **Explore — keyboard and mouse, first person, in a 3D world.** In the campaign there's one way
+  to go, so you **auto-walk** the path: the view glides along it on its own while you look around
+  with the mouse. It stops where there's something to do — a scroll (E or click to pick it up), an
+  arena (E or click to step in) — and walks on after. M for the map, Tab for scrolls, Space to skip
+  ahead to the next stop. You sit at the computer; this is the rest between fights. (Free WASD
+  walking comes with the temple, on the same 3D world code.)
 - **Fight — webcam.** You stand back from the screen and bend. The view is the existing
   first-person fight (lean and duck to move; no WASD).
 
-**Explore → fight.** Walking into an arena's glowing circle shows a card: *"Step back and raise
+**Explore → fight.** Stepping into an arena's glowing circle shows a card: *"Step back and raise
 your fists"*, with a live check — head and shoulders seen, hands up, at a good distance (too close
 / too far said plainly). Once the camera has you for about a second, a short countdown ("3, 2, 1")
 starts the fight. Esc backs out to explore. If the camera loses you mid-fight, the fight pauses
@@ -34,7 +37,8 @@ starts the fight. Esc backs out to explore. If the camera loses you mid-fight, t
 and hands control back to keyboard and mouse. Losing offers "Try again" (the fight only).
 
 A small **controls strip** in a corner always shows the keys for the current half (explore:
-`WASD` move · `E` interact · `M` map · `Tab` scrolls · `Esc` menu; fight: `Esc` pause).
+`Mouse` look · `E` interact · `Space` skip ahead · `M` map · `Tab` scrolls · `Esc` menu; fight:
+`Esc` pause).
 
 ## Story
 
@@ -91,7 +95,15 @@ animation in the card and in the Scrolls inventory).
 
 ## The stops
 
-The path is one continuous place you walk down; each stop is an area with an arena circle.
+The path is one continuous 3D place you walk down; each stop is an area with an arena circle.
+
+**The world** (three.js, stylised and moody rather than realistic): a mountain at night under the
+rising Spirit Moon, the path lit by lanterns (warm point lights) with fog in the valleys, drifting
+embers and fireflies. The temple courtyard (red pillars, a brazier, training dummies), the long
+stone stairs down the cliff, a bamboo bridge over mist, a stone garden (raked sand, boulders), and
+the village gate (wooden palisade, torches, Daro's banners). Scrolls glow gold on stands, visible
+from a distance; arena circles are rings of flame on the ground. Fights keep the existing fight
+view, tinted to the place (its sky and light colours).
 
 | # | Place | Scroll | Fight |
 |---|---|---|---|
@@ -143,10 +155,11 @@ blocked with the moves you have by then.
 
 ## How it works (code)
 
-- `src/explore/` — the keyboard-and-mouse half: a first-person walker (WASD, pointer-lock mouse
-  look, collision with simple shapes) through a path built from simple lit geometry (the same
-  canvas renderer style as the fights: floor, steps, bamboo, walls, lanterns, scroll stands,
-  arena circles). Interactables: scroll, arena, sign. This is the same walker the temple will use.
+- `src/explore/` — the keyboard-and-mouse half: the path as a curve through the world with its
+  stops (`path.ts`: position and heading at a distance along it, where it pauses), mouse look
+  (pointer lock, yaw/pitch limits), and the three.js scene (`world3d.ts`: terrain, the places,
+  lights, fog, sky, particles, scroll stands, arena rings; the camera rides the path).
+  `three` is added as a dependency.
 - `src/campaign/chapter1.ts` — data: the path's areas, Ren's lines, scroll positions, each stop's
   practice and fight scripts, flame rules.
 - `src/campaign/runner.ts` — the campaign as a state machine: explore ⇄ (arena → camera check →
@@ -173,7 +186,8 @@ blocked with the moves you have by then.
   in tests), and is lost by standing still where it's meant to make you move.
 - Boss: phase changes at 60% / 25%; the stone wall blocks fireballs but not palm pushes or charged
   punches; twin pillars leave the middle safe; winded doubles damage.
-- Explore: walking, collision, interaction range, map and scrolls keys (logic only, no DOM).
+- Explore: position along the path, pausing at scrolls and arenas, skipping ahead, look limits
+  (logic only, no WebGL).
 
 ## Not in Chapter 1
 
