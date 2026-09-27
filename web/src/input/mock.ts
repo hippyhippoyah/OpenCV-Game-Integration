@@ -26,7 +26,8 @@ export interface ViewMapper { screenToView(x: number, y: number): Vec2 }
 /**
  * Pretends to be the camera. The mouse is where you aim; a punch drives that fist to the mouse
  * (opening it at the end in the open-hand punch style); holding Space opens both hands around the mouse (shield); A/D/S lean and duck;
- * W sweeps open hands up (fire wall); U spreads open hands apart (ultimate); X crosses the arms;
+ * W sweeps open hands up (fire wall); U spreads open hands apart (ultimate); F pushes both open
+ * palms forward (wall push); X crosses the arms;
  * E pushes an open right palm toward the mouse (pillar);
  * holding O swings the right hand out of the picture (only its arm is still tracked).
  */
@@ -86,11 +87,13 @@ export class MockTracker implements Tracker {
       if (since !== null && since > EXTEND_S + OPEN_HOLD_S) this.punchStart[side] = null;
       if (this.casting) {
         const e = clamp((t - this.casting.t) / CAST_MOVE_S, 0, 1);
-        pos = this.casting.kind === 'wall'
-          ? { x: aim.x + sign * 14, y: lerp(40, aim.y - 10, e) } // from low, sweeping up
-          : { x: aim.x + sign * lerp(4, 34, e), y: aim.y };      // from together, spreading apart
+        const kind = this.casting.kind;
+        pos = kind === 'wall' ? { x: aim.x + sign * 14, y: lerp(40, aim.y - 10, e) } // from low, sweeping up
+          : kind === 'push' ? { x: aim.x + sign * SHIELD_HALF_WIDTH, y: aim.y }       // shoved toward the camera
+          : { x: aim.x + sign * lerp(4, 34, e), y: aim.y };                          // from together, flung apart
         open = 1;
         ext = 0.6;
+        if (kind === 'push') reachM = 0.3 + (PUNCH_REACH_M - 0.3) * e;
       } else if (this.palming && side === 'r') {
         const e = clamp((t - this.palming.t - PALM_OPEN_S) / PALM_MOVE_S, 0, 1);
         open = 1;
@@ -160,6 +163,7 @@ export function bindMockControls(m: MockTracker, canvas: HTMLElement): () => voi
     if (!e.repeat && k === 'w') m.cast('wall');
     if (!e.repeat && k === 'u') m.cast('ultimate');
     if (!e.repeat && k === 'e') m.palm('push');
+    if (!e.repeat && k === 'f') m.cast('push');
     m.setKey(k, true);
   };
   const onKeyUp = (e: KeyboardEvent) => m.setKey(e.key.toLowerCase(), false);

@@ -241,3 +241,29 @@ By preference, punches and pushes default to sensitivity ×1.4 (all thresholds �
 more real attempts. The simulated suites still test detection at ×1.0; at ×1.4 the simulator shows
 occasional misfires (weaving or leaning in guard, a still open palm), most at 1.5 m and beyond.
 `[` / `]` still adjust it live.
+
+## Revision 2026-09-27: movement you can see; wall push; stricter ultimate
+
+**Movement.** Leaning, stepping and ducking are the only movement, so they are exaggerated: 70
+view units per shoulder width of head movement sideways (was 40, max ±60) and 55 down (was 40, max
+35); the view also tilts against the lean (0.0014 rad per unit).
+
+**Attacks you have to move out of.** Spirits now wind up one of three attacks (orb 50%, quake 30%,
+high sweep 20%), each with its own tell:
+- *Quake* (earth; the ground cracks at the spirit's feet): rock spikes rip toward you along the
+  ground on the side the spirit stands on, covering from 10 units past where you stood outward; the
+  danger side of the floor glows red. Lean or step ≥ ~22 units the other way. Toast names the side.
+- *High sweep* (a disc spins up above the spirit): a sheet of water crosses the whole field at the
+  height your eyes were; a dashed red line marks it. Duck ≥ 14 units.
+Shield and X block don't stop either; a fire wall (standing or rolling) does.
+
+**Wall push.** Both open palms shoved toward the camera (each ≥ 0.8 × a single push's threshold, not
+scaled by punch sensitivity) roll a fire wall (80 wide) forward at 7 depth/s, burning each enemy it
+passes (2 damage) and blocking attacks; 2.5 s cooldown. Pushing out of a held shield works.
+
+**Ultimate vs wall push.** Pushing both palms at the camera makes them look further apart, which
+read as the ultimate's spread. The ultimate is now "gather and fling": hands start together (≤ 0.4 m
+apart in 3D, or ≤ 0.9 shoulder widths on screen without 3D data) and spread ≥ 0.3 m in 3D (which a
+push doesn't change); the push is checked first. Simulated at 1.2–1.8 m (sensitivity ×1 and ×1.4):
+pushes, pushes out of the shield, gather-and-fling and sweeps each fire only their own cast; a held
+shield casts nothing. Mock: F = wall push.

@@ -41,8 +41,8 @@ describe('MockTracker', () => {
     });
   }
 
-  it('W sweeps open hands up into a fire wall, U spreads them into the ultimate', () => {
-    for (const [key, kind] of [['w', 'wall'], ['u', 'ultimate']] as const) {
+  it('W sweeps open hands up into a fire wall, U spreads them into the ultimate, F pushes a wall', () => {
+    for (const [key, kind] of [['w', 'wall'], ['u', 'ultimate'], ['f', 'push']] as const) {
       const m = new MockTracker(identity);
       m.setMouse(0, 5);
       const out = run(m, 60, i => { if (i === 5) m.cast(kind); });

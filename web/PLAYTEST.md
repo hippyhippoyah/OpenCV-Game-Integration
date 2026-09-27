@@ -16,7 +16,11 @@ Run `npm run dev`, play with the camera in Chrome. Note the result of each item.
 - [ ] Opening a still fist does not fire; the shot goes roughly where your hand was when it opened.
 - [ ] Opening both hands raises the shield without also firing a punch; it blocks an attack you cover.
 - [ ] Sweeping both open hands up quickly raises a fire wall where they are; slow raises don't.
-- [ ] Spreading both open hands apart quickly fires the ultimate; opening while already apart doesn't.
+- [ ] Gathering both open hands together and flinging them apart fires the ultimate; opening while already apart doesn't.
+- [ ] Pushing both open palms at the camera (or pushing out of the shield) rolls a fire wall — never the ultimate.
+- [ ] A quake on one side: leaning or stepping to the other side dodges it, comfortably. Its red floor band is easy to read.
+- [ ] A high sweep: a small duck gets under it.
+- [ ] The view's lean and tilt feel big enough to play with, but not nauseating.
 - [ ] Pushing one open palm at the camera (other hand a fist) rolls a pillar of fire forward — every time,
       including short pushes and pushes where the hand opens on the way. Holding a palm open fires nothing.
 - [ ] Open hands at rest show no fire; fire appears only on punches, shield and casts.

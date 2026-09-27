@@ -137,6 +137,100 @@ describe('Game', () => {
     });
   });
 
+  describe('wall push (both palms)', () => {
+    const push = (x = 0) => intent({ casts: [{ kind: 'push', at: { x, y: 10 } }] });
+    const foe = (id: number, x: number, z: number) =>
+      ({ id, x, y: FLOOR_Y - 30, z, hp: 3, t: 0, appear: 1, dying: 0, flash: 0, cd: 99, winding: false, wind: 0, side: 1 as const, phase: 0 });
+
+    it('rolls a fire wall forward that burns enemies across its width and blocks attacks', () => {
+      const g = quietGame();
+      g.enemies.push(foe(1, -20, 6), foe(2, 20, 9), foe(3, 120, 6));
+      g.projs.push({ ...incoming(0, 10), z: 5, vz: -3 });
+      g.step(1 / 60, push());
+      expect(g.walls).toHaveLength(1);
+      expect(g.walls[0].vz).toBeGreaterThan(0);
+      expect(g.drainEvents().some(e => e.type === 'wallPush')).toBe(true);
+      run(g, 3, intent());
+      const hp = (id: number) => g.enemies.find(e => e.id === id)?.hp ?? 0;
+      expect(hp(1)).toBe(3 - TUNE.palmDamage);
+      expect(hp(2)).toBe(3 - TUNE.palmDamage);
+      expect(hp(3)).toBe(3);
+      expect(g.projs.filter(p => p.kind === 'enemy')).toHaveLength(0);
+      expect(g.hp).toBe(TUNE.maxHp);
+      expect(g.walls).toHaveLength(0); // rolled off the end of the field
+    });
+
+    it('has its own cooldown', () => {
+      const g = quietGame();
+      g.step(1 / 60, push());
+      g.step(1 / 60, push());
+      expect(g.walls).toHaveLength(1);
+      g.step(1 / 60, intent({ casts: [{ kind: 'wall', at: { x: 0, y: 10 } }] }));
+      expect(g.walls).toHaveLength(2); // a standing wall is separate
+    });
+  });
+
+  describe('attacks you have to move out of', () => {
+    const at = (x: number, y = 0) => intent({ head: { x, y } });
+    function withHazard(kind: 'quake' | 'slab', fromX = 60) {
+      const g = quietGame();
+      g.enemies.push({ id: 7, x: fromX, y: FLOOR_Y - 30, z: 8, hp: 2, t: 0, appear: 1, dying: 0, flash: 0, cd: 0, winding: false, wind: 0, side: 1, phase: 0, attack: kind });
+      g.step(1 / 60, at(0));
+      run(g, TUNE.windupS + 0.05, at(0)); // the enemy winds up and lets go
+      expect(g.hazards.map(h => h.kind)).toEqual([kind]);
+      return g;
+    }
+
+    it('a quake from your right rips up the ground on your right: stay and it hits', () => {
+      const g = withHazard('quake');
+      expect(g.hazards[0].side).toBe(1);
+      run(g, 3, at(0));
+      expect(g.hp).toBe(TUNE.maxHp - TUNE.hitDamage);
+    });
+
+    it('lean or step left and it misses you', () => {
+      const g = withHazard('quake');
+      run(g, 3, at(-TUNE.quakeMargin - 14));
+      expect(g.hp).toBe(TUNE.maxHp);
+      expect(g.drainEvents().some(e => e.type === 'dodged')).toBe(true);
+    });
+
+    it('a quake from your left comes up on your left', () => {
+      expect(withHazard('quake', -60).hazards[0].side).toBe(-1);
+    });
+
+    it('the shield and X block do not stop a quake, a fire wall does', () => {
+      const shielded = withHazard('quake');
+      run(shielded, 3, { ...shieldUp(10), xBlock: true });
+      expect(shielded.hp).toBe(TUNE.maxHp - TUNE.hitDamage);
+      const walled = withHazard('quake');
+      walled.step(1 / 60, intent({ casts: [{ kind: 'wall', at: { x: 0, y: 10 } }] }));
+      run(walled, 3, at(0));
+      expect(walled.hp).toBe(TUNE.maxHp);
+    });
+
+    it('a high sweep comes at head height: stand and it hits, duck and it passes over', () => {
+      const standing = withHazard('slab');
+      run(standing, 3, at(0));
+      expect(standing.hp).toBe(TUNE.maxHp - TUNE.hitDamage);
+      const ducking = withHazard('slab');
+      run(ducking, 3, at(0, TUNE.slabDuck + 2));
+      expect(ducking.hp).toBe(TUNE.maxHp);
+    });
+
+    it('spirits mix all three kinds of attack', () => {
+      const g = new Game(mulberry32(3));
+      const kinds = new Set<string>();
+      for (let t = 0; t < 90; t += 1 / 60) {
+        g.step(1 / 60, intent());
+        g.hp = TUNE.maxHp;
+        for (const h of g.hazards) kinds.add(h.kind);
+        if (g.projs.some(p => p.kind === 'enemy')) kinds.add('orb');
+      }
+      expect([...kinds].sort()).toEqual(['orb', 'quake', 'slab']);
+    });
+  });
+
   describe('fire wall', () => {
     const wall = (x = 0) => intent({ casts: [{ kind: 'wall', at: { x, y: 10 } }] });
 

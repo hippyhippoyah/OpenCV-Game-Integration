@@ -1,9 +1,9 @@
-import { arrival, FLOOR_Y, FOCAL, TUNE, type Blade, type Enemy, type Game, type GameEvent, type Wall } from '../game/game';
+import { arrival, FLOOR_Y, FOCAL, TUNE, type Blade, type Enemy, type Game, type GameEvent, type Hazard, type Wall } from '../game/game';
 import type { Side } from '../input/types';
 import { TUNING } from '../intent/interpret';
 import { clamp, lerp, mulberry32, type Vec2 } from '../math';
 
-type Pal = 'fire' | 'spirit';
+type Pal = 'fire' | 'spirit' | 'earth';
 interface Particle {
   x: number; y: number; z: number; vx: number; vy: number; vz: number;
   life: number; max: number; size: number; pal: Pal; rise: number;
@@ -11,6 +11,8 @@ interface Particle {
 
 /** How far each background layer shifts when your head moves (1 = as much as the floor at your feet). */
 const PAR_SKY = 0.03, PAR_MID = 0.16;
+/** Leaning tilts the view this much (radians per world unit of lean), so leaning feels big. */
+const LEAN_TILT = 0.0014;
 const MAX_PARTICLES = 3200;
 /** How long a hand keeps burning after it attacks. */
 const FLARE_S = 0.35;
@@ -37,6 +39,11 @@ const SPR: Record<Pal, HTMLCanvasElement[]> = {
     sprite([[0, 'rgba(240,255,255,1)'], [0.3, 'rgba(150,235,255,.8)'], [1, 'rgba(60,160,255,0)']]),
     sprite([[0, 'rgba(120,220,255,.9)'], [0.4, 'rgba(60,140,255,.5)'], [1, 'rgba(40,40,200,0)']]),
     sprite([[0, 'rgba(120,80,255,.5)'], [0.5, 'rgba(70,40,180,.2)'], [1, 'rgba(30,0,80,0)']]),
+  ],
+  earth: [
+    sprite([[0, 'rgba(230,200,150,1)'], [0.35, 'rgba(170,120,70,.8)'], [1, 'rgba(90,60,30,0)']]),
+    sprite([[0, 'rgba(160,110,60,.9)'], [0.45, 'rgba(110,75,40,.5)'], [1, 'rgba(60,40,20,0)']]),
+    sprite([[0, 'rgba(90,70,50,.6)'], [0.5, 'rgba(60,45,30,.25)'], [1, 'rgba(30,20,10,0)']]),
   ],
 };
 
@@ -123,6 +130,16 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.35);
         this.flare[e.side] = FLARE_S * 2;
         break;
+      case 'wallPush':
+        for (let i = 0; i < 60; i++) this.emit(e.x + rnd(-30, 30), e.y - rnd(0, 4), e.z, rnd(-8, 8), rnd(-70, -30), rnd(2, 6), rnd(0.4, 0.8), rnd(4, 8));
+        this.shake = Math.max(this.shake, 0.4);
+        this.flare = { l: FLARE_S * 2, r: FLARE_S * 2 };
+        break;
+      case 'quake':
+        this.burst(e.x, e.y - 4, e.z, 'earth', 30, 30);
+        this.shake = Math.max(this.shake, 0.3);
+        break;
+      case 'slab': this.burst(e.x, e.y, e.z, 'spirit', 20, 30); break;
       case 'cut': this.burst(e.x, e.y, e.z, 'fire', 16, 30); break;
       case 'hitEnemy':
       case 'killEnemy': this.burst(e.x, e.y, e.z, 'fire', 30, 40); break;
@@ -150,6 +167,14 @@ export class Renderer {
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.clearRect(0, 0, W, H);
     if (this.shake > 0) c.translate(rnd(-1, 1) * this.shake * 1.2 * u, rnd(-1, 1) * this.shake * 1.2 * u);
+    // lean → the world tilts the other way (zoomed a touch so no edge shows)
+    const tilt = -this.cam.x * LEAN_TILT;
+    if (tilt) {
+      c.translate(W / 2, H / 2);
+      c.rotate(tilt);
+      c.scale(1 + Math.abs(tilt) * 0.9, 1 + Math.abs(tilt) * 0.9);
+      c.translate(-W / 2, -H / 2);
+    }
 
     c.drawImage(this.sky, -M - this.cam.x * u * PAR_SKY, -M - this.cam.y * u * PAR_SKY, W + 2 * M, H + 2 * M);
     this.drawFloor();
@@ -162,6 +187,7 @@ export class Renderer {
       g.walls.forEach(w => this.drawWall(w));
       // far pillars first, so nearer ones glow over them
       [...g.pillars].sort((a, b) => b.z - a.z).forEach(p => this.drawColumn(p.x, p.z, TUNE.pillarHalfW, Math.min(1, p.age / 0.1)));
+      [...g.hazards].sort((a, b) => b.z - a.z).forEach(h => this.drawHazard(g, h));
     }
     this.drawParticles(true);
     if (g) {
@@ -378,8 +404,28 @@ export class Renderer {
     c.beginPath(); c.ellipse(sx + hr * 0.35, hy - hr * 0.1, hr * 0.22, hr * 0.1, -0.35, 0, 7); c.fill();
     c.fillStyle = '#c0392b';
     c.fillRect(sx - hr * 0.08, hy + hr * 0.3, hr * 0.16, hr * 0.35);
-    // wind-up telegraph
-    if (e.winding) {
+    // wind-up telegraph: an orb in the hand, the ground cracking (quake) or a disc spinning up (sweep)
+    if (e.winding && e.attack === 'quake') {
+      const f = this.project(e.x, FLOOR_Y, e.z), r = (6 + e.wind * 14) * u * s;
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = alpha * (0.4 + 0.6 * e.wind);
+      c.drawImage(SPR.earth[1], f.x - r, f.y - r * 0.35, r * 2, r * 0.7);
+      c.strokeStyle = `rgba(230,170,100,${0.4 + 0.5 * e.wind})`;
+      c.lineWidth = 2;
+      for (let i = 0; i < 5; i++) {
+        const a = i * 1.26 + e.phase;
+        c.beginPath(); c.moveTo(f.x, f.y); c.lineTo(f.x + Math.cos(a) * r, f.y + Math.sin(a) * r * 0.3); c.stroke();
+      }
+      c.globalCompositeOperation = 'source-over';
+      c.globalAlpha = alpha;
+    } else if (e.winding && e.attack === 'slab') {
+      const o = this.project(e.x, e.y - 30, e.z), rx = (4 + e.wind * 12) * u * s;
+      c.globalCompositeOperation = 'lighter';
+      c.strokeStyle = `rgba(140,230,255,${0.4 + 0.5 * e.wind})`;
+      c.lineWidth = 3;
+      c.beginPath(); c.ellipse(o.x, o.y + bob, rx, rx * 0.22, 0, e.t * 9, e.t * 9 + 5); c.stroke();
+      c.globalCompositeOperation = 'source-over';
+    } else if (e.winding) {
       const o = this.project(e.x + e.side * 11, e.y - 14, e.z), r = (1.2 + e.wind * 3.5) * u * s;
       const ox = o.x, oy = o.y + bob;
       c.globalCompositeOperation = 'lighter';
@@ -651,6 +697,54 @@ export class Renderer {
     c.globalCompositeOperation = 'source-over';
   }
 
+  /**
+   * A quake: a line of rock spikes bursting up across its side of the field, with that side of the
+   * floor in front of you glowing red as it closes in. A high sweep: a spinning sheet of water at
+   * the height your eyes were, with a red line across the view as it comes.
+   */
+  private drawHazard(g: Game, h: Hazard): void {
+    const c = this.ctx, u = this.u, near = clamp(1 - h.z / 6, 0, 1);
+    if (h.kind === 'quake') {
+      const far = h.edge + h.side * 160;
+      // warning: the danger side of the floor, from you out to where the quake is
+      const a = this.project(h.edge, FLOOR_Y, 0.2), b = this.project(far, FLOOR_Y, 0.2);
+      const a2 = this.project(h.edge, FLOOR_Y, Math.max(0.3, h.z)), b2 = this.project(far, FLOOR_Y, Math.max(0.3, h.z));
+      c.fillStyle = `rgba(255,70,50,${0.08 + 0.3 * near})`;
+      c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.lineTo(b2.x, b2.y); c.lineTo(a2.x, a2.y); c.closePath(); c.fill();
+      c.strokeStyle = `rgba(255,120,90,${0.3 + 0.6 * near})`;
+      c.lineWidth = 3;
+      c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(a2.x, a2.y); c.stroke();
+      // the spikes along the front
+      if (h.z < 0) return;
+      c.fillStyle = '#7a5a3a';
+      c.strokeStyle = '#3b2a1a';
+      c.lineWidth = 1;
+      for (let i = 0; i < 14; i++) {
+        const x = h.edge + h.side * (i + 0.5) * 11, jag = 0.7 + 0.3 * Math.sin(i * 2.3 + h.id);
+        const base = this.project(x, FLOOR_Y, h.z), tip = this.project(x, FLOOR_Y - 22 * jag, h.z), w = 5 * base.s * u;
+        c.beginPath(); c.moveTo(base.x - w, base.y); c.lineTo(tip.x, tip.y); c.lineTo(base.x + w, base.y); c.closePath(); c.fill(); c.stroke();
+      }
+      return;
+    }
+    // the sweep: a flat spinning sheet across the field
+    if (h.z > 0) {
+      const l = this.project(g.cam.x - 120, h.y, h.z), r = this.project(g.cam.x + 120, h.y, h.z);
+      c.globalCompositeOperation = 'lighter';
+      const gr = c.createLinearGradient(0, l.y - 6 * u * l.s, 0, l.y + 6 * u * l.s);
+      gr.addColorStop(0, 'rgba(80,190,255,0)'); gr.addColorStop(0.5, `rgba(150,230,255,${0.5 + 0.4 * near})`); gr.addColorStop(1, 'rgba(80,190,255,0)');
+      c.fillStyle = gr;
+      c.fillRect(l.x, l.y - 6 * u * l.s, r.x - l.x, 12 * u * l.s);
+      c.globalCompositeOperation = 'source-over';
+    }
+    // warning: where it will cross your view, and how far you must duck
+    const y = this.project(0, h.y, 0).y;
+    c.strokeStyle = `rgba(255,80,70,${0.15 + 0.6 * near})`;
+    c.lineWidth = 3;
+    c.setLineDash([12, 8]);
+    c.beginPath(); c.moveTo(0, y); c.lineTo(this.W, y); c.stroke();
+    c.setLineDash([]);
+  }
+
   /** A point on a blade's rim: angle 0 = your right, π/2 = straight ahead, π = your left. */
   private bladePoint(b: Blade, angle: number, r = b.r): { x: number; y: number } {
     return this.project(b.x + Math.cos(angle) * r * TUNE.bladeWidthPerDepth, b.y, Math.max(0.05, Math.sin(angle) * r));
@@ -781,11 +875,18 @@ export class Renderer {
           rnd(-6, 6), rnd(-90, -40), rnd(-2, 0), rnd(0.25, 0.55), rnd(5, 9));
       }
     }
-    // standing fire walls
+    // fire walls: standing ones burn in place, rolling ones carry their flames forward
     for (const wall of g.walls) {
       const fade = Math.min(1, wall.life / 0.6);
       for (let i = nOf(520 * fade, dt); i > 0; i--) {
-        this.emit(wall.x + rnd(-wall.halfW, wall.halfW), FLOOR_Y - rnd(0, 6), wall.z, rnd(-4, 4), rnd(-110, -55), 0, rnd(0.55, 1.05), rnd(5, 9));
+        this.emit(wall.x + rnd(-wall.halfW, wall.halfW), FLOOR_Y - rnd(0, 6), wall.z, rnd(-4, 4), rnd(-110, -55), wall.vz, rnd(0.55, 1.05), rnd(5, 9));
+      }
+    }
+    // dust off the quakes
+    for (const h of g.hazards) {
+      if (h.kind !== 'quake' || h.z < 0) continue;
+      for (let i = nOf(160, dt); i > 0; i--) {
+        this.emit(h.edge + h.side * rnd(0, 150), FLOOR_Y - rnd(0, 6), h.z, rnd(-6, 6), rnd(-30, -10), h.vz, rnd(0.3, 0.7), rnd(4, 8), 'earth', 0.3);
       }
     }
     const { l, r } = g.hands;

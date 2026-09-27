@@ -42,6 +42,16 @@ export const TUNE = {
    */
   palmDamage: 2, palmCooldownS: 0.8,
   pillarSpeed: 9, pillarHalfW: 9, pillarHeight: 75, pillarMaxZ: 14,
+  /** Both palms pushed: a fire wall pushWallHalfW wide rolls forward at pushWallSpeed, burning (palmDamage) what it passes. */
+  pushWallHalfW: 40, pushWallSpeed: 7, pushWallStartZ: 1.2, pushWallCooldownS: 2.5,
+  /**
+   * Attacks you can only move out of. Spirits wind up an orb, a quake or a high sweep (attackMix
+   * gives the share of quakes and sweeps). A quake rips along the ground on the side the spirit
+   * stands on, covering from quakeMargin past where you stood outward: lean or step the other way
+   * (your body is bodyHalfW wide). A high sweep crosses the whole field at the height your eyes were:
+   * duck at least slabDuck. Shield and X block don't stop either; a fire wall does.
+   */
+  attackMix: { quake: 0.3, slab: 0.2 }, quakeSpeed: 6, quakeMargin: 10, bodyHalfW: 12, slabSpeed: 6, slabDuck: 14,
   /** Testing: the shield never drains or breaks. */
   shieldInfinite: true,
   shieldDrainPerS: 0.33, shieldRegenPerS: 0.22, shieldBlockCost: 0.18, shieldBrokenS: 1.2, shieldReach: 8,
@@ -52,6 +62,8 @@ export interface Enemy {
   id: number; x: number; y: number; z: number; hp: number;
   t: number; appear: number; dying: number; flash: number;
   cd: number; winding: boolean; wind: number; side: 1 | -1; phase: number;
+  /** The attack it is winding up (picked when the wind-up starts). */
+  attack?: AttackKind;
   /** Practice target: never moves or attacks, respawns in its slot. */
   dummy?: boolean;
   slot?: number;
@@ -63,10 +75,11 @@ export interface Proj {
   resolved: boolean;
 }
 
-type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut';
+type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
   | { type: 'punch' | 'pillar'; x: number; y: number; z: number; side: Side }
+  | { type: 'quake'; x: number; y: number; z: number; side: 1 | -1 }
   | { type: 'shieldBroken' | 'gameOver' }
   | { type: 'wave'; wave: number };
 
@@ -78,8 +91,16 @@ export interface Blade { id: number; x: number; y: number; r: number }
 /** A palm push: a column of fire rolling forward from the floor, `hit` = enemies it already burned. */
 export interface Pillar { id: number; x: number; z: number; vx: number; age: number; hit: number[] }
 
-/** A standing wall of fire across the courtyard. */
-export interface Wall { id: number; x: number; z: number; halfW: number; life: number }
+export type AttackKind = 'orb' | 'quake' | 'slab';
+
+/**
+ * An attack you have to move out of, travelling toward you at depth z. A quake covers the ground
+ * on `side` of `edge` (world x); a slab (high sweep) crosses the whole field at height y.
+ */
+export interface Hazard { id: number; kind: 'quake' | 'slab'; x: number; y: number; z: number; vz: number; side: 1 | -1; edge: number; resolved: boolean }
+
+/** A wall of fire across the courtyard: standing (vz 0), or rolling forward (a wall push) burning what it passes. */
+export interface Wall { id: number; x: number; z: number; halfW: number; life: number; vz: number; hit: number[] }
 
 /** Where practice dummies stand (world x, depth). */
 const DUMMY_SLOTS = [{ x: -45, z: 6 }, { x: 0, z: 9 }, { x: 45, z: 6 }];
@@ -111,6 +132,7 @@ export class Game {
   walls: Wall[] = [];
   blades: Blade[] = [];
   pillars: Pillar[] = [];
+  hazards: Hazard[] = [];
   /** Forearms crossed: everything that reaches you is blocked. */
   xBlock = false;
   /** Last known shoulder positions (view space), for aiming. */
@@ -131,6 +153,7 @@ export class Game {
   private punchCool: Record<Side, number> = { l: 0, r: 0 };
   private wallCool = 0;
   private palmCool: Record<Side, number> = { l: 0, r: 0 };
+  private pushWallCool = 0;
 
   constructor(private rand: Rand = Math.random, public viewHalfW = 70, practice = false) {
     if (practice) this.setPractice(true);
@@ -142,6 +165,7 @@ export class Game {
     this.practice = on;
     this.enemies = [];
     this.projs = this.projs.filter(p => p.kind === 'player');
+    this.hazards = [];
     if (on) {
       this.dummyTimers = DUMMY_SLOTS.map(() => 0);
       this.spawnDummies(0);
@@ -160,6 +184,7 @@ export class Game {
     this.inv = Math.max(0, this.inv - dt);
     this.punchCool = { l: Math.max(0, this.punchCool.l - dt), r: Math.max(0, this.punchCool.r - dt) };
     this.wallCool = Math.max(0, this.wallCool - dt);
+    this.pushWallCool = Math.max(0, this.pushWallCool - dt);
     this.palmCool = { l: Math.max(0, this.palmCool.l - dt), r: Math.max(0, this.palmCool.r - dt) };
     this.ultimateIn = Math.max(0, this.ultimateIn - dt);
     this.updateShield(dt, intent.shield);
@@ -167,13 +192,13 @@ export class Game {
     for (const p of intent.punches) this.punch(p);
     for (const c of intent.casts) this.cast(c);
     for (const p of intent.palms ?? []) this.palm(p);
-    for (const w of this.walls) w.life -= dt;
-    this.walls = this.walls.filter(w => w.life > 0);
+    this.updateWalls(dt);
     this.updateBlades(dt);
     this.updatePillars(dt);
     this.updateWaves(dt);
     this.updateEnemies(dt);
     this.updateProjs(dt);
+    this.updateHazards(dt);
   }
 
   drainEvents(): GameEvent[] {
@@ -276,6 +301,71 @@ export class Game {
     this.events.push({ type: 'pillar', x: start, y: FLOOR_Y, z, side: p.hand });
   }
 
+  /** Standing walls burn down; rolling ones move forward, burning each enemy they pass once. */
+  private updateWalls(dt: number): void {
+    for (const w of this.walls) {
+      w.life -= dt;
+      if (!w.vz) continue;
+      const z0 = w.z;
+      w.z += w.vz * dt;
+      for (const e of this.enemies) {
+        if (e.hp <= 0 || w.hit.includes(e.id) || e.z < z0 - 0.5 || e.z > w.z + 0.5 || Math.abs(e.x - w.x) > w.halfW + 7) continue;
+        w.hit.push(e.id);
+        this.burn(e);
+      }
+    }
+    this.walls = this.walls.filter(w => w.life > 0 && w.z < TUNE.pillarMaxZ);
+  }
+
+  /** A wall that something moving from z0 to z just met (both may be moving). */
+  private wallMet(x: number, r: number, z0: number, z: number, dt: number): Wall | undefined {
+    return this.walls.find(w => {
+      const wz0 = w.z - w.vz * dt;
+      return z0 - wz0 > 0 && z - w.z <= 0 && Math.abs(x - w.x) <= w.halfW + r;
+    });
+  }
+
+  /** Move quakes and sweeps toward you; walls stop them; when they arrive, did you get out of the way? */
+  private updateHazards(dt: number): void {
+    const dead = new Set<number>();
+    for (const h of this.hazards) {
+      const z0 = h.z;
+      h.z += h.vz * dt;
+      // a wall stops it if it stands between the attack and you
+      const wall = this.wallMet(this.cam.x, 0, z0, h.z, dt);
+      if (wall) {
+        dead.add(h.id);
+        this.score += 15;
+        this.emit('blocked', this.cam.x, h.kind === 'quake' ? FLOOR_Y - 10 : h.y, wall.z);
+        continue;
+      }
+      if (!h.resolved && h.z <= 0.2) {
+        h.resolved = true;
+        const hit = h.kind === 'quake'
+          ? h.side * (this.cam.x - h.edge) > -TUNE.bodyHalfW
+          : this.cam.y - h.y < TUNE.slabDuck;
+        if (!hit) {
+          this.score += 20;
+          this.emit('dodged', this.cam.x, this.cam.y + 10, 0);
+        } else if (this.inv <= 0) {
+          this.hurt(this.cam.x, h.kind === 'quake' ? this.cam.y + 30 : h.y);
+        }
+      }
+      if (h.z < -1.5) dead.add(h.id);
+    }
+    if (dead.size) this.hazards = this.hazards.filter(h => !dead.has(h.id));
+  }
+
+  private hurt(x: number, y: number): void {
+    this.hp = Math.max(0, this.hp - TUNE.hitDamage);
+    this.inv = TUNE.invulnS;
+    this.emit('playerHit', x, y, 0);
+    if (this.hp <= 0) {
+      this.state = 'over';
+      this.events.push({ type: 'gameOver' });
+    }
+  }
+
   /** Burn an enemy with a pillar. */
   private burn(e: Enemy): void {
     e.hp -= TUNE.palmDamage;
@@ -317,8 +407,16 @@ export class Game {
       this.wallCool = TUNE.wallCooldownS;
       // stand the wall where the hands appear on screen, at its depth
       const x = this.cam.x + c.at.x / depthScale(TUNE.wallDepth);
-      this.walls.push({ id: this.nextId++, x, z: TUNE.wallDepth, halfW: TUNE.wallHalfWidth, life: TUNE.wallLifeS });
+      this.walls.push({ id: this.nextId++, x, z: TUNE.wallDepth, halfW: TUNE.wallHalfWidth, life: TUNE.wallLifeS, vz: 0, hit: [] });
       this.emit('wall', x, FLOOR_Y, TUNE.wallDepth);
+      return;
+    }
+    if (c.kind === 'push') {
+      if (this.pushWallCool > 0) return;
+      this.pushWallCool = TUNE.pushWallCooldownS;
+      const z = TUNE.pushWallStartZ, x = this.cam.x + c.at.x / depthScale(z);
+      this.walls.push({ id: this.nextId++, x, z, halfW: TUNE.pushWallHalfW, life: Infinity, vz: TUNE.pushWallSpeed, hit: [] });
+      this.emit('wallPush', x, FLOOR_Y, z);
       return;
     }
     if (this.ultimateIn > 0) return;
@@ -432,16 +530,41 @@ export class Game {
       if (e.appear < 1) continue;
       if (!e.winding) {
         e.cd -= dt;
-        if (e.cd <= 0) { e.winding = true; e.wind = 0; }
+        if (e.cd <= 0) {
+          e.winding = true;
+          e.wind = 0;
+          e.attack ??= this.pickAttack();
+        }
       } else {
         e.wind += dt / TUNE.windupS;
         if (e.wind >= 1) {
-          this.enemyThrow(e);
+          this.enemyAttack(e);
           e.winding = false;
+          e.attack = undefined;
           e.cd = this.rnd(baseCd, baseCd + 1.5);
           e.side = e.side === 1 ? -1 : 1;
         }
       }
+    }
+  }
+
+  private pickAttack(): AttackKind {
+    const r = this.rand(), { quake, slab } = TUNE.attackMix;
+    return r < quake ? 'quake' : r < quake + slab ? 'slab' : 'orb';
+  }
+
+  private enemyAttack(e: Enemy): void {
+    const kind = e.attack ?? 'orb';
+    if (kind === 'orb') { this.enemyThrow(e); return; }
+    const z = e.z - 0.1;
+    if (kind === 'quake') {
+      // along the ground on the spirit's side of you, from just past where you stand, outward
+      const side: 1 | -1 = e.x >= this.cam.x ? 1 : -1;
+      this.hazards.push({ id: this.nextId++, kind, x: e.x, y: FLOOR_Y, z, vz: -TUNE.quakeSpeed, side, edge: this.cam.x - side * TUNE.quakeMargin, resolved: false });
+      this.events.push({ type: 'quake', x: e.x, y: FLOOR_Y, z, side });
+    } else {
+      this.hazards.push({ id: this.nextId++, kind, x: e.x, y: this.cam.y, z, vz: -TUNE.slabSpeed, side: 1, edge: 0, resolved: false });
+      this.emit('slab', e.x, this.cam.y, z);
     }
   }
 
@@ -487,8 +610,7 @@ export class Game {
         }
         if (p.z > 14) dead.add(p.id);
       } else {
-        const z0 = p.z - p.vz * dt;
-        const wall = this.walls.find(w => z0 > w.z && p.z <= w.z && Math.abs(p.x - w.x) <= w.halfW + p.r);
+        const wall = this.wallMet(p.x, p.r, p.z - p.vz * dt, p.z, dt);
         if (wall) {
           dead.add(p.id);
           this.score += 15;
@@ -520,13 +642,7 @@ export class Game {
       return true;
     }
     if (this.inv <= 0 && bodyHit(v, q.r)) {
-      this.hp = Math.max(0, this.hp - TUNE.hitDamage);
-      this.inv = TUNE.invulnS;
-      this.emit('playerHit', q.x, q.y, 0);
-      if (this.hp <= 0) {
-        this.state = 'over';
-        this.events.push({ type: 'gameOver' });
-      }
+      this.hurt(q.x, q.y);
       return true;
     }
     if (Math.hypot(v.x, v.y - 10) < 30) {

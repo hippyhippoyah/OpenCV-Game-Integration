@@ -66,9 +66,12 @@ export interface Palm {
   dir: Vec2 | null;
 }
 
-export type CastKind = 'wall' | 'ultimate';
+export type CastKind = 'wall' | 'ultimate' | 'push';
 
-/** A two-hand move: fire wall (open hands sweep up) or ultimate (open hands spread apart). */
+/**
+ * A two-hand move: fire wall (open hands sweep up), ultimate (open hands start together and fly
+ * apart) or wall push (both open palms shoved toward the camera: a fire wall rolls forward).
+ */
 export interface Cast {
   kind: CastKind;
   /** View-space point between the hands when it was cast. */
@@ -149,8 +152,12 @@ export const TUNING = {
    * (a cross punch moves only one), wrists no lower than xMaxWristSw below the shoulders — for xHoldS.
    */
   xCrossSw: 0.05, xMaxWristSw: 1.0, xHoldS: 0.08,
-  leanUnitsPerSw: 40, maxLean: 30,
-  duckUnitsPerSw: 40, minDuck: -10, maxDuck: 25,
+  /**
+   * Leaning, stepping and ducking are the only way to move, so they are exaggerated: a head moved
+   * a third of a shoulder width shifts the view ~23 units, about a quake dodge.
+   */
+  leanUnitsPerSw: 70, maxLean: 60,
+  duckUnitsPerSw: 55, minDuck: -10, maxDuck: 35,
   /** Hand offset from the shoulder centre (in shoulder widths) × scale = view units. */
   handScaleX: 40, handScaleY: 32, handOffsetY: 20,
   /** Hands below this (view y) are resting, not attacking. */
@@ -175,6 +182,14 @@ export const TUNING = {
    */
   castWindowS: 0.4, wallRise: 14, ultimateSpread: 24, castRefractoryS: 0.6,
   /**
+   * Ultimate vs wall push: pushing both palms at the camera also makes them look further apart
+   * (they get closer to it), so the ultimate is judged in 3D where known — the hands start at most
+   * ultimateStartM apart (gathered together) and spread ultimateSpreadM — or on screen without 3D
+   * data, starting at most ultimateStartSw shoulder widths apart. The push is checked first: both
+   * palms' pushes reach twoPushShare of a single push's threshold at sensitivity 1.
+   */
+  ultimateStartM: 0.4, ultimateSpreadM: 0.3, ultimateStartSw: 0.9, twoPushShare: 0.8,
+  /**
    * Palm push (fist-punch mode only; the open-hand punch style already uses opening hands): one hand
    * open, the other not, shoved toward the camera — it may open on the way. The reach, averaged
    * over 3 frames, rises palmPushRise within palmPushWindowS (more with a wobbly reading:
@@ -195,7 +210,8 @@ export const TUNING = {
 interface Track extends HandState {
   armed: boolean;
   lastSeen: number;
-  hist: { t: number; x: number; y: number; speed: number; size: number | null; ext: number | null; reach: number | null }[];
+  /** bx: the hand's 3D sideways position (m), when known. */
+  hist: { t: number; x: number; y: number; speed: number; size: number | null; ext: number | null; reach: number | null; bx: number | null }[];
   filters: { x: OneEuro; y: OneEuro; depth: OneEuro; bx: OneEuro; by: OneEuro };
   /** Filtered 3D palm position (m, relative to the shoulder centre). */
   body3: { x: number; y: number; z: number } | null;
@@ -240,6 +256,8 @@ export interface InterpretState {
   stillSince: number | null;
   shieldOn: boolean;
   castReadyAt: number;
+  /** When the last two-hand cast went off (movement before it doesn't count toward the next). */
+  lastCastT: number;
   crossedSince: number | null;
   /** Learned shoulder width (m) and the filtered distance to the shoulders (m). */
   shoulderSpan: number | null;
@@ -250,7 +268,7 @@ export interface InterpretState {
 
 export const initialState = (): InterpretState => ({
   head: null, l: null, r: null, lastT: null, pending: [], palmPending: [], bothOpenAt: null, stillSince: null, shieldOn: false,
-  castReadyAt: -Infinity, crossedSince: null,
+  castReadyAt: -Infinity, lastCastT: -Infinity, crossedSince: null,
   shoulderSpan: null, bodyDist: new OneEuro(TUNING.bodyDepthMinCutoff, TUNING.bodyDepthBeta), noiseCoef: TUNING.noiseCoefStart,
 });
 
@@ -467,10 +485,11 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     s.shieldOn = false;
   } else {
     if (s.bothOpenAt === null) s.bothOpenAt = f.t;
-    const kind = f.t >= s.castReadyAt ? twoHandGesture(l, r, Math.max(s.bothOpenAt, f.t - TUNING.castWindowS)) : null;
+    const kind = f.t >= s.castReadyAt ? twoHandGesture(l, r, Math.max(s.bothOpenAt, f.t - TUNING.castWindowS), s.lastCastT) : null;
     if (kind) {
       casts.push({ kind, at: { x: (l.pos.x + r.pos.x) / 2, y: (l.pos.y + r.pos.y) / 2 } });
       s.castReadyAt = f.t + TUNING.castRefractoryS;
+      s.lastCastT = f.t;
       s.shieldOn = false;
       s.stillSince = null;
     } else if (!s.shieldOn) {
@@ -504,14 +523,29 @@ export function pushThreshold(noise: number): number {
   return Math.min(TUNING.palmPushCap, Math.max(TUNING.palmPushRise, TUNING.palmNoise * noise)) / TUNING.punchSensitivity;
 }
 
-/** How the two hands moved since `from`: mostly up → wall, mostly apart → ultimate. */
-function twoHandGesture(l: Track, r: Track, from: number): CastKind | null {
+/**
+ * How the two open hands moved: both shoved toward the camera → wall push (checked first);
+ * mostly up since `from` → wall; gathered together, then flung apart → ultimate.
+ */
+function twoHandGesture(l: Track, r: Track, from: number, lastCastT: number): CastKind | null {
+  // palm pushes may start just before both hands read open, so they look back their own window
+  // (not scaled by punch sensitivity: stealing a wall or the ultimate costs more than a stray punch)
+  const need = TUNING.twoPushShare * TUNING.punchSensitivity * pushThreshold(Math.max(l.reachNoise ?? 0, r.reachNoise ?? 0));
+  if (Math.min(palmPushRise(l.hist, TUNING.palmPushWindowS, lastCastT), palmPushRise(r.hist, TUNING.palmPushWindowS, lastCastT)) >= need) return 'push';
   const l0 = l.hist.find(h => h.t >= from), r0 = r.hist.find(h => h.t >= from);
   if (!l0 || !r0) return null;
   const rise = Math.min(l0.y - l.pos.y, r0.y - r.pos.y);
-  const spread = Math.hypot(l.pos.x - r.pos.x, l.pos.y - r.pos.y) - Math.hypot(l0.x - r0.x, l0.y - r0.y);
-  if (rise >= TUNING.wallRise && rise > spread) return 'wall';
-  if (spread >= TUNING.ultimateSpread && spread > rise) return 'ultimate';
+  const screenSpread = Math.hypot(l.pos.x - r.pos.x, l.pos.y - r.pos.y) - Math.hypot(l0.x - r0.x, l0.y - r0.y);
+  let ultimate: boolean;
+  if (l0.bx !== null && r0.bx !== null && l.body3 && r.body3) {
+    // in metres, unaffected by how close the hands are to the camera
+    const start = Math.abs(r0.bx - l0.bx);
+    ultimate = start <= TUNING.ultimateStartM && Math.abs(r.body3.x - l.body3.x) - start >= TUNING.ultimateSpreadM;
+  } else {
+    ultimate = Math.abs(r0.x - l0.x) <= TUNING.ultimateStartSw * TUNING.handScaleX && screenSpread >= TUNING.ultimateSpread;
+  }
+  if (rise >= TUNING.wallRise && rise > screenSpread) return 'wall';
+  if (ultimate && screenSpread > rise) return 'ultimate';
   return null;
 }
 
@@ -598,7 +632,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     track.reachBase = track.reach;
     if (track.reach !== null) track.reachSince = t;
     if (track.body3 && track.reach !== null) track.body3.z = track.reach;
-    track.hist.push({ t, x: pos.x, y: pos.y, speed: 0, size, ext, reach: track.reach });
+    track.hist.push({ t, x: pos.x, y: pos.y, speed: 0, size, ext, reach: track.reach, bx: track.body3?.x ?? null });
     return { track, opened: false };
   }
   // Opening or closing the hand switches how its distance is measured, which jumps the reading:
@@ -637,7 +671,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     else if (tr.open && tr.openness < TUNING.fistBelow) tr.open = false;
   }
   tr.lastSeen = t;
-  tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension, reach: reach !== null ? tr.reach : null });
+  tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension, reach: reach !== null ? tr.reach : null, bx: reach !== null && b3 ? tr.body3!.x : null });
   const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS, TUNING.quickWindowS, TUNING.palmPushWindowS);
   while (tr.hist.length && t - tr.hist[0].t > keepS) tr.hist.shift();
   return { track: tr, opened };
