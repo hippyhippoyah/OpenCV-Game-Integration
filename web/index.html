@@ -46,6 +46,36 @@
     <div id="recording" class="notice rec hidden">● Recording tracking for 10 s — punch a few times</div>
   </div>
 
+  <div id="camp" class="camp hidden">
+    <div id="campControls" class="controls"></div>
+    <div id="campNotes" class="notes"></div>
+    <div id="campPrompt" class="prompt hidden"></div>
+    <div id="campRen" class="ren hidden"></div>
+    <div id="campBoss" class="bossbar hidden"><span>Daro Stonefist</span><div class="bar wide"><i id="campBossFill"></i></div></div>
+    <div class="card hidden" id="campHandoff">
+      <h1>Step back and raise your fists</h1>
+      <ul class="checks"><li id="chkSeen">Head and shoulders seen</li><li id="chkHands">Fists up</li><li id="chkDist">Good distance</li></ul>
+      <div class="bar wide"><i id="campHandoffFill"></i></div>
+      <p class="muted"><kbd>Esc</kbd> back</p>
+    </div>
+    <div id="campCount" class="count hidden"></div>
+    <div class="card hidden" id="campResult">
+      <h1 id="campResultTitle"></h1>
+      <div id="campFlames" class="flames"></div>
+      <ul id="campReasons" class="checks"></ul>
+      <p class="muted">Take a seat — walk on when you're ready.</p>
+      <div class="actions"><button id="campWalk">Walk on</button><button id="campAgain" class="secondary">Try again</button></div>
+    </div>
+    <div class="card hidden" id="campLost">
+      <h1>The flame gutters</h1>
+      <p>Catch your breath, then try the fight again.</p>
+      <div class="actions"><button id="campRetry">Try again</button></div>
+    </div>
+    <div class="card hidden" id="campMap"><h1>The Ember Path</h1><canvas id="campMapCanvas"></canvas><p class="muted">Click a lit lantern to replay it · <kbd>M</kbd> close</p></div>
+    <div class="card hidden" id="campScrolls"><h1>Scrolls</h1><div id="campScrollList" class="scrolls"></div><p class="muted"><kbd>Tab</kbd> close</p></div>
+    <div class="card hidden" id="campEnd"><h1>Chapter 1 complete</h1><p>Daro falls back down the valley. Kuzan will come himself now.</p><div class="actions"><button id="campMenu">Menu</button></div></div>
+  </div>
+
   <div class="card" id="start">
     <h1>Firebending</h1>
     <p>Bend fire with your hands in front of your webcam, seen through your own eyes. Punch, push and sweep fire at water spirits and earthbenders; lean and duck to dodge.</p>
