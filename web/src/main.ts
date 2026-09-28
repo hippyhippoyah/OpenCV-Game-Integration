@@ -66,7 +66,7 @@ const params = new URLSearchParams(location.search);
 /** Skip the mode menu with ?mode=tutorial|waves|training|campaign (?dummies = training). */
 const startMode: Mode | null = params.has('dummies') ? 'training'
   : (['tutorial', 'waves', 'training', 'campaign'] as const).find(m => m === params.get('mode')) ?? null;
-/** Fist punches by arm extension (default) or open-hand punches; toggled with P, or start with ?punch=open. */
+/** Fist punches by arm extension (default); open-hand punches only with ?punch=open (no key switches it). */
 if (params.get('punch') === 'open') TUNING.punchTrigger = 'open';
 let acc = 0, last = performance.now(), fpsTime = 0, fpsFrames = 0;
 const RECORD_SECONDS = 10;
@@ -431,13 +431,6 @@ addEventListener('keydown', e => {
   if (k === 'k' && calibration && phase === 'play' && !recorder.active) {
     recorder.start(RECORD_SECONDS, calibration);
     show('recording');
-  }
-  // open-hand punches are a debugging fallback: P only switches with the debug numbers open (`),
-  // so a stray key press can't quietly turn fist punches off
-  if (k === 'p' && debug.detailed) {
-    TUNING.punchTrigger = TUNING.punchTrigger === 'extend' ? 'open' : 'extend';
-    istate.pending = [];
-    hud.toast(TUNING.punchTrigger === 'extend' ? 'PUNCH: FIST' : 'PUNCH: OPEN HAND', 'cool');
   }
   if ((k === '[' || k === ']') && TUNING.punchTrigger === 'extend') {
     // live punch sensitivity: ] = easier to trigger, [ = stricter
