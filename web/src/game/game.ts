@@ -1,3 +1,4 @@
+import type { TempleEffects } from '../campaign/temple';
 import type { Cast, Intent, Palm, Punch, Side } from '../intent/interpret';
 import { distToSeg, lerp, type Vec2 } from '../math';
 import { BOSS, bossDamage, newBossState, updateBoss, type BossState } from './boss';
@@ -10,6 +11,8 @@ const depthScale = (z: number) => FOCAL / (FOCAL + z);
 
 export const TUNE = {
   maxHp: 100, hitDamage: 14, invulnS: 0.5,
+  /** Temple braziers' fireballs: depth units per second. */
+  brazierShotSpeed: 10,
   punchCooldownS: 0.1, fireballSpeed: 12, fireballRadius: 4, launchZ: 0.3,
   /**
    * How far the shoulder→hand direction bends a shot beyond where the hand opened. Sideways it
@@ -149,7 +152,7 @@ export type ComboName = 'charged' | 'flurry' | 'counter' | 'oneTwo' | 'volley' |
 export type MoveName = 'punch' | 'flurry' | 'shield' | 'palm' | 'charge' | 'wall' | 'finisher'
   | 'xBlock' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker' | 'inferno';
 
-type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab' | 'fizzle' | 'inferno' | 'slam';
+type PositionedType = 'brazier' | 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab' | 'fizzle' | 'inferno' | 'slam';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
   | { type: 'punch' | 'pillar'; x: number; y: number; z: number; side: Side }
@@ -258,7 +261,11 @@ export class Game {
   noDamage = false;
   /** The moves you have (campaign); null = every move (waves, training, tutorial). */
   allowed: Set<MoveName> | null = null;
-  /** Shown instead of the wave number (e.g. "Tutorial"). */
+  /** Raids: the temple's defenses (braziers firing, the wall blocking hits, the shrine); null elsewhere. */
+  temple: TempleEffects | null = null;
+  /** Seconds until each brazier fires again. */
+  private brazierIn: number[] = [];
+  /** Shown top right (e.g. "Tutorial"). */
   label: string | null = null;
 
   private events: GameEvent[] = [];
@@ -379,6 +386,7 @@ export class Game {
     this.updatePillars(dt);
     if (this.spawning && this.practice) this.spawnDummies(dt);
     this.updateEnemies(dt);
+    this.updateTemple(dt);
     this.updateProjs(dt);
     this.updateHazards(dt);
   }
@@ -624,13 +632,32 @@ export class Game {
   }
 
   private hurt(x: number, y: number): void {
-    if (!this.noDamage) this.hp = Math.max(0, this.hp - TUNE.hitDamage);
+    // the temple wall stops some hits outright
+    if (this.temple && this.rand() < this.temple.blockChance) { this.emit('blocked', x, y, 0); return; }
+    if (!this.noDamage) this.hp = Math.max(0, this.hp - TUNE.hitDamage * (this.temple?.damageMult ?? 1));
     this.inv = TUNE.invulnS;
     this.emit('playerHit', x, y, 0);
     if (this.hp <= 0) {
       this.state = 'over';
       this.events.push({ type: 'gameOver' });
     }
+  }
+
+  /** Each built brazier shoots a fireball at the nearest raider every so often. */
+  private updateTemple(dt: number): void {
+    const t = this.temple;
+    if (!t) return;
+    t.braziers.forEach((b, i) => {
+      this.brazierIn[i] = (this.brazierIn[i] ?? b.cd * 0.5) - dt;
+      if (this.brazierIn[i] > 0) return;
+      const targets = this.enemies.filter(e => e.hp > 0 && !e.dummy && e.appear >= 1);
+      if (!targets.length) { this.brazierIn[i] = 0; return; }
+      const e = targets.reduce((a, c) => (Math.hypot(c.x - b.x, c.z - b.z) < Math.hypot(a.x - b.x, a.z - b.z) ? c : a));
+      this.brazierIn[i] = b.cd;
+      const y = FLOOR_Y - 24, T = Math.max(0.3, (e.z - b.z) / TUNE.brazierShotSpeed);
+      this.projs.push({ id: this.nextId++, kind: 'player', x: b.x, y, z: b.z, vx: (e.x - b.x) / T, vy: (e.y - y) / T, vz: (e.z - b.z) / T, r: 3, resolved: false, damage: b.damage });
+      this.emit('brazier', b.x, y, b.z);
+    });
   }
 
   /** Burn an enemy with a pillar (or a rolling wall, `shot: 'wall'`). */

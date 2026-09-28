@@ -614,6 +614,46 @@ describe('Game', () => {
     });
   });
 
+  describe('temple defenses (raids)', () => {
+    const none = { braziers: [], blockChance: 0, damageMult: 1 };
+    const hitBy = (temple: Game['temple']) => {
+      const g = quietGame();
+      g.noDamage = false;
+      g.temple = temple;
+      g.projs.push(incoming(0, 0));
+      run(g, 0.3, intent());
+      return g;
+    };
+
+    it('the shrine makes hits hurt less', () => {
+      expect(hitBy({ ...none, damageMult: 0.55 }).hp).toBeCloseTo(TUNE.maxHp - TUNE.hitDamage * 0.55);
+      expect(hitBy(null).hp).toBe(TUNE.maxHp - TUNE.hitDamage);
+    });
+
+    it('the wall can block a hit outright', () => {
+      const g = hitBy({ ...none, blockChance: 1 });
+      expect(g.hp).toBe(TUNE.maxHp);
+      expect(g.drainEvents().some(e => e.type === 'blocked')).toBe(true);
+    });
+
+    it('a brazier shoots fireballs at raiders by itself', () => {
+      const g = quietGame();
+      g.temple = { ...none, braziers: [{ x: -42, z: 3, cd: 1, damage: 1 }] };
+      const e = g.addEnemy({ kind: 'spirit', x: 10, z: 9, hp: 99, cd: Infinity });
+      run(g, 5, intent());
+      const events = g.drainEvents();
+      expect(events.filter(x => x.type === 'brazier').length).toBeGreaterThanOrEqual(3);
+      expect(e.hp).toBeLessThan(99);
+    });
+
+    it('outside raids there are no defenses', () => {
+      const g = quietGame();
+      g.addEnemy({ kind: 'spirit', x: 10, z: 9, hp: 99, cd: Infinity });
+      run(g, 5, intent());
+      expect(g.drainEvents().some(x => x.type === 'brazier')).toBe(false);
+    });
+  });
+
   describe('moves you have (campaign)', () => {
     const jab = (hand: Side) => intent({ punches: [punch(hand, 0, 8)] });
     it('every move is allowed by default', () => {
