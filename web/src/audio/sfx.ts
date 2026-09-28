@@ -167,6 +167,7 @@ export class Sfx {
     const pan = 'x' in e ? Sfx.panOf(e.x, camX) : 0;
     switch (e.type) {
       case 'punch': this.punch(e.side === 'l' ? -0.35 : 0.35); break;
+      case 'brazier': this.brazier(pan); break;
       case 'combo': this.combo(e.name, pan); break;
       case 'pillar': this.pillar(pan); break;
       case 'wall': this.wall(pan); break;
@@ -198,6 +199,14 @@ export class Sfx {
     this.burst(c, { dur: d, type: 'bandpass', f0: f, f1: f * rnd(2.2, 3.4), q: rnd(0.7, 1.4), gain: vary(2.4, 0.2), attack: 0.012, pan: p });
     this.burst(c, { dur: d * 1.3, type: 'lowpass', f0: vary(1400, 0.2), f1: 300, gain: 1.0, attack: 0.02, pan: p, crackle: 0.5 });
     this.tone(c, { dur: 0.1, wave: 'sine', f0: vary(150, 0.2), f1: 55, gain: 0.7, pan: p });
+  }
+
+  /** A temple brazier spits a fireball: a low, soft whump, off to its side. */
+  private brazier(pan: number): void {
+    const c = this.ready('brazier', 0.1);
+    if (!c) return;
+    this.burst(c, { dur: vary(0.35, 0.2), type: 'lowpass', f0: vary(700, 0.2), f1: 250, q: 1, gain: 1.1, attack: 0.02, pan, crackle: 0.6 });
+    this.tone(c, { dur: 0.18, wave: 'sine', f0: vary(110, 0.2), f1: 50, gain: 0.45, pan });
   }
 
   private combo(name: string, pan: number): void {

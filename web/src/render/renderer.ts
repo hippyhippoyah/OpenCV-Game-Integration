@@ -94,6 +94,8 @@ export class Renderer {
   private mid = document.createElement('canvas');
   private vig = document.createElement('canvas');
   private handLayer = document.createElement('canvas');
+  /** Seconds left of each brazier's flare after it shoots, by side (−1 left, 1 right). */
+  private brazierFlare = new Map<number, number>();
   private parts: Particle[] = [];
   private glows: Glows = { pts: [], color: [255, 160, 80] };
   /** The blue inferno's flames: where each stands (x across from you, z into the field) and how it flickers. */
@@ -213,6 +215,10 @@ export class Renderer {
       case 'cut': this.burst(e.x, e.y, e.z, 'fire', 16, 30); break;
       case 'hitEnemy':
       case 'killEnemy': this.burst(e.x, e.y, e.z, 'fire', 30, 40); break;
+      case 'brazier':
+        this.burst(e.x, e.y, e.z, 'fire', 14, 22);
+        this.brazierFlare.set(Math.sign(e.x), 0.35);
+        break;
       case 'clash': this.burst(e.x, e.y, e.z, 'spirit', 24, 34); break;
       case 'blocked':
         this.burst(e.x, e.y, 0, 'spirit', 20, 30);
@@ -237,6 +243,7 @@ export class Renderer {
     if (g) this.emitFromState(g, dt);
     this.updateParticles(dt);
     this.shake = Math.max(0, this.shake - dt * 2.5);
+    for (const [side, left] of this.brazierFlare) this.brazierFlare.set(side, Math.max(0, left - dt));
     this.flash = Math.max(0, this.flash - dt * 2);
     this.flare = { l: Math.max(0, this.flare.l - dt), r: Math.max(0, this.flare.r - dt) };
 
@@ -262,6 +269,7 @@ export class Renderer {
     if (g && (g.groundFire > 0 || g.fireLine)) this.drawGroundFire(g, true);
 
     if (g) [...g.enemies].sort((a, b) => b.z - a.z).forEach(e => this.drawEnemy(e));
+    if (g?.temple) g.temple.braziers.forEach(b => this.drawBrazier(b.x, b.z));
     // near flames of the blue inferno burn in front of the enemies standing in them
     if (g && (g.groundFire > 0 || g.fireLine)) this.drawGroundFire(g, false);
     if (g) {
@@ -1089,6 +1097,43 @@ export class Renderer {
         c.lineWidth = w;
         arrow();
       }
+    }
+    c.restore();
+  }
+
+  /**
+   * A temple brazier (raids): a stone pedestal and bowl by the gate, its fire flaring up when it
+   * shoots at a raider.
+   */
+  private drawBrazier(x: number, z: number): void {
+    const c = this.ctx, u = this.u, base = this.project(x, FLOOR_Y, z), k = base.s * u;
+    const flare = (this.brazierFlare.get(Math.sign(x)) ?? 0) / 0.35;
+    const bowlY = base.y - 26 * k;
+    // pedestal and bowl
+    c.fillStyle = '#2a1f18';
+    c.fillRect(base.x - 3 * k, bowlY + 3 * k, 6 * k, 23 * k);
+    c.fillRect(base.x - 8 * k, base.y - 3 * k, 16 * k, 3 * k);
+    c.fillStyle = '#4a3526';
+    c.beginPath();
+    c.moveTo(base.x - 11 * k, bowlY); c.lineTo(base.x + 11 * k, bowlY);
+    c.lineTo(base.x + 7 * k, bowlY + 6 * k); c.lineTo(base.x - 7 * k, bowlY + 6 * k);
+    c.closePath(); c.fill();
+    // its fire: a glow and a few licking tongues, taller as it shoots
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    const h = (14 + 18 * flare) * k, gr = c.createRadialGradient(base.x, bowlY - h * 0.3, 0, base.x, bowlY - h * 0.3, h * 1.6);
+    gr.addColorStop(0, `rgba(255,170,80,${0.45 + 0.35 * flare})`); gr.addColorStop(1, 'rgba(255,90,30,0)');
+    c.fillStyle = gr;
+    c.fillRect(base.x - h * 1.6, bowlY - h * 1.9, h * 3.2, h * 3.2);
+    for (let i = 0; i < 4; i++) {
+      const ph = this.t * (7 + i) + i * 1.7, w = (5 - i * 0.6) * k, th = h * (0.6 + 0.25 * Math.sin(ph)) * (1 - i * 0.12);
+      const dx = (i - 1.5) * 3 * k + Math.sin(ph * 0.7) * 1.5 * k;
+      c.fillStyle = i < 2 ? 'rgba(255,120,40,.75)' : 'rgba(255,215,130,.8)';
+      c.beginPath();
+      c.moveTo(base.x + dx - w, bowlY);
+      c.quadraticCurveTo(base.x + dx - w * 0.5, bowlY - th * 0.6, base.x + dx + Math.sin(ph) * w * 0.4, bowlY - th);
+      c.quadraticCurveTo(base.x + dx + w * 0.5, bowlY - th * 0.6, base.x + dx + w, bowlY);
+      c.fill();
     }
     c.restore();
   }

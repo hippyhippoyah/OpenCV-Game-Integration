@@ -2,22 +2,25 @@ import { STOPS } from '../campaign/chapter1';
 import type { Progress } from '../campaign/progress';
 import { LESSONS } from '../game/tutorial';
 import type { UiSound } from '../audio/sfx';
+import { embersAvailable, templeOpen } from '../campaign/temple';
 import { clampSensitivity, SENSITIVITY_MAX, SENSITIVITY_MIN, type InputKind, type Settings } from './settings';
 
 export type PlayMode = 'campaign' | 'tutorial' | 'training';
-type ItemId = PlayMode | 'settings';
+type ItemId = PlayMode | 'temple' | 'settings';
 export type Screen = 'title' | 'menu' | 'settings';
 
 interface Item { id: ItemId; title: string; blurb: string }
 
 const ITEMS: Item[] = [
   { id: 'campaign', title: 'Campaign', blurb: 'Chapter 1 · The Ember Path' },
+  { id: 'temple', title: 'Temple', blurb: 'Build it up · hold off raids' },
   { id: 'tutorial', title: 'Tutorial', blurb: 'Learn every move' },
   { id: 'training', title: 'Training', blurb: 'Dummies that never fight back' },
   { id: 'settings', title: 'Settings', blurb: 'Input, sensitivity, progress' },
 ];
 
 const $ = (id: string) => document.getElementById(id)!;
+const RAIDS_WON = (p: Progress) => Object.keys(p.data.raids ?? {}).length;
 const show = (id: string, on = true) => $(id).classList.toggle('hidden', !on);
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -33,6 +36,7 @@ export interface MenuHandlers {
   onInput(kind: InputKind): void;
   onSensitivity(v: number): void;
   onResetCampaign(): void;
+  onTemple(): void;
 }
 
 /** The front of the game: title screen, main menu (with a detail panel per mode) and settings. */
@@ -42,16 +46,6 @@ export class Menu {
   private resetArmed = false;
 
   constructor(private settings: Settings, private progress: Progress, private h: MenuHandlers) {
-    const list = $('menuList');
-    ITEMS.forEach((it, i) => {
-      const b = el('button', 'item');
-      b.dataset.id = it.id;
-      b.append(el('b', '', it.title), el('span', '', it.blurb));
-      b.addEventListener('mouseenter', () => this.select(i));
-      b.addEventListener('focus', () => this.select(i));
-      b.addEventListener('click', () => this.activate(i));
-      list.append(b);
-    });
     $('title').addEventListener('click', () => { this.h.sound('select'); this.showMenu(); });
     $('setBack').addEventListener('click', () => { this.h.sound('back'); this.showMenu(); });
     for (const b of document.querySelectorAll<HTMLButtonElement>('#setInput button')) {
@@ -74,6 +68,11 @@ export class Menu {
   }
 
   showTitle(): void { this.go('title'); }
+
+  /** What the menu offers: the temple only once Chapter 1 is done. */
+  private get items(): Item[] {
+    return ITEMS.filter(it => it.id !== 'temple' || templeOpen(this.progress));
+  }
 
   showMenu(note = ''): void {
     this.go('menu');
@@ -106,8 +105,8 @@ export class Menu {
       if (k === 'Escape') { this.h.sound('back'); this.showMenu(); return true; }
       return false;
     }
-    if (k === 'ArrowDown' || k === 's' || k === 'S') { e.preventDefault(); this.select((this.sel + 1) % ITEMS.length); return true; }
-    if (k === 'ArrowUp' || k === 'w' || k === 'W') { e.preventDefault(); this.select((this.sel + ITEMS.length - 1) % ITEMS.length); return true; }
+    if (k === 'ArrowDown' || k === 's' || k === 'S') { e.preventDefault(); this.select((this.sel + 1) % this.items.length); return true; }
+    if (k === 'ArrowUp' || k === 'w' || k === 'W') { e.preventDefault(); this.select((this.sel + this.items.length - 1) % this.items.length); return true; }
     if (k === 'Enter' || k === ' ') { e.preventDefault(); this.activate(this.sel); return true; }
     if (k === 'Escape') { this.h.sound('back'); this.showTitle(); return true; }
     return false;
@@ -126,6 +125,17 @@ export class Menu {
   }
 
   private renderList(): void {
+    const list = $('menuList');
+    list.replaceChildren(...this.items.map((it, i) => {
+      const b = el('button', 'item');
+      b.dataset.id = it.id;
+      b.append(el('b', '', it.title), el('span', '', it.blurb));
+      b.addEventListener('mouseenter', () => this.select(i));
+      b.addEventListener('focus', () => this.select(i));
+      b.addEventListener('click', () => this.activate(i));
+      return b;
+    }));
+    this.sel = Math.min(this.sel, this.items.length - 1);
     const camp = $('menuList').querySelector<HTMLElement>('[data-id="campaign"] b')!;
     camp.textContent = this.started ? 'Continue' : 'Campaign';
     $('menuInput').textContent = this.settings.data.input === 'camera' ? 'Camera' : 'Mouse & keys';
@@ -135,13 +145,14 @@ export class Menu {
     if (i !== this.sel && this.screen === 'menu') this.h.sound('hover');
     this.sel = i;
     $('menuList').querySelectorAll('.item').forEach((b, j) => b.classList.toggle('on', j === i));
-    this.renderDetail(ITEMS[i].id);
+    this.renderDetail(this.items[i].id);
   }
 
   private activate(i: number): void {
-    const id = ITEMS[i].id;
+    const id = this.items[i].id;
     this.h.sound('select');
     if (id === 'settings') this.showSettings();
+    else if (id === 'temple') this.h.onTemple();
     else this.h.onPlay(id);
   }
 
@@ -163,6 +174,13 @@ export class Menu {
         para('Master Ren is away and the Spirit Moon is rising. Walk down the mountain from the Ember Temple, find Ren\'s scrolls, learn their moves — and stop Daro Stonefist at the village gate.');
         stat([[`${done} / ${STOPS.length}`, 'Stops cleared'], [`${this.progress.data.scrolls.length}`, 'Scrolls found'], [`${flames} / ${STOPS.length * 3}`, 'Flames']]);
         d.append(el('div', 'cta', this.started ? 'Enter — continue your journey' : 'Enter — begin'));
+        break;
+      }
+      case 'temple': {
+        head('After Chapter 1', 'The Temple');
+        para('Spend the embers the campaign earned you on braziers, a wall and a shrine. Then hold off the raids.');
+        stat([[embersAvailable(this.progress).toLocaleString(), 'Embers'], [`${RAIDS_WON(this.progress)} / 6`, 'Raids held']]);
+        d.append(el('div', 'cta', 'Enter — go to the temple'));
         break;
       }
       case 'tutorial': {

@@ -100,6 +100,35 @@
     <div class="menuFoot"><span><kbd>↑</kbd><kbd>↓</kbd> select</span><span><kbd>Enter</kbd> play</span><span><kbd>Esc</kbd> title</span><span class="spacer"></span><span>Input: <b id="menuInput">Camera</b></span></div>
   </div>
 
+  <div id="temple" class="screen temple hidden">
+    <div class="menuHead"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".55"/><path d="M33 7c11 9 15 17 6 25s-5 17 5 25c-15-2-25-11-25-25S25 12 33 7z" fill="currentColor"/></svg><span>The Temple</span></div>
+    <div class="embers" title="Embers: earned from campaign flames"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5 0 2 1 3 2 3 0-3-1-6 1-9.5z"/></svg><b id="templeEmbers">0</b></div>
+    <section class="templeBuild"><h2>Build</h2><div id="templeBuildings" class="buildings"></div><p id="templeNote" class="muted"></p></section>
+    <section class="templeRaids"><h2>Raids</h2><div id="templeRaidList" class="raidList"></div></section>
+    <div class="menuFoot"><span><kbd>Click</kbd> build or raid</span><span class="spacer"></span><span><kbd>Esc</kbd> menu</span></div>
+  </div>
+
+  <div id="raidUi" class="camp hidden">
+    <div class="card hidden" id="raidHandoff">
+      <h1>Step back and raise your fists</h1>
+      <ul class="checks"><li id="raidSeen">Head and shoulders seen</li><li id="raidHands">Fists up</li><li id="raidDist">Good distance</li></ul>
+      <div class="bar wide"><i id="raidHandoffFill"></i></div>
+      <p class="muted"><kbd>Esc</kbd> back</p>
+    </div>
+    <div id="raidCount" class="count hidden"></div>
+    <div class="card hidden" id="raidResult">
+      <h1 id="raidResultTitle"></h1>
+      <div id="raidFlames" class="flames"></div>
+      <ul id="raidReasons" class="checks"></ul>
+      <div class="actions"><button id="raidBack">Temple <kbd>Enter</kbd></button><button id="raidAgain" class="secondary">Again <kbd>R</kbd></button></div>
+    </div>
+    <div class="card hidden" id="raidLost">
+      <h1>The gate falls</h1>
+      <p>Build more, or try again.</p>
+      <div class="actions"><button id="raidRetry">Try again <kbd>R</kbd></button><button id="raidLeave" class="secondary">Temple <kbd>Esc</kbd></button></div>
+    </div>
+  </div>
+
   <div id="settings" class="screen settings hidden">
     <div class="menuHead"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".55"/><path d="M33 7c11 9 15 17 6 25s-5 17 5 25c-15-2-25-11-25-25S25 12 33 7z" fill="currentColor"/></svg><span>Settings</span></div>
     <div class="setPanel">

@@ -186,7 +186,7 @@ kbd + kbd { margin-left: 3px; }
 @keyframes breathe { 50% { transform: scale(1.06); filter: drop-shadow(0 0 26px rgba(255,140,50,.85)); } }
 @keyframes rise { from { opacity: 0; transform: translateY(18px); } }
 
-.menu, .settings { background: linear-gradient(90deg, rgba(8,5,10,.9) 0%, rgba(8,5,10,.55) 48%, rgba(8,5,10,.78) 100%); animation: fade .35s ease-out; }
+.menu, .settings, .temple { background: linear-gradient(90deg, rgba(8,5,10,.9) 0%, rgba(8,5,10,.55) 48%, rgba(8,5,10,.78) 100%); animation: fade .35s ease-out; }
 @keyframes fade { from { opacity: 0; } }
 .menuHead { position: absolute; top: 28px; left: 7vw; display: flex; align-items: center; gap: 12px; font-family: Cinzel, serif; font-size: 22px; letter-spacing: .14em; color: #ffe2b8; }
 .menuHead .mark { width: 34px; height: 34px; }
@@ -251,3 +251,37 @@ button.danger:disabled { opacity: .4; cursor: default; }
 }
 /* camera setup: only the camera view stays, to help you get in frame */
 body.setup .hud .tl, body.setup .hud .tr, body.setup #breath, body.setup #pill, body.setup #dodge, body.setup #away { display: none !important; }
+
+/* the temple: build on the left, the raid ladder on the right */
+.temple .embers { position: absolute; top: 28px; right: 7vw; display: flex; align-items: center; gap: 8px; font-family: Cinzel, serif; font-size: 28px; color: var(--accent-2); text-shadow: 0 0 18px rgba(255,140,60,.5); }
+.temple .embers svg { width: 26px; height: 26px; fill: var(--accent); }
+.temple h2 { margin: 0 0 12px; font-family: Cinzel, serif; font-size: 16px; letter-spacing: .24em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.templeBuild { position: absolute; left: 7vw; top: 100px; width: min(620px, 52vw); }
+.templeRaids { position: absolute; right: 7vw; top: 100px; width: min(340px, 30vw); }
+.buildings { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.building { display: grid; grid-template-columns: 54px 1fr; gap: 10px 14px; align-items: center; padding: 14px; border-radius: 14px; background: rgba(16,10,14,.78); border: 1px solid var(--line); }
+.building svg { width: 54px; height: 54px; }
+.building .info { flex: 1; min-width: 0; }
+.building b { display: block; font-family: Cinzel, serif; font-size: 17px; color: #fff4e4; }
+.building span { display: block; font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+.building .pips { display: flex; gap: 5px; }
+.building .pips i { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid rgba(255,226,184,.5); }
+.building .pips i.on { background: var(--accent-2); border-color: var(--accent-2); box-shadow: 0 0 8px rgba(255,180,90,.7); }
+.building button { grid-column: 1 / -1; padding: 8px 12px; font-family: Cinzel, serif; }
+.building button:disabled { opacity: .45; cursor: default; box-shadow: none; }
+.building.max { border-color: rgba(255,190,110,.55); box-shadow: 0 0 22px rgba(255,140,60,.18) inset; }
+.building.just { animation: built .6s ease-out; }
+@keyframes built { from { box-shadow: 0 0 0 3px rgba(255,190,110,.9), 0 0 40px rgba(255,140,60,.8); } }
+.raidList { display: flex; flex-direction: column; gap: 8px; }
+.raidList button { all: unset; cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: rgba(16,10,14,.78); border: 1px solid var(--line); transition: border-color .15s, transform .15s; }
+.raidList button:hover:not(.locked) { border-color: rgba(255,170,110,.6); transform: translateX(4px); }
+.raidList em { font-style: normal; font-family: Cinzel, serif; color: var(--accent); width: 18px; }
+.raidList b { flex: 1; font-family: Cinzel, serif; font-size: 16px; color: #fff4e4; font-weight: 600; }
+.raidList .fl { font-size: 14px; letter-spacing: 2px; }
+.raidList .fl .off { filter: grayscale(1); opacity: .25; }
+.raidList button.locked { cursor: default; opacity: .4; }
+@media (max-width: 900px) {
+  .templeBuild, .templeRaids { position: static; width: auto; margin: 0 16px 16px; }
+  .temple { overflow: auto; padding-top: 90px; }
+  .buildings { grid-template-columns: 1fr; }
+}

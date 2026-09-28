@@ -1,5 +1,6 @@
 import './style.css';
 import { CampaignRunner } from './campaign/runner';
+import { RaidRunner } from './campaign/raidRunner';
 import { CampaignUI, type HandoffCheck } from './campaign/ui';
 import { Progress } from './campaign/progress';
 import { STOPS } from './campaign/chapter1';
@@ -17,6 +18,7 @@ import { Hud } from './render/hud';
 import { Sfx } from './audio/sfx';
 import { LessonCoach } from './ui/lessonCoach';
 import { Menu } from './ui/menu';
+import { TempleScreen } from './ui/temple';
 import { Settings, type InputKind } from './ui/settings';
 import { LessonDemo } from './render/lessonDemo';
 import { Renderer } from './render/renderer';
@@ -30,7 +32,7 @@ const hud = new Hud();
 const debug = new DebugView($('pip') as HTMLCanvasElement, $('debugText'));
 const coach = new LessonCoach(new LessonDemo($('lessonDemo') as HTMLCanvasElement));
 
-type Mode = 'tutorial' | 'training' | 'campaign';
+type Mode = 'tutorial' | 'training' | 'campaign' | 'raid';
 /** front: title, menu or settings (see ui/menu.ts); loading/calibrating: camera setup before play. */
 let phase: 'front' | 'loading' | 'calibrating' | 'play' = 'front';
 let mode: Mode = 'training';
@@ -52,6 +54,8 @@ let game: Game | null = null;
 const storage = (() => { try { return localStorage; } catch { return null; } })();
 const progress = Progress.load(storage);
 let campaign: CampaignRunner | null = null;
+/** The raid being fought (mode 'raid'), picked on the temple screen. */
+let raid: RaidRunner | null = null;
 let campUI: CampaignUI | null = null;
 let pathMap: PathMap | null = null;
 /** So "NOW FOR REAL" toasts only when practice just ended (the runner's previous state). */
@@ -88,6 +92,12 @@ const menu = new Menu(settings, progress, {
   onInput: () => { /* takes effect at the next play */ },
   onSensitivity: v => { TUNING.punchSensitivity = v; },
   onResetCampaign: () => progress.reset(),
+  onTemple: () => showTemple(),
+});
+const temple = new TempleScreen(progress, {
+  sound: s => sfx.ui(s),
+  onRaid: i => play('raid', i),
+  onBack: () => showMenu(),
 });
 let acc = 0, last = performance.now(), fpsTime = 0, fpsFrames = 0;
 const RECORD_SECONDS = 10;
@@ -157,10 +167,14 @@ function beginCalibration(): void {
 }
 
 /** Back to the main menu (Esc in game, or after a mode ends). `note` is shown above the choices. */
-function showMenu(note = ''): void {
+/** Leave whatever is being played and put its screens away (before the menu or the temple). */
+function leavePlay(): void {
   phase = 'front';
   game = null;
   tutorial = null;
+  raid = null;
+  temple.hide();
+  hideRaidUi();
   campPaused = false;
   pendingPlay = null;
   campUI?.hideAll();
@@ -171,7 +185,65 @@ function showMenu(note = ''): void {
   coach.hide();
   for (const id of ['calib', 'away', 'dodge', 'mockHelp']) show(id, false);
   document.body.classList.remove('exploring', 'setup');
+}
+
+/** Back to the main menu (Esc in game, or after a mode ends). `note` is shown above the choices. */
+function showMenu(note = ''): void {
+  leavePlay();
   menu.showMenu(note);
+}
+
+/** The temple screen (from the menu, or back from a raid). */
+function showTemple(): void {
+  leavePlay();
+  menu.hide();
+  renderer.scene = 'night';
+  temple.show();
+}
+
+function hideRaidUi(): void {
+  for (const id of ['raidUi', 'raidHandoff', 'raidCount', 'raidResult', 'raidLost']) show(id, false);
+}
+
+/** A raid: step back into view, count down, fight at the temple, then the result. */
+function stepRaid(dt: number): void {
+  const r = raid!, check = handoffCheck();
+  game = r.game;
+  if (game && intent && r.state === 'fight') {
+    acc += dt;
+    while (acc >= STEP) { game.step(STEP, { ...intent, punches: pendingPunches, casts: pendingCasts, palms: pendingPalms }); pendingPunches = []; pendingCasts = []; pendingPalms = []; acc -= STEP; }
+    const events = game.drainEvents();
+    for (const e of events) { renderer.onEvent(e); hud.onEvent(e); }
+    cueSounds(game, events);
+    hud.update(game, intent.hands);
+  } else { pendingPunches = []; pendingCasts = []; pendingPalms = []; }
+  const before = r.state, count = Math.ceil(r.countdown);
+  r.update(dt, check.seen && check.handsUp && check.distance === 'ok');
+  if (r.state === 'countdown' && (before !== 'countdown' || Math.ceil(r.countdown) !== count)) sfx.ui('tick');
+  if (before === 'countdown' && r.state === 'fight') { sfx.ui('go'); hud.toast('DEFEND THE TEMPLE'); }
+  if (before !== 'result' && r.state === 'result' && r.result) {
+    for (let i = 0; i < r.result.flames; i++) setTimeout(() => sfx.ui('flame'), 250 + i * 280);
+  }
+  show('raidUi');
+  show('raidHandoff', r.state === 'handoff');
+  if (r.state === 'handoff') {
+    $('raidSeen').classList.toggle('ok', check.seen);
+    $('raidHands').classList.toggle('ok', check.handsUp);
+    $('raidDist').classList.toggle('ok', check.distance === 'ok');
+    $('raidDist').textContent = check.distance === 'close' ? 'Step back a little' : check.distance === 'far' ? 'Come a little closer' : 'Good distance';
+    $('raidHandoffFill').style.width = `${Math.round(Math.min(1, r.handoffFor) * 100)}%`;
+  }
+  show('raidCount', r.state === 'countdown');
+  if (r.state === 'countdown') $('raidCount').textContent = String(Math.max(1, Math.ceil(r.countdown)));
+  show('raidResult', r.state === 'result');
+  if (r.state === 'result' && r.result) {
+    $('raidResultTitle').textContent = r.raid.name;
+    $('raidFlames').innerHTML = [0, 1, 2].map(i => `<span class="${i < r.result!.flames ? '' : 'off'}">🔥</span>`).join('');
+    $('raidReasons').innerHTML = r.result.reasons.map(x => `<li class="ok">${x}</li>`).join('');
+  }
+  show('raidLost', r.state === 'lost');
+  // only the fight shows the fight HUD
+  document.body.classList.toggle('setup', r.state === 'handoff' || r.state === 'countdown');
 }
 
 function beginPlay(m: Mode = mode, lesson = 0): void {
@@ -186,6 +258,17 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
   for (const id of ['calib', 'status']) show(id, false);
   menu.hide();
   document.body.classList.remove('setup');
+  temple.hide();
+  if (m === 'raid') {
+    raid = new RaidRunner(progress, lesson, () => new Game(Math.random, renderer.viewHalfW, true));
+    game = null;
+    tutorial = null;
+    coach.hide();
+    renderer.scene = 'night';
+    show('game');
+    show('world', false);
+    return;
+  }
   if (m === 'campaign') {
     pathMap ??= new PathMap($('world') as HTMLCanvasElement);
     campUI ??= new CampaignUI(progress);
@@ -363,6 +446,7 @@ function loop(now: number): void {
   if (f) onFrame(f);
   if (phase === 'play') {
     if (mode === 'campaign') stepCampaign(dt, now);
+    else if (mode === 'raid' && raid) stepRaid(dt);
     else stepGame(dt);
   }
   renderer.render(phase === 'play' ? game : null, dt);
@@ -386,6 +470,10 @@ $('statusFallback').addEventListener('click', () => {
 });
 $('statusBack').addEventListener('click', () => showMenu());
 $('mockHelpClose').addEventListener('click', () => show('mockHelp', false));
+$('raidBack').addEventListener('click', () => showTemple());
+$('raidLeave').addEventListener('click', () => showTemple());
+$('raidAgain').addEventListener('click', () => raid?.retry());
+$('raidRetry').addEventListener('click', () => raid?.retry());
 $('campWalk').addEventListener('click', () => campaign?.walkOn());
 /** Fight the stop again from its result card (not saved as done) or after losing. */
 function campaignTryAgain(): void {
@@ -419,7 +507,7 @@ addEventListener('resize', () => {
 addEventListener('keydown', e => {
   if (e.repeat) return;
   // the title, menu and settings take their own keys
-  if (phase === 'front' && menu.key(e)) return;
+  if (phase === 'front' && (temple.key(e) || menu.key(e))) return;
   if (phase === 'loading' && e.key === 'Escape') { showMenu(); return; }
   const k = e.key.toLowerCase();
   if (k === '`') debug.toggle();
@@ -465,6 +553,11 @@ addEventListener('keydown', e => {
       else showMenu();
       return;
     }
+  }
+  if (mode === 'raid' && phase === 'play' && raid) {
+    if ((raid.state === 'result' || raid.state === 'lost') && k === 'r') { raid.retry(); return; }
+    if (raid.state === 'result' && k === 'enter') { e.preventDefault(); showTemple(); return; }
+    if (k === 'escape') { showTemple(); return; }
   }
   if (k === 'escape' && phase === 'play' && mode !== 'campaign') showMenu();
   if (tutorial && phase === 'play' && (k === 'n' || k === 'b')) {
