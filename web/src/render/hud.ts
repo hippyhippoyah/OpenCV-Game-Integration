@@ -4,7 +4,7 @@ const COMBO_NAMES: Record<ComboName, string> = {
   charged: 'CHARGED', flurry: 'FLURRY', counter: 'COUNTER', oneTwo: 'ONE-TWO PUSH', volley: 'PILLAR VOLLEY',
   wallBreaker: 'WALL BREAKER', finisher: 'FINISHER',
 };
-import { TUNING, type Intent } from '../intent/interpret';
+import { palmsFaceEachOther, TUNING, type Intent } from '../intent/interpret';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -21,6 +21,9 @@ export class Hud {
     $('breathBar').classList.toggle('low', g.breath < TUNE.breathPunch * 2);
     $('score').textContent = String(g.score);
     $('wave').textContent = g.label ?? (g.practice ? 'Practice dummies' : `Wave ${g.wave}`);
+    // both hands open and still-ish, but the palms don't face each other: say how to make a shield
+    const openPalmsApart = !!hands.l?.open && !!hands.r?.open && !!hands.l.palm && !!hands.r.palm
+      && !palmsFaceEachOther(hands.l, hands.r, TUNING.shieldFacing);
     const pill = $('pill');
     const noHands = !hands.l && !hands.r;
     pill.classList.toggle('off', noHands);
@@ -33,9 +36,10 @@ export class Hud {
       : g.xBlock ? ['X BLOCK', 'arms crossed: blocks attacks (not pillars or sweeps: move!)']
       : g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
       : noHands ? ['NO HANDS', 'raise your fists into view']
+      : openPalmsApart ? ['OPEN PALMS', 'turn your palms to face each other to raise the shield · palms forward and shove: push']
       : tooFar ? ['GUARD', 'step closer (about 1.5 m) so fist punches can see your fists clearly']
         : ['GUARD', TUNING.punchTrigger === 'extend'
-          ? 'fist: punch (pull back & hold: charge) · palm push: pillar · both palms: shield · sweep up: wall, then push · hands together, then spread: finisher'
+          ? 'fist: punch (pull back & hold: charge) · palm forward, shove: pillar · palms facing each other: shield · sweep up: wall, then push · hands together, then spread: finisher'
           : 'punch & open: shoot · still open hands: shield · sweep up: wall · hands together, then spread: finisher'];
     const lost = (['l', 'r'] as const).filter(side => hands[side] && !hands[side]!.inView);
     $('modeName').textContent = name;

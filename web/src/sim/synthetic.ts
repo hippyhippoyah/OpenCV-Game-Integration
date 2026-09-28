@@ -43,7 +43,11 @@ export const POSES = {
   xblock: { out: -0.26, up: 0.2, fwd: 0.22 },
 } satisfies Record<string, Reach>;
 
-export interface HandKey { reach: Reach; open: boolean }
+export interface HandKey {
+  reach: Reach; open: boolean;
+  /** An open hand's palm: 0 = toward the camera (default) … 1 = turned in, facing the other hand. */
+  turn?: number;
+}
 export interface BodyState {
   /** Distance from the camera to the shoulders, metres. */
   distance: number;
@@ -90,11 +94,13 @@ function elbowAt(side: Side, s: V3, w: V3): V3 {
  * 21 hand landmarks (camera frame). A fist points along the forearm with the knuckle row
  * horizontal; an open hand has its fingers up and palm toward the camera.
  */
-function handPoints(side: Side, wrist: V3, elbow: V3, open: boolean): V3[] {
+function handPoints(side: Side, wrist: V3, elbow: V3, open: boolean, turn = 0): V3[] {
   let f: V3, lat: V3;
   if (open) {
     f = v3(0, -1, 0);
-    lat = v3(-outward(side), 0, 0); // thumb side toward the midline
+    // thumb side toward the midline; turned in (palms facing each other), the thumb points back at you
+    const a = (turn * Math.PI) / 2;
+    lat = v3(-outward(side) * Math.cos(a), 0, Math.sin(a));
   } else {
     // a fist keeps its knuckle row across the body: the picture's x, made perpendicular to the forearm
     f = norm(sub(wrist, elbow));
@@ -186,9 +192,10 @@ export class SyntheticCamera {
       const speed = prev && dt > 0 ? Math.hypot((wp.x - prev.x) * ASPECT, wp.y - prev.y) / dt : 0;
       const inPic = wp.x > 0.02 && wp.x < 0.98 && wp.y > 0.02 && wp.y < 0.98;
       if (!inPic || (speed > o.blurSpeed && this.rand() < o.blurDropChance)) continue;
-      const pts = handPoints(side, w, e, state.hands[side].open);
+      const pts = handPoints(side, w, e, state.hands[side].open, state.hands[side].turn);
       const c = mul(pts.reduce(add, v3(0, 0, 0)), 1 / pts.length);
-      hands.push(pts.map(p => this.img(p, o.handNoise)));
+      // MediaPipe's picture z: depth relative to the wrist, on the same scale as x
+      hands.push(pts.map(p => ({ ...this.img(p, o.handNoise), z: ((p.z - w.z) * FOCAL_H) / (w.z * ASPECT) })));
       const n = o.handWorldNoise;
       handsWorld.push(pts.map(p => ({ x: p.x - c.x + this.gauss(n), y: p.y - c.y + this.gauss(n), z: p.z - c.z + this.gauss(n) })));
     }

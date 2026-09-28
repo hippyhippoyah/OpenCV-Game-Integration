@@ -64,6 +64,16 @@ describe('palm push on a simulated webcam', () => {
     eachCase((d, seed) => expectPushes(perform(pushes(d, [2, 3], d > 1.5 ? 0.25 : 0.2, 0.12), 3.8, { seed }), 2, `${d} m seed ${seed}`));
   });
 
+  it('a palm turned sideways (edge-on to the camera) shoved forward is not a push', () => {
+    eachCase((d, seed) => {
+      const out = perform(t => {
+        const r = pushes(d, [2, 3], 0.25, 0.15)(t).hands.r;
+        return guardState(d, { r: { ...r, turn: 1 } });
+      }, 3.8, { seed });
+      expect(palmsIn(out), `${d} m seed ${seed}`).toHaveLength(0);
+    });
+  });
+
   it('a small nudge of the palm (8 cm) is not a push', () => {
     eachCase((d, seed) => expectPushes(perform(pushes(d, [2, 3], 0.08, 0.12), 3.8, { seed }), 0, `${d} m seed ${seed}`));
   });

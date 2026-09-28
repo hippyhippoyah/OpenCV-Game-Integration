@@ -2,7 +2,8 @@
 
 Drop files saved with the K key here. `src/intent/recordings.test.ts` replays them through the
 current detector, so real-camera behaviour is checked on every test run. Fixtures are trimmed to
-the tracking frames (no raw landmarks) plus what fired at the time:
+the tracking frames (no raw landmarks) plus what fired at the time; each hand's `normal` (palm
+direction) was added afterwards from the raw landmarks, as `palmNormal` computes it:
 
 - `punches-close.json` — alternating jabs from about 0.83 m (sensitivity ×1.4).
 - `punches-2.json` — jabs and combos, some thrown mid-lean.

@@ -5,7 +5,7 @@ import type { HandState, Intent } from '../intent/interpret';
 import { mulberry32 } from '../math';
 
 const hs = (x: number, y: number, open = false): HandState =>
-  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true, punchRise: null, reach: null, reachBase: null, reachNoise: null, aimDir: null, charge: 0 });
+  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: open ? 1 : 0, open, facing: 1, palm: null, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true, punchRise: null, reach: null, reachBase: null, reachNoise: null, aimDir: null, charge: 0 });
 const intent = (o: Partial<Intent> = {}): Intent =>
   ({ present: true, head: { x: 0, y: 0 }, hands: { l: hs(-12, 22), r: hs(12, 22) }, shoulders: { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } }, punches: [], palms: [], shield: false, xBlock: false, casts: [], face: null, bodyTilt: 0, ...o });
 

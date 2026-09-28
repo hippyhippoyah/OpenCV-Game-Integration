@@ -1,4 +1,5 @@
 export interface Vec2 { x: number; y: number }
+export interface Vec3 { x: number; y: number; z: number }
 
 export const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 export const lerp = (a: number, b: number, k: number): number => a + (b - a) * k;

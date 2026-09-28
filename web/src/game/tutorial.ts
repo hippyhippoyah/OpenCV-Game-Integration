@@ -79,7 +79,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'shield', title: 'Flame shield',
-    how: 'Open both hands and hold them still in front of you: fire burns between them. Put it over the red rings where water orbs will land.',
+    how: 'Open both hands, palms facing each other, and hold them still in front of you: fire burns between them. Put it over the red rings where water orbs will land.',
     goal: 'Block orbs with the shield', need: 3,
     cast: [{ tag: 'spirit', kind: 'spirit', x: 0, z: 8, only: 'orb', cd: 1, pace: 1.2 }],
     progress: (g, events) => (g.shield.on ? count(events, e => e.type === 'blocked') : 0),
@@ -93,7 +93,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'palm', title: 'Palm push',
-    how: 'Open one hand (keep the other a fist) and shove it at the camera — or open it as you push. A pillar of fire rolls out and burns through everything in its way.',
+    how: 'Open one hand (keep the other a fist) and shove it at the camera, palm facing forward — or open it as you push. A pillar of fire rolls out and burns through everything in its way.',
     goal: 'Send pillars of fire', need: 3,
     cast: [{ tag: 'a', kind: 'dummy', x: -20, z: 7 }, { tag: 'b', kind: 'dummy', x: 20, z: 9 }],
     progress: (_g, events) => count(events, e => e.type === 'pillar'),

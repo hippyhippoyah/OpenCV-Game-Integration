@@ -17,11 +17,15 @@ function perform(script: (t: number) => BodyState, seconds: number, opts: SimOpt
 const castsIn = (out: Intent[]) => out.flatMap(o => o.casts.map(c => c.kind));
 const palmsIn = (out: Intent[]) => out.flatMap(o => o.palms);
 
-/** Both hands open, moving from `a` to `b` over moveS starting at t0 (fists before openAt). */
-function twoHands(d: number, a: Reach, b: Reach, t0: number, moveS: number, openAt = 1.2) {
+/**
+ * Both hands open, moving from `a` to `b` over moveS starting at t0 (fists before openAt), palms
+ * turned in by `turn` (0 = toward the camera), or turning from turn[0] to turn[1] as they move.
+ */
+function twoHands(d: number, a: Reach, b: Reach, t0: number, moveS: number, openAt = 1.2, turn: number | [number, number] = 0) {
   return (t: number): BodyState => {
-    const reach = lerpReach(a, b, (t - t0) / moveS), open = t >= openAt;
-    return guardState(d, { l: { reach, open }, r: { reach, open } });
+    const k = (t - t0) / moveS, reach = lerpReach(a, b, k), open = t >= openAt;
+    const tn = typeof turn === 'number' ? turn : turn[0] + (turn[1] - turn[0]) * Math.min(1, Math.max(0, k));
+    return guardState(d, { l: { reach, open, turn: tn }, r: { reach, open, turn: tn } });
   };
 }
 
@@ -46,9 +50,9 @@ describe('two-hand casts on a simulated webcam', () => {
     });
   });
 
-  it('pushing out of a held shield works too', () => {
+  it('pushing out of a held shield works too (turning the palms forward as they go)', () => {
     eachCase((d, seed) => {
-      const out = perform(twoHands(d, SHIELD, SHIELD_OUT, 2.4, 0.18, 1.2), 3.4, { seed });
+      const out = perform(twoHands(d, SHIELD, SHIELD_OUT, 2.4, 0.18, 1.2, [1, 0]), 3.4, { seed });
       expect(out[Math.round(2.3 * 30)].shield, `${d} m seed ${seed}`).toBe(true);
       expect(castsIn(out), `${d} m seed ${seed}`).toEqual(['push']);
     });
@@ -75,6 +79,26 @@ describe('two-hand casts on a simulated webcam', () => {
   });
 
   it('holding the shield still casts nothing', () => {
-    eachCase((d, seed) => expect(castsIn(perform(twoHands(d, SHIELD, SHIELD, 2, 1), 4, { seed })), `${d} m seed ${seed}`).toEqual([]));
+    eachCase((d, seed) => expect(castsIn(perform(twoHands(d, SHIELD, SHIELD, 2, 1, 1.2, 1), 4, { seed })), `${d} m seed ${seed}`).toEqual([]));
+  });
+
+  it('the shield needs the palms facing each other: open palms facing the camera are not a shield', () => {
+    eachCase((d, seed) => {
+      expect(perform(twoHands(d, SHIELD, SHIELD, 2, 1, 1.2, 1), 3, { seed }).slice(-15).every(o => o.shield), `${d} m seed ${seed}`).toBe(true);
+      expect(perform(twoHands(d, SHIELD, SHIELD, 2, 1, 1.2, 0), 3, { seed }).some(o => o.shield), `${d} m seed ${seed}`).toBe(false);
+    });
+  });
+
+  it('turning the palms away from each other drops the shield', () => {
+    eachCase((d, seed) => {
+      const out = perform(twoHands(d, SHIELD, SHIELD, 2.5, 0.3, 1.2, [1, 0]), 3.4, { seed });
+      expect(out[Math.round(2.4 * 30)].shield, `${d} m seed ${seed}`).toBe(true);
+      expect(out.slice(-10).some(o => o.shield), `${d} m seed ${seed}`).toBe(false);
+    });
+  });
+
+  it('both palms shoved forward while turned in (facing each other) is no wall push', () => {
+    // (coming toward the camera, the hands also climb in the picture: that may read as a wall)
+    eachCase((d, seed) => expect(castsIn(perform(twoHands(d, SHIELD, SHIELD_OUT, 2, 0.18, 1.2, 1), 3, { seed })), `${d} m seed ${seed}`).not.toContain('push'));
   });
 });

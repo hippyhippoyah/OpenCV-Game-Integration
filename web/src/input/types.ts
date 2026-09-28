@@ -1,4 +1,4 @@
-import type { Vec2 } from '../math';
+import type { Vec2, Vec3 } from '../math';
 
 /** Mirrored, normalized video coordinates: (0,0) top-left, (1,1) bottom-right, as seen in a mirror. */
 export type Point = Vec2;
@@ -34,6 +34,11 @@ export interface HandObs {
   open: number;
   /** 1 = palm faces the camera, 0 = palm edge-on (e.g. palms facing each other). */
   facing: number;
+  /**
+   * The palm's direction if this is a right hand (x right on screen, y down, z toward the camera);
+   * a left hand's palm faces the opposite way. Undefined when not measured (mock hands may leave it out).
+   */
+  normal?: Vec3 | null;
   /** The arm this hand belongs to (nearest pose wrist), when a body is visible. */
   side?: Side;
   /**

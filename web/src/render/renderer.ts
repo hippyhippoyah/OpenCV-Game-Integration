@@ -1,7 +1,7 @@
 import { arrival, FLOOR_Y, FOCAL, TUNE, type Blade, type Enemy, type Game, type GameEvent, type Hazard, type Wall } from '../game/game';
 import type { Side } from '../input/types';
-import { TUNING } from '../intent/interpret';
-import { clamp, lerp, mulberry32, type Vec2 } from '../math';
+import { palmsFaceEachOther, TUNING } from '../intent/interpret';
+import { clamp, lerp, mulberry32, type Vec2, type Vec3 } from '../math';
 import { ghostPose } from './ghost';
 import { FLOORS, paintMid, paintSky, type Frame, type Glows, type Scene } from './scenes';
 
@@ -280,6 +280,7 @@ export class Renderer {
       this.drawAimReticles(g);
       if (g.xBlock) this.drawXBlock(g);
       this.drawHands(g);
+      this.drawPalmFacing(g);
       this.drawGhost();
       this.drawOffscreenHands(g);
     }
@@ -937,6 +938,8 @@ export class Renderer {
     c: CanvasRenderingContext2D, h: Vec2, side: number, grow: number, open: boolean, elbowAt: Vec2 | null = null,
     /** > 1 draws the hand bigger, e.g. a fist punching toward you. */
     scale = 1,
+    /** Which way an open palm faces: turned sideways it's seen edge-on, so it's drawn narrow. */
+    palm: Vec3 | null = null,
   ): void {
     const k = 1.5 * this.u * scale, g = grow;
     c.lineCap = 'round';
@@ -958,14 +961,15 @@ export class Renderer {
       line(h.x - side * 2.8 * k, h.y + 0.8 * k, h.x + side * 0.6 * k, h.y - 0.2 * k, 1.8 * k);
       return;
     }
-    const pw = 5.4 * k;
+    // sx: how wide the hand looks — flat to the camera (palm out, or its back) full width, edge-on narrow
+    const sx = palm ? 0.35 + 0.65 * Math.abs(palm.z) : 1, pw = 5.4 * k * sx;
     c.beginPath(); c.ellipse(h.x, h.y, pw / 2 + g, 3.6 * k + g, 0, 0, 7); c.fill();
     for (let i = 0; i < 4; i++) {
-      const a = -Math.PI / 2 + (i - 1.5) * 0.2, len = (i === 1 || i === 2 ? 5.2 : 4.4) * k;
+      const a = -Math.PI / 2 + (i - 1.5) * 0.2 * sx, len = (i === 1 || i === 2 ? 5.2 : 4.4) * k;
       const bx = h.x + (i - 1.5) * pw * 0.26, by = h.y - 2.6 * k;
       line(bx, by, bx + Math.cos(a) * len, by + Math.sin(a) * len, 1.6 * k);
     }
-    const ta = -Math.PI / 2 - side * 1.05, tx = h.x - side * pw * 0.42, ty = h.y + 0.4 * k;
+    const ta = -Math.PI / 2 - side * 1.05 * sx, tx = h.x - side * pw * 0.42, ty = h.y + 0.4 * k;
     line(tx, ty, tx + Math.cos(ta) * 3.6 * k, ty + Math.sin(ta) * 3.6 * k, 1.9 * k);
   }
 
@@ -1006,7 +1010,7 @@ export class Renderer {
     // idle hands keep only a faint warm rim so you can see them; burning hands glow
     for (const { h, sign, burn } of hands) {
       c.strokeStyle = c.fillStyle = `rgba(255,130,60,${(0.12 + 0.3 * burn) * flicker})`;
-      this.handShape(c, this.viewToScreen(this.shownAt(h)), sign, 0.9 * u, h.open, h.elbow && this.viewToScreen(this.shownAt(h, h.elbow)), this.shownScale(h));
+      this.handShape(c, this.viewToScreen(this.shownAt(h)), sign, 0.9 * u, h.open, h.elbow && this.viewToScreen(this.shownAt(h, h.elbow)), this.shownScale(h), h.palm);
     }
     const hl = this.handLayer.getContext('2d')!;
     hl.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -1014,7 +1018,7 @@ export class Renderer {
     hl.clearRect(0, 0, this.W, this.H);
     hl.strokeStyle = hl.fillStyle = g.inv > 0 && Math.sin(this.t * 40) > 0 ? '#3a1216' : '#150f19';
     for (const { h, sign } of hands) {
-      this.handShape(hl, this.viewToScreen(this.shownAt(h)), sign, 0, h.open, h.elbow && this.viewToScreen(this.shownAt(h, h.elbow)), this.shownScale(h));
+      this.handShape(hl, this.viewToScreen(this.shownAt(h)), sign, 0, h.open, h.elbow && this.viewToScreen(this.shownAt(h, h.elbow)), this.shownScale(h), h.palm);
     }
     hl.globalCompositeOperation = 'source-atop';
     for (const { h, burn } of hands) {
@@ -1024,6 +1028,69 @@ export class Renderer {
       hl.fillRect(0, 0, this.W, this.H);
     }
     c.drawImage(this.handLayer, 0, 0, this.W, this.H);
+  }
+
+  /**
+   * Which way each open palm faces. Facing forward (at the enemies, as a palm push needs): a ring of
+   * sparks on the hand. Turned to the side, up or down: an arrow that way — gold when both palms
+   * face each other (the shield's pose). Facing back at you: a dim ring.
+   */
+  private drawPalmFacing(g: Game): void {
+    const { l, r } = g.hands;
+    const c = this.ctx, u = this.u;
+    const shieldPose = !!l?.open && !!r?.open && !!l.palm && !!r.palm && palmsFaceEachOther(l, r, TUNING.shieldFacing);
+    c.save();
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    for (const h of [l, r]) {
+      if (!h?.inView || !h.open || !h.palm) continue;
+      const C = this.viewToScreen(this.shownAt(h)), p = h.palm, side = Math.hypot(p.x, p.y);
+      const fwd = clamp((p.z - 0.2) / 0.6, 0, 1), back = clamp((-p.z - 0.2) / 0.6, 0, 1);
+      if (fwd > 0) {
+        // palm out: a warm ring with short rays, like fire ready to leave it
+        const R = 4.5 * u, a = 0.85 * fwd;
+        c.strokeStyle = `rgba(255,200,120,${a})`;
+        c.lineWidth = 0.5 * u;
+        c.beginPath(); c.arc(C.x, C.y, R, 0, 7); c.stroke();
+        c.lineWidth = 0.35 * u;
+        for (let i = 0; i < 8; i++) {
+          const t = (i / 8) * Math.PI * 2 + this.t * 0.8;
+          c.beginPath();
+          c.moveTo(C.x + Math.cos(t) * R * 1.25, C.y + Math.sin(t) * R * 1.25);
+          c.lineTo(C.x + Math.cos(t) * R * 1.6, C.y + Math.sin(t) * R * 1.6);
+          c.stroke();
+        }
+      }
+      if (back > 0) {
+        c.strokeStyle = `rgba(190,200,220,${0.45 * back})`;
+        c.lineWidth = 0.35 * u;
+        c.setLineDash([0.8 * u, 0.8 * u]);
+        c.beginPath(); c.arc(C.x, C.y, 4 * u, 0, 7); c.stroke();
+        c.setLineDash([]);
+      }
+      if (side > 0.35) {
+        // the palm's direction across the screen
+        const dx = p.x / side, dy = p.y / side, a = clamp((side - 0.35) / 0.4, 0, 1);
+        const from = 5 * u, to = from + 11 * u * side, tip = { x: C.x + dx * to, y: C.y + dy * to }, head = 3 * u;
+        const arrow = () => {
+          c.beginPath();
+          c.moveTo(C.x + dx * from, C.y + dy * from); c.lineTo(tip.x, tip.y);
+          c.moveTo(tip.x - dx * head - dy * head * 0.8, tip.y - dy * head + dx * head * 0.8);
+          c.lineTo(tip.x, tip.y);
+          c.lineTo(tip.x - dx * head + dy * head * 0.8, tip.y - dy * head - dx * head * 0.8);
+          c.stroke();
+        };
+        // a dark edge so it reads over fire, then the arrow itself
+        const w = (shieldPose ? 1.1 : 0.8) * u;
+        c.strokeStyle = `rgba(20,10,20,${0.55 * a})`;
+        c.lineWidth = w + 0.9 * u;
+        arrow();
+        c.strokeStyle = shieldPose ? `rgba(255,220,120,${a})` : `rgba(245,240,230,${0.85 * a})`;
+        c.lineWidth = w;
+        arrow();
+      }
+    }
+    c.restore();
   }
 
   /** Translucent hands demonstrating the move being learned, over your own. */
@@ -1038,7 +1105,9 @@ export class Renderer {
     c.strokeStyle = c.fillStyle = 'rgba(160,210,255,0.55)';
     for (const [side, sign] of [['l', -1], ['r', 1]] as const) {
       const h = pose[side];
-      this.handShape(c, this.viewToScreen(h.pos), sign, 0.6 * this.u, h.open, null, h.scale);
+      // the shield is taught with the palms facing each other (seen edge-on, so narrow)
+      const palm = h.open && this.ghost.lessonId === 'shield' ? { x: -sign, y: 0, z: 0 } : null;
+      this.handShape(c, this.viewToScreen(h.pos), sign, 0.6 * this.u, h.open, null, h.scale, palm);
     }
     c.restore();
   }

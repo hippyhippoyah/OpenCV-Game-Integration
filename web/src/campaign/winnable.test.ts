@@ -13,7 +13,7 @@ const onScreen = (g: Game, e: Enemy) => { const s = 3 / (3 + e.z); return { x: (
 
 /** A raised, open hand for the shield: only the fields the shield check reads matter. */
 const shieldHand = (x: number, y: number): HandState =>
-  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: 1, open: true, facing: 1, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true, punchRise: null, reach: null, reachBase: null, reachNoise: null, aimDir: null, charge: 0 });
+  ({ pos: { x, y }, vel: { x: 0, y: 0 }, openness: 1, open: true, facing: 1, palm: null, source: 'hand', inView: true, elbow: null, extension: null, punchReady: true, punchRise: null, reach: null, reachBase: null, reachNoise: null, aimDir: null, charge: 0 });
 
 function play(stopIndex: number, smart: boolean): 'won' | 'lost' {
   const s = STOPS[stopIndex];

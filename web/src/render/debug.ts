@@ -1,4 +1,5 @@
 import type { TrackingFrame } from '../input/types';
+import { palmOf } from '../input/landmarks';
 import { fistThresholds, TUNING, type Intent } from '../intent/interpret';
 import type { Vec2 } from '../math';
 
@@ -86,13 +87,14 @@ export class DebugView {
         const x = leftmost ? p.x - r - 3 : p.x + r + 3;
         c.fillStyle = '#fff';
         c.fillText(`${open ? 'OPEN' : 'FIST'} ${hand.open.toFixed(2)}`, x, p.y);
-        c.fillText(`face ${hand.facing.toFixed(2)}`, x, p.y + h / 12);
+        const n = hand.normal && hand.side ? palmOf(hand.normal, hand.side) : null;
+        c.fillText(n ? `palm ${n.x.toFixed(1)} ${n.y.toFixed(1)} ${n.z.toFixed(1)}` : `face ${hand.facing.toFixed(2)}`, x, p.y + h / 12);
       });
     }
     if (intent) this.drawArmMeters(intent);
     if (this.detailed && intent) {
       const line = (name: string, h: Intent['hands']['l']) => h
-        ? `${name} ${h.open ? 'open' : 'fist'} ${h.openness.toFixed(2)}  face ${h.facing.toFixed(2)}  speed ${Math.hypot(h.vel.x, h.vel.y).toFixed(0)}`
+        ? `${name} ${h.open ? 'open' : 'fist'} ${h.openness.toFixed(2)}  palm ${h.palm ? `${h.palm.x.toFixed(1)} ${h.palm.y.toFixed(1)} ${h.palm.z.toFixed(1)} (x right, y down, z forward)` : '—'}  speed ${Math.hypot(h.vel.x, h.vel.y).toFixed(0)}`
           + `\n  ${h.source}${h.inView ? '' : ' (out of view)'}  arm ${h.extension === null ? '—' : h.extension.toFixed(2)}`
         : `${name} —`;
       const deg = (r: number) => `${Math.round((r * 180) / Math.PI)}°`;

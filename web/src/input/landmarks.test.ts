@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { openness, palmFacing, toFrame, type Landmark } from './landmarks';
+import { openness, palmFacing, palmNormal, palmOf, toFrame, type Landmark } from './landmarks';
 
 const pose = (): Landmark[] => Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 1 }));
 
@@ -170,5 +170,35 @@ describe('how far each hand is in front of the body', () => {
   it('has no 3D position without MediaPipe world landmarks', () => {
     const f = toFrame(0, [Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5 }))], pose());
     expect(f.hands[0].body3).toBeNull();
+  });
+});
+
+describe('palmNormal / palmOf', () => {
+  /** Picture landmarks (un-mirrored, z grows away from the camera) of a hand with its fingers up. */
+  const hand = (index: [number, number], pinky: [number, number]): Landmark[] => {
+    const lm: Landmark[] = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.6, z: 0 }));
+    lm[5] = { x: 0.5 + index[0], y: 0.55, z: index[1] };
+    lm[17] = { x: 0.5 + pinky[0], y: 0.55, z: pinky[1] };
+    return lm;
+  };
+  const r = (v: { x: number; y: number; z: number }) => ({ x: Math.round(v.x) || 0, y: Math.round(v.y) || 0, z: Math.round(v.z) || 0 });
+
+  it('a right hand showing its palm to the camera (thumb side toward the middle of the picture) faces forward', () => {
+    // your right hand is on the picture's left; its index knuckle is further right than its pinky's
+    const n = palmNormal(hand([0.02, 0], [-0.02, 0]))!;
+    expect(r(palmOf(n, 'r'))).toEqual({ x: 0, y: 0, z: 1 });
+    // the back of the hand toward the camera (index now on the left) faces you
+    expect(r(palmOf(palmNormal(hand([-0.02, 0], [0.02, 0]))!, 'r'))).toEqual({ x: 0, y: 0, z: -1 });
+  });
+
+  it('a left hand is the mirror image: the same picture means the opposite palm', () => {
+    expect(r(palmOf(palmNormal(hand([-0.02, 0], [0.02, 0]))!, 'l'))).toEqual({ x: 0, y: 0, z: 1 });
+  });
+
+  it('palms turned to face each other point across the (mirrored) view', () => {
+    // turned in, the thumb side swings back toward you: the index knuckle is further from the camera
+    // than the pinky's. The right palm then faces the middle — left of it in the mirrored view.
+    expect(r(palmOf(palmNormal(hand([0, 0.03], [0, -0.03]))!, 'r'))).toEqual({ x: -1, y: 0, z: 0 });
+    expect(r(palmOf(palmNormal(hand([0, 0.03], [0, -0.03]))!, 'l'))).toEqual({ x: 1, y: 0, z: 0 });
   });
 });

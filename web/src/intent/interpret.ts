@@ -1,8 +1,8 @@
 import type { BodyPoint, HandObs, Side, TrackingFrame } from '../input/types';
 import type { Calibration } from './calibration';
-import { clamp, dist, lerp, type Vec2 } from '../math';
+import { clamp, dist, lerp, type Vec2, type Vec3 } from '../math';
 import { OneEuro } from './oneEuro';
-import { FOCAL_H } from '../input/landmarks';
+import { FOCAL_H, palmOf } from '../input/landmarks';
 
 /**
  * View space: world units relative to the eyes, x right, y down.
@@ -17,6 +17,11 @@ export interface HandState {
   open: boolean;
   /** 1 = palm faces the camera, 0 = edge-on (palms facing each other). */
   facing: number;
+  /**
+   * Which way the palm faces (unit vector, smoothed): x right on screen, y down, z forward (toward
+   * the camera, i.e. at your enemies). Null when not measured.
+   */
+  palm: Vec3 | null;
   /** Where the position came from: the hand tracker, the pose wrist, or a pose guess outside the picture. */
   source: 'hand' | 'arm' | 'estimate';
   /** The hand is inside the camera picture. */
@@ -275,8 +280,13 @@ export const TUNING = {
    * palmRefractoryS afterwards. A fist punch whose hand opens while it is confirming becomes a push.
    */
   palmPushRise: 0.108, palmPushWindowS: 0.35, palmNoise: 11.5, palmPushCap: 0.2, palmConfirmS: 0.08, palmRefractoryS: 0.5, palmOtherStill: 0.5, palmBothOpenConfirmS: 0.15,
-  /** Experimental: only count palms facing each other (edge-on to the camera) as a shield. */
-  shieldNeedsEdgeOnPalms: false, edgeOnBelow: 0.5,
+  /**
+   * Which way the palms face (when measured): a palm push (one hand or both) needs the pushing
+   * palm facing forward — its forward part at least pushFacing (0.5 = within 60°). The shield needs
+   * the palms facing each other: each palm's part toward the other hand at least shieldFacing
+   * (≈ within 60°) to go up; it drops once either turns below shieldFacingOff.
+   */
+  pushFacing: 0.5, shieldFacing: 0.5, shieldFacingOff: 0.25,
   /** Pose wrists below this confidence are treated as guesses. */
   minWristVis: 0.5,
   /** The palm sits this fraction of the forearm beyond the pose wrist. */
@@ -318,6 +328,8 @@ interface Track extends HandState {
 
 /** What a frame says about one hand. */
 interface HandInput {
+  /** Which hand this track is (a left palm faces the opposite way to its measured normal). */
+  side: Side;
   pos: Vec2;
   /** The hand tracker's view (shape, size); null when following the pose wrist. */
   h: HandObs | null;
@@ -383,7 +395,7 @@ const smooth = (prev: Vec2 | null, next: Vec2, k: number): Vec2 =>
 
 const snapshot = (t: Track | null): HandState | null =>
   t && {
-    pos: { ...t.pos }, vel: { ...t.vel }, openness: t.openness, open: t.open, facing: t.facing,
+    pos: { ...t.pos }, vel: { ...t.vel }, openness: t.openness, open: t.open, facing: t.facing, palm: t.palm && { ...t.palm },
     source: t.source, inView: t.inView, elbow: t.elbow && { ...t.elbow }, extension: t.extension,
     punchReady: t.armed, punchRise: t.reach === null ? null : reachRise(t, TUNING.quickWindowS),
     reach: t.reach, reachBase: t.reachBase, reachNoise: t.reach === null ? null : t.reachNoise,
@@ -466,7 +478,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     })();
     if (i !== null) {
       const o = obs[i];
-      const r = updateTrack(s[side], { pos: o.pos, h: o.h, size: o.h.size / sw, ext, bodyDist }, f.t, dt, k);
+      const r = updateTrack(s[side], { side, pos: o.pos, h: o.h, size: o.h.size / sw, ext, bodyDist }, f.t, dt, k);
       s[side] = r.track;
       r.track.source = 'hand';
       r.track.inView = true;
@@ -480,7 +492,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       // keeping the last offset between the two (fading) so the hand doesn't jump.
       const prev = s[side], fade = Math.exp(-dt / 1.0);
       const offset = prev ? { x: prev.armOffset.x * fade, y: prev.armOffset.y * fade } : { x: 0, y: 0 };
-      const tr = updateTrack(prev, { pos: { x: armPalm.x + offset.x, y: armPalm.y + offset.y }, h: null, size: null, ext, bodyDist }, f.t, dt, k).track;
+      const tr = updateTrack(prev, { side, pos: { x: armPalm.x + offset.x, y: armPalm.y + offset.y }, h: null, size: null, ext, bodyDist }, f.t, dt, k).track;
       tr.armOffset = offset;
       tr.inView = arm.wrist.vis >= TUNING.minWristVis && inPicture(arm.wrist);
       tr.source = tr.inView ? 'arm' : 'estimate';
@@ -603,6 +615,8 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     // the other hand opening and pushing too makes it a wall push instead
     if (!tr || !tr.open || (o?.open && !heldStill(o, tr))) return false;
     if (f.t - p.t < (o?.open ? TUNING.palmBothOpenConfirmS : TUNING.palmConfirmS)) return true;
+    // a push is the palm driven at the enemy: a hand turned sideways or back isn't one
+    if (!facesForward(tr)) return false;
     palms.push({ ...p, at: { ...tr.pos }, dir: tr.aimDir && { ...tr.aimDir } });
     return false;
   });
@@ -650,13 +664,13 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       const kind = f.t >= s.castReadyAt ? twoHandGesture(l, r, Math.max(s.bothOpenAt, f.t - TUNING.castWindowS), s.lastCastT) : null;
       if (kind) cast(kind, mid);
       else if (!s.shieldOn) {
-        const edgeOn = (t: Track) => !TUNING.shieldNeedsEdgeOnPalms || t.facing < TUNING.edgeOnBelow;
         const still = (t: Track) => Math.hypot(t.vel.x, t.vel.y) < TUNING.shieldMaxSpeed;
         // (not straight after a cast either: hands left spread wide after a finisher aren't a shield)
-        if (!still(l) || !still(r) || !edgeOn(l) || !edgeOn(r) || gap < TUNING.shieldMinGap || f.t < s.castReadyAt) s.stillSince = null;
+        if (!still(l) || !still(r) || !palmsFaceEachOther(l, r, TUNING.shieldFacing) || gap < TUNING.shieldMinGap || f.t < s.castReadyAt) s.stillSince = null;
         else if (s.stillSince === null) s.stillSince = f.t;
         else if (f.t - s.stillSince >= TUNING.shieldHoldS) s.shieldOn = true;
       } else if (gap < TUNING.gatherGap) s.shieldOn = false; // hands brought together: that's a gather now
+      else if (!palmsFaceEachOther(l, r, TUNING.shieldFacingOff)) s.shieldOn = false; // palms turned away
     }
   }
   // Blue inferno: hands together over the head until they burn blue, then slammed down together
@@ -762,6 +776,27 @@ function startPush(s: InterpretState, side: Side, t: number, shoulder: Vec2): vo
   s.palmPending.push({ kind: 'push', hand: side, at: { ...tr.pos }, shoulder: { ...shoulder }, dir: null, t });
 }
 
+/** The palm faces forward, at the enemies (or its direction isn't measured). */
+function facesForward(t: HandState): boolean {
+  return !t.palm || t.palm.z >= TUNING.pushFacing;
+}
+
+/** Each palm faces the other hand, at least `min` of it pointing that way (or they aren't measured). */
+export function palmsFaceEachOther(l: HandState, r: HandState, min: number): boolean {
+  if (!l.palm || !r.palm) return true;
+  const dx = r.pos.x - l.pos.x, dy = r.pos.y - l.pos.y, len = Math.hypot(dx, dy);
+  if (len < 1e-6) return false;
+  const ux = dx / len, uy = dy / len;
+  return l.palm.x * ux + l.palm.y * uy >= min && -(r.palm.x * ux + r.palm.y * uy) >= min;
+}
+
+/** Ease a direction toward another by k, keeping it a unit vector (turned more than 90°: jump). */
+function turnToward(from: Vec3 | null, to: Vec3, k: number): Vec3 {
+  if (!from || from.x * to.x + from.y * to.y + from.z * to.z < 0) return { ...to };
+  const x = lerp(from.x, to.x, k), y = lerp(from.y, to.y, k), z = lerp(from.z, to.z, k), len = Math.hypot(x, y, z);
+  return len > 1e-6 ? { x: x / len, y: y / len, z: z / len } : { ...to };
+}
+
 /** The shove (m) a palm push needs, given the reading's wobble: capped, and scaled by sensitivity. */
 export function pushThreshold(noise: number): number {
   return Math.min(TUNING.palmPushCap, Math.max(TUNING.palmPushRise, TUNING.palmNoise * noise)) / TUNING.punchSensitivity;
@@ -772,7 +807,7 @@ function twoHandGesture(l: Track, r: Track, from: number, lastCastT: number): Ca
   // palm pushes may start just before both hands read open, so they look back their own window
   // (not scaled by punch sensitivity: stealing a wall costs more than a stray punch)
   const need = TUNING.twoPushShare * TUNING.punchSensitivity * pushThreshold(Math.max(l.reachNoise ?? 0, r.reachNoise ?? 0));
-  if (Math.min(palmPushRise(l.hist, TUNING.palmPushWindowS, lastCastT), palmPushRise(r.hist, TUNING.palmPushWindowS, lastCastT)) >= need) return 'push';
+  if (facesForward(l) && facesForward(r) && Math.min(palmPushRise(l.hist, TUNING.palmPushWindowS, lastCastT), palmPushRise(r.hist, TUNING.palmPushWindowS, lastCastT)) >= need) return 'push';
   const l0 = l.hist.find(h => h.t >= from), r0 = r.hist.find(h => h.t >= from);
   if (!l0 || !r0) return null;
   const rise = Math.min(l0.y - l.pos.y, r0.y - r.pos.y);
@@ -834,7 +869,7 @@ function assign(obs: Vec2[], l: Track | null, r: Track | null, dt: number): Reco
  * and 3D position; without it — following the pose wrist — the last known shape is kept.
  */
 function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, k: number): { track: Track; opened: boolean } {
-  const { pos, h, size, ext, bodyDist } = input;
+  const { side, pos, h, size, ext, bodyDist } = input;
   const b3 = h?.body3 ?? null, depth = h?.depth ?? null;
   // how far in front of the shoulders: filtered body distance − filtered hand distance
   const reachNow = (t: Track) => (depth !== null && bodyDist !== null ? bodyDist - t.filters.depth.filter(depth, dt) : null);
@@ -849,7 +884,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     filters.x.filter(pos.x, 0); filters.y.filter(pos.y, 0);
     if (b3) { filters.bx.filter(b3.x, 0); filters.by.filter(b3.y, 0); }
     const track: Track = {
-      pos: { ...pos }, vel: { x: 0, y: 0 }, openness: open, open: open >= 0.5, facing: h ? h.facing : 1,
+      pos: { ...pos }, vel: { x: 0, y: 0 }, openness: open, open: open >= 0.5, facing: h ? h.facing : 1, palm: h?.normal ? palmOf(h.normal, side) : null,
       source: 'hand', inView: true, elbow: null, extension: ext, punchReady: true, armed: true, lastSeen: t,
       reach: null, reachBase: null, reachNoise: 0.02, reachDev: 0.02, rawDepths: [depth], lastPunchT: -Infinity, peakReach: -Infinity, peakT: -Infinity,
       reachSince: null,
@@ -907,6 +942,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
   if (h) {
     tr.openness = lerp(tr.openness, h.open, k);
     tr.facing = lerp(tr.facing, h.facing, k);
+    tr.palm = h.normal ? turnToward(tr.palm, palmOf(h.normal, side), k) : null;
     if (!tr.open && tr.openness > TUNING.openAbove) { tr.open = true; opened = true; }
     else if (tr.open && tr.openness < TUNING.fistBelow) tr.open = false;
   }

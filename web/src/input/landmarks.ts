@@ -1,5 +1,5 @@
 import type { ArmObs, BodyPoint, HandObs, Side, TrackingFrame } from './types';
-import { clamp, dist, type Vec2 } from '../math';
+import { clamp, dist, type Vec2, type Vec3 } from '../math';
 
 /** The part of MediaPipe's landmark types we use. */
 export interface Landmark { x: number; y: number; z?: number; visibility?: number }
@@ -45,6 +45,27 @@ export function palmFacing(lm: Landmark[]): number {
   const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
   const len = Math.hypot(nx, ny, nz);
   return len > 0 ? Math.abs(nz) / len : 0;
+}
+
+/**
+ * Which way the palm faces, as a unit vector in the mirrored view: x right on screen, y down,
+ * z toward the camera. Measured as if this were a right hand; a left hand's palm faces the
+ * opposite way (see palmOf). Uses the picture landmarks (their z is depth on the same scale as x),
+ * which hold the hand's orientation more steadily than the 3D ones.
+ */
+export function palmNormal(lm: Landmark[], aspect = 4 / 3): Vec3 | null {
+  const w = lm[WRIST], a = lm[INDEX_KNUCKLE], b = lm[PINKY_KNUCKLE];
+  const ax = (a.x - w.x) * aspect, ay = a.y - w.y, az = ((a.z ?? 0) - (w.z ?? 0)) * aspect;
+  const bx = (b.x - w.x) * aspect, by = b.y - w.y, bz = ((b.z ?? 0) - (w.z ?? 0)) * aspect;
+  const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+  const len = Math.hypot(nx, ny, nz);
+  // (picture x is mirrored; MediaPipe's z grows away from the camera)
+  return len > 1e-9 ? { x: -nx / len, y: ny / len, z: -nz / len } : null;
+}
+
+/** The way a hand's palm faces, from its right-hand-convention normal and which hand it is. */
+export function palmOf(normal: Vec3, side: Side): Vec3 {
+  return side === 'r' ? { ...normal } : { x: -normal.x, y: -normal.y, z: -normal.z };
 }
 
 /**
@@ -186,7 +207,7 @@ export function toFrame(
   };
   const arms = { l: armOf('l'), r: armOf('r') };
   const body = pose && poseWorld && visible(pose[L_SHOULDER]) && visible(pose[R_SHOULDER]) ? bodyDepth(pose, poseWorld, aspect) : null;
-  const handObsList = hands.map((lm, i) => handObs(lm, handsWorld[i] ?? lm, handsWorld[i] && body ? { body, aspect } : null));
+  const handObsList = hands.map((lm, i) => handObs(lm, handsWorld[i] ?? lm, handsWorld[i] && body ? { body, aspect } : null, aspect));
   matchHandsToArms(handObsList, arms);
   return {
     t, head, shoulderL, shoulderR, hands: handObsList, arms, face: pose ? faceOf(pose) : null,
@@ -233,7 +254,7 @@ function bodyDepth(pose: Landmark[], world: Landmark[], aspect: number): { dista
   return { distance: (FOCAL_H * real) / seen, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, span3: real, span2: seen };
 }
 
-function handObs(lm: Landmark[], world: Landmark[], depth: { body: { distance: number; mid: Vec2 }; aspect: number } | null): HandObs {
+function handObs(lm: Landmark[], world: Landmark[], depth: { body: { distance: number; mid: Vec2 }; aspect: number } | null, aspect: number): HandObs {
   const c = { x: 0, y: 0 };
   for (const i of PALM) { c.x += lm[i].x / PALM.length; c.y += lm[i].y / PALM.length; }
   const open = openness(world);
@@ -255,6 +276,7 @@ function handObs(lm: Landmark[], world: Landmark[], depth: { body: { distance: n
     size: dist(lm[WRIST], lm[MIDDLE_KNUCKLE]),
     open,
     facing: palmFacing(world),
+    normal: palmNormal(lm, aspect),
     body3,
     depth: handDepth,
   };

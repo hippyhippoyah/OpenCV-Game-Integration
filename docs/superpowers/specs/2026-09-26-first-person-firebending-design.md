@@ -459,3 +459,22 @@ finisher's gather catches fire; the countdown, the start of a fight, scrolls and
 campaign; and the menus. Held moves have held sounds: the shield crackles with fire while it's up,
 and the finisher's gather and the blue inferno's charge warm up — a swell rising in pitch and
 loudness as each fills (faint while the move is still recharging). Volume is in Settings. The audio starts on the first key press or click.
+
+## Which way the palms face
+
+The hand tracker's picture landmarks give each palm's direction: the normal of wrist → index knuckle
+× wrist → pinky knuckle (the picture z is depth on x's scale). That normal is the palm's direction
+for a right hand and the back's for a left, so the arm each hand is matched to decides which
+(`palmNormal`, `palmOf`). It is smoothed per hand (a turn of more than 90° jumps straight there).
+
+- **Palm push** (one hand or both): only with the palm facing forward, at the enemies (within 60°).
+- **Shield**: only with the palms facing each other (each within about 60° of pointing at the other
+  hand); it drops once either turns well away. Open palms shown to the camera — e.g. just opening
+  and closing the hands — are no longer a shield (22 false shield frames in one recording → 0).
+- Unmeasured (no hand data): no check, as before.
+- **On screen**: an open hand turned edge-on is drawn narrow. A palm facing forward gets a ring of
+  sparks; one turned sideways, up or down an arrow that way, gold when both face each other (the
+  shield pose); one facing you a dim dashed ring. With both palms open but not facing each other
+  the HUD says to turn them in for the shield.
+- The simulator can turn open palms in (`turn`), and the recording fixtures carry each hand's
+  `normal`, recomputed from the raw landmarks.

@@ -1,14 +1,16 @@
 import type { ArmObs, HandObs, Side, Tracker, TrackingFrame } from './types';
 import type { Calibration } from '../intent/calibration';
 import { TUNING, type CastKind, type PalmKind } from '../intent/interpret';
-import { FOCAL_H } from './landmarks';
-import { clamp, lerp, type Vec2 } from '../math';
+import { FOCAL_H, palmOf } from './landmarks';
+import { clamp, lerp, type Vec2, type Vec3 } from '../math';
 
 /** The body the mock pretends to see, which is also its calibration. */
 export const MOCK_CALIBRATION: Calibration = { head: { x: 0.5, y: 0.35 }, sw: 0.2 };
 const MID = { x: 0.5, y: 0.5 }, SW = 0.2, HAND_SIZE = 0.08;
 /** Fists up at chest height, in view units. */
 const GUARD: Record<Side, Vec2> = { l: { x: -12, y: 22 }, r: { x: 12, y: 22 } };
+/** A palm facing the camera (at your enemies). */
+const FORWARD: Vec3 = { x: 0, y: 0, z: 1 };
 const EXTEND_S = 0.12, OPEN_HOLD_S = 0.25, SHIELD_HALF_WIDTH = 18;
 /** Two-hand casts: open hands move for CAST_MOVE_S, then stay open for CAST_HOLD_S. */
 const CAST_MOVE_S = 0.25, CAST_HOLD_S = 0.3, GATHER_S = 0.6;
@@ -89,6 +91,8 @@ export class MockTracker implements Tracker {
     for (const side of ['l', 'r'] as const) {
       const sign = side === 'l' ? -1 : 1;
       let pos = GUARD[side], open = 0, grow = 0, facing = 1, ext = 0.25, reachM = GUARD_REACH_M;
+      /** Which way the palm faces (x right, y down, z at the camera); null leaves it unmeasured. */
+      let palmDir: Vec3 | null = null;
       const start = this.punchStart[side];
       const since = start === null ? null : t - start;
       if (since !== null && since > EXTEND_S + OPEN_HOLD_S) this.punchStart[side] = null;
@@ -100,11 +104,13 @@ export class MockTracker implements Tracker {
           : kind === 'push' ? { x: aim.x + sign * SHIELD_HALF_WIDTH, y: aim.y }       // shoved toward the camera
           : { x: aim.x + sign * lerp(6, 34, e), y: aim.y };                          // held together, then spread
         open = 1;
+        if (kind === 'push') palmDir = FORWARD;
         ext = 0.6;
         if (kind === 'push') reachM = 0.3 + (PUNCH_REACH_M - 0.3) * e;
       } else if (this.palming && side === 'r') {
         const e = clamp((t - this.palming.t - PALM_OPEN_S) / PALM_MOVE_S, 0, 1);
         open = 1;
+        palmDir = FORWARD;
         pos = { x: lerp(GUARD.r.x, aim.x, e), y: lerp(GUARD.r.y, aim.y, e) };
         ext = 0.25 + 0.65 * e;
         reachM = GUARD_REACH_M + (PUNCH_REACH_M - GUARD_REACH_M) * e;
@@ -124,6 +130,7 @@ export class MockTracker implements Tracker {
         pos = { x: aim.x + sign * SHIELD_HALF_WIDTH, y: aim.y };
         open = 1;
         facing = 0.2;
+        palmDir = { x: -sign, y: 0, z: 0 }; // palms facing each other
         ext = 0.8;
         reachM = 0.32;
       } else if (since !== null && since <= EXTEND_S + OPEN_HOLD_S) {
@@ -151,7 +158,9 @@ export class MockTracker implements Tracker {
       };
       // metres relative to the shoulder centre, for the reach-from-size detection
       const body3 = { x: (pos.x / TUNING.handScaleX) * MOCK_SHOULDERS_M, y: ((pos.y - TUNING.handOffsetY) / TUNING.handScaleY) * MOCK_SHOULDERS_M, z: reachM };
-      if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open, facing, side, body3, depth: MOCK_DISTANCE - reachM });
+      // (a hand's measured normal is its palm's direction as if it were a right hand)
+      const normal = palmDir && palmOf(palmDir, side);
+      if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open, facing, normal, side, body3, depth: MOCK_DISTANCE - reachM });
     }
     return {
       t, head,

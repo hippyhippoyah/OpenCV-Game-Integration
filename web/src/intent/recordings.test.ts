@@ -75,6 +75,8 @@ describe('real-camera recordings', () => {
     // palm push fired. (A both-palms push with no fire wall up only shows a hint.)
     const out = replay(openCloseRaw);
     expect(out.flatMap(o => [...o.intent.punches, ...o.intent.palms]).length).toBeLessThanOrEqual(1);
+    // the open hands face the camera, not each other: no shield (it went up 3 times before)
+    expect(out.some(o => o.intent.shield)).toBe(false);
   });
 
   it('does not punch while leaning quickly', () => {
