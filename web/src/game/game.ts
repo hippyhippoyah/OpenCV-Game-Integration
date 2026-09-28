@@ -37,6 +37,11 @@ export const TUNE = {
    */
   breathMax: 100, breathRegen: 12, breathRestRegen: 30, breathRestS: 0.8,
   breathPunch: 6, breathCharged: 16, breathPalm: 12, breathWall: 25, breathWallPush: 10,
+  /**
+   * Blue inferno (both charged fists slammed down): the whole ground burns blue for infernoS,
+   * burning every enemy on it infernoDamage each infernoTickS; then it recharges for infernoCooldownS.
+   */
+  infernoS: 5, infernoTickS: 0.5, infernoDamage: 1, infernoCooldownS: 20,
   ultimateCooldownS: 7, bladeSpeed: 16, bladeWidthPerDepth: 30, bladeMaxR: 18,
   /**
    * How far below the hands the blade sweeps, as a fraction of the way to the floor. At hand height
@@ -132,9 +137,9 @@ export type ComboName = 'charged' | 'flurry' | 'counter' | 'oneTwo' | 'volley' |
 
 /** Every move the player can have; the campaign unlocks them one scroll at a time. */
 export type MoveName = 'punch' | 'flurry' | 'shield' | 'palm' | 'charge' | 'wall' | 'finisher'
-  | 'xBlock' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker';
+  | 'xBlock' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker' | 'inferno';
 
-type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab' | 'fizzle';
+type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab' | 'fizzle' | 'inferno';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
   | { type: 'punch' | 'pillar'; x: number; y: number; z: number; side: Side }
@@ -216,6 +221,10 @@ export class Game {
   shoulders: Record<Side, Vec2> = { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } };
   /** Seconds until the ultimate is ready again. */
   ultimateIn = 0;
+  /** Blue inferno: seconds until it's ready again, and seconds the ground has left to burn. */
+  infernoIn = 0;
+  groundFire = 0;
+  private groundTick = 0;
   /** Finisher: how gathered your open hands are, 0 → 1 (1 = spread them to cast). */
   gather = 0;
   /** Breath left for attacks (see TUNE.breathMax), when you last spent some, and the last "out of breath" hint. */
@@ -349,6 +358,7 @@ export class Game {
     this.time += dt;
     this.palmCool = { l: Math.max(0, this.palmCool.l - dt), r: Math.max(0, this.palmCool.r - dt) };
     this.ultimateIn = Math.max(0, this.ultimateIn - dt);
+    this.infernoIn = Math.max(0, this.infernoIn - dt);
     const rested = this.time - this.breathSpentT >= TUNE.breathRestS;
     this.breath = Math.min(TUNE.breathMax, this.breath + (rested ? TUNE.breathRestRegen : TUNE.breathRegen) * dt);
     this.updateShield(intent.shield && this.has('shield'));
@@ -356,12 +366,13 @@ export class Game {
     if (this.state !== 'play') return;
     if (this.has('punch')) for (const p of intent.punches) this.punch(this.has('charge') ? p : { ...p, charged: false });
     for (const c of intent.casts) {
-      const needs: MoveName = c.kind === 'wall' ? 'wall' : c.kind === 'push' ? 'wallBreaker' : 'finisher';
+      const needs: MoveName = c.kind === 'wall' ? 'wall' : c.kind === 'push' ? 'wallBreaker' : c.kind === 'inferno' ? 'inferno' : 'finisher';
       if (this.has(needs)) this.cast(c);
     }
     if (this.has('palm')) for (const p of intent.palms ?? []) this.palm(p);
     this.updateWalls(dt);
     this.updateBlades(dt);
+    this.updateGroundFire(dt);
     this.updatePillars(dt);
     this.updateWaves(dt);
     this.updateEnemies(dt);
@@ -620,7 +631,7 @@ export class Game {
   }
 
   /** Burn an enemy with a pillar (or a rolling wall, `shot: 'wall'`). */
-  private burn(e: Enemy, damage = TUNE.palmDamage, shot: 'pillar' | 'wall' = 'pillar'): void {
+  private burn(e: Enemy, damage = TUNE.palmDamage, shot: 'pillar' | 'wall' | 'inferno' = 'pillar'): void {
     const dealt = e.boss ? bossDamage(e, shot, damage) : damage;
     e.hp -= dealt;
     e.flash = 1;
@@ -656,7 +667,29 @@ export class Game {
     return 1 - this.ultimateIn / TUNE.ultimateCooldownS;
   }
 
+  /** The blue inferno's burning ground: every enemy on the field takes a hit each tick. */
+  private updateGroundFire(dt: number): void {
+    if (this.groundFire <= 0) return;
+    this.groundFire = Math.max(0, this.groundFire - dt);
+    this.groundTick -= dt;
+    if (this.groundTick > 0) return;
+    this.groundTick += TUNE.infernoTickS;
+    for (const e of this.enemies) if (e.hp > 0 && e.appear >= 1) this.burn(e, TUNE.infernoDamage, 'inferno');
+  }
+
   private cast(c: Cast): void {
+    if (c.kind === 'inferno') {
+      if (this.infernoIn > 0) {
+        this.events.push({ type: 'hint', text: `BLUE INFERNO RECHARGING — ${Math.ceil(this.infernoIn)}s` });
+        return;
+      }
+      this.infernoIn = TUNE.infernoCooldownS;
+      this.groundFire = TUNE.infernoS;
+      this.groundTick = TUNE.infernoTickS;
+      const at = this.handWorld(c.at);
+      this.emit('inferno', at.x, FLOOR_Y, 0);
+      return;
+    }
     if (c.kind === 'wall') {
       if (this.wallCool > 0) return;
       this.wallCool = TUNE.wallCooldownS;

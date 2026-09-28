@@ -412,3 +412,14 @@ Vitality (green, top left), Breath (orange, top centre) and the score. The shiel
 it's up whenever you hold it and never breaks. The finisher is a plain cooldown move (7 s), shown
 as a small flame icon beside the breath bar — a ring that fills as it recharges and glows when
 ready — only once you have it.
+
+## Blue inferno (a second ultimate)
+
+Raise both fists up by your head and hold them still until both burn blue (the charged-punch
+charge, on both hands at once — the HUD says "BLUE INFERNO — bring them down hard!"). Then bring
+both down hard together (≥ 22 view units within 0.45 s of being at head level): the whole ground
+bursts into blue flame for 5 s, burning every enemy on the field 1 damage every 0.5 s (it reaches
+under Daro's stone wall). A 20 s cooldown, shown as a blue flame icon beside the finisher's. While
+both fists are charged, a fist moving down fast isn't taken for a punch, and the slam uses up both
+charges. It's a later unlock: in the Tutorial (last lesson), Training and Waves, not in Chapter 1.
+On mouse and keys: hold I, let go to slam.

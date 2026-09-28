@@ -705,3 +705,30 @@ describe('breath', () => {
     expect(g.breath).toBeGreaterThan(40);
   });
 });
+
+describe('blue inferno', () => {
+  const slam = intent({ casts: [{ kind: 'inferno', at: { x: 0, y: 30 } }] });
+
+  it('sets the ground burning for a few seconds, burning every enemy on it, then recharges', () => {
+    const g = quietGame();
+    const a = g.addEnemy({ kind: 'spirit', x: -20, z: 8, hp: 4 }), b = g.addEnemy({ kind: 'earth', x: 20, z: 12, hp: 4 });
+    for (const e of [a, b]) e.appear = 1;
+    g.step(1 / 60, slam);
+    expect(g.groundFire).toBeGreaterThan(0);
+    expect(g.drainEvents().some(e => e.type === 'inferno')).toBe(true);
+    run(g, TUNE.infernoS + 0.5, intent());
+    expect(g.groundFire).toBe(0);
+    expect(a.hp).toBeLessThanOrEqual(0);
+    expect(b.hp).toBeLessThanOrEqual(0);
+    g.step(1 / 60, slam);
+    expect(g.groundFire).toBe(0); // still recharging
+    expect(g.drainEvents()).toContainEqual({ type: 'hint', text: expect.stringContaining('RECHARGING') });
+  });
+
+  it('is a later move: only with it unlocked', () => {
+    const g = quietGame();
+    g.allowed = new Set(['punch', 'finisher']);
+    g.step(1 / 60, slam);
+    expect(g.groundFire).toBe(0);
+  });
+});

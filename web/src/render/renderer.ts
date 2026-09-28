@@ -142,6 +142,12 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.3);
         this.flare = { l: FLARE_S * 1.5, r: FLARE_S * 1.5 };
         break;
+      case 'inferno':
+        // the ground bursts into blue flame from where the fists came down
+        this.burst(e.x, FLOOR_Y - 2, 0.4, 'blue', 90, 60);
+        this.shake = Math.max(this.shake, 0.7);
+        this.flare = { l: FLARE_S * 2, r: FLARE_S * 2 };
+        break;
       case 'ultimate':
         this.burst(e.x, e.y, 0.3, 'fire', 60, 50);
         this.shake = 0.8;
@@ -212,6 +218,7 @@ export class Renderer {
     const mx = -M - this.cam.x * u * PAR_MID, my = -M - this.cam.y * u * PAR_MID;
     c.drawImage(this.mid, mx, my, W + 2 * M, H + 2 * M);
     this.drawLanterns(mx + M, my + M);
+    if (g && g.groundFire > 0) this.drawGroundFire(g);
 
     if (g) [...g.enemies].sort((a, b) => b.z - a.z).forEach(e => this.drawEnemy(e));
     if (g) {
@@ -964,6 +971,20 @@ export class Renderer {
     c.globalCompositeOperation = 'source-over';
   }
 
+  /** The blue inferno's burning ground: a flickering blue glow over the whole floor, fading out at the end. */
+  private drawGroundFire(g: Game): void {
+    const c = this.ctx, hz = this.VP.y, fade = Math.min(1, g.groundFire / 0.8);
+    const flick = 0.85 + 0.15 * Math.sin(this.t * 17) * Math.sin(this.t * 7.3);
+    c.globalCompositeOperation = 'lighter';
+    const gr = c.createLinearGradient(0, hz, 0, this.H);
+    gr.addColorStop(0, `rgba(60,110,255,${0.25 * fade})`);
+    gr.addColorStop(0.4, `rgba(80,140,255,${0.45 * fade * flick})`);
+    gr.addColorStop(1, `rgba(150,210,255,${0.6 * fade * flick})`);
+    c.fillStyle = gr;
+    c.fillRect(0, hz, this.W, this.H - hz);
+    c.globalCompositeOperation = 'source-over';
+  }
+
   /** A pillar of fire standing on the floor at (x, z): a glowing column with a ragged top. */
   private drawColumn(x: number, z: number, halfW: number, glow: number): void {
     if (glow <= 0) return;
@@ -1220,6 +1241,15 @@ export class Renderer {
         this.emit(m.x + Math.cos(a) * d, m.y + Math.sin(a) * d, 0, -Math.cos(a) * d * 3, -Math.sin(a) * d * 3 - 6, 0, rnd(0.2, 0.4), rnd(2, 3.4), ready ? 'fire' : 'earth', 0.3);
       }
       if (g.gather >= 1 && ready) this.flare = { l: Math.max(this.flare.l, FLARE_S * 0.6), r: Math.max(this.flare.r, FLARE_S * 0.6) };
+    }
+    // the blue inferno: flames licking up all over the ground while it burns
+    if (g.groundFire > 0) {
+      const k = Math.min(1, g.groundFire / 0.8) * Math.min(1, (TUNE.infernoS - g.groundFire) / 0.3 + 0.3);
+      // tongues of flame: born on the floor, licking straight up and gone quickly, bigger up close
+      for (let i = nOf(1100 * k, dt); i > 0; i--) {
+        const z = Math.random() ** 1.3 * 14, x = g.cam.x + rnd(-1, 1) * (60 + z * 28);
+        this.emit(x, FLOOR_Y - rnd(0, 1), z, rnd(-2, 2), rnd(-55, -25), 0, rnd(0.2, 0.45), rnd(5, 10), 'blue', 1.4);
+      }
     }
     // sparks flung off the ultimate's spinning rim
     for (const b of g.blades) {

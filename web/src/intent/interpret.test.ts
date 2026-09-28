@@ -227,6 +227,32 @@ describe('interpret', () => {
       expect(out.some(o => o.shield)).toBe(false);
     });
 
+    /** Both fists up by the head, held `hold` frames, then (if `slam`) brought down hard over 4 frames. */
+    function inferno(hold: number, slam: [boolean, boolean] = [true, true]): Intent[] {
+      const HIGH_L: HandSpec = { x: -0.3, y: -0.8 }, HIGH_R: HandSpec = { x: 0.3, y: -0.8 };
+      const low = (h: HandSpec, k: number, on: boolean): HandSpec => (on ? { x: h.x * (1 + 0.2 * k), y: h.y + 1.1 * k } : h);
+      return play([
+        ...repeat(8, () => [GUARD_L, GUARD_R]),
+        ...repeat(hold, () => [HIGH_L, HIGH_R]),
+        ...repeat(4, i => [low(HIGH_L, (i + 1) / 4, slam[0]), low(HIGH_R, (i + 1) / 4, slam[1])]),
+        ...repeat(10, () => [low(HIGH_L, 1, slam[0]), low(HIGH_R, 1, slam[1])]),
+      ]);
+    }
+
+    it('blue inferno: both fists charged up by the head, then brought down hard — and no punches', () => {
+      const out = inferno(24);
+      expect(kinds(out)).toEqual(['inferno']);
+      expect(punchesIn(out)).toHaveLength(0);
+      // spent: the fists aren't left charged for a blue punch
+      expect(out.at(-1)!.hands.l!.charge).toBe(0);
+      expect(out.at(-1)!.hands.r!.charge).toBe(0);
+    });
+
+    it('blue inferno: not before both fists burn blue, and not with only one fist coming down', () => {
+      expect(kinds(inferno(5))).toEqual([]);
+      expect(kinds(inferno(24, [true, false]))).toEqual([]);
+    });
+
     it('slow movements cast nothing', () => {
       expect(kinds(cast(sweepUp, 60))).toEqual([]);
     });

@@ -134,6 +134,14 @@ export const LESSONS: Lesson[] = [
     setup: g => { g.ultimateIn = 0; },
     progress: (_g, events) => count(events, e => e.type === 'ultimate'),
   },
+  {
+    id: 'inferno', title: 'Blue Inferno',
+    how: 'Raise both fists up by your head and hold them there until both burn blue. Then bring them down hard together: the whole ground bursts into blue flame for five seconds, burning everything on it. A long recharge.',
+    goal: 'Set the ground ablaze', need: 1,
+    cast: [{ tag: 'a', kind: 'dummy', x: -24, z: 6 }, { tag: 'b', kind: 'dummy', x: 0, z: 10 }, { tag: 'c', kind: 'dummy', x: 24, z: 7 }],
+    setup: g => { g.infernoIn = 0; },
+    progress: (_g, events) => count(events, e => e.type === 'inferno'),
+  },
 ];
 
 /** Seconds to celebrate a finished lesson before moving on to the next. */

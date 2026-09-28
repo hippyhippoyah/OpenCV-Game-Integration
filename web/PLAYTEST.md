@@ -52,3 +52,4 @@ Tuning knobs: `TUNING` in `src/intent/interpret.ts` (tracking feel), `TUNE` in `
 - [ ] Resting fists look close to your body; they only reach out when you punch.
 - [ ] Breath: jabbing steadily never runs out; spamming walls or a long flurry does, and the attack fizzles with a hint. The balance feels fair.
 - [ ] Vitality reads as health (green); Breath (orange, top centre) is the first thing you look at; the finisher icon beside it is clear when ready.
+- [ ] Blue inferno: both fists held up by the head turn blue with the prompt; slamming them down sets the ground ablaze and burns everything; it never fires from ordinary punching or charged punches.

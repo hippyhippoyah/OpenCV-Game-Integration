@@ -25,7 +25,10 @@ export class Hud {
     const noHands = !hands.l && !hands.r;
     pill.classList.toggle('off', noHands);
     pill.classList.toggle('shield', g.shield.on);
-    const [name, hint] = g.gather >= 1 ? ['FINISHER', g.ultimateIn <= 0 ? 'hands ablaze — spread them wide!' : `recharging — ${Math.ceil(g.ultimateIn)}s`]
+    const up = (h: typeof hands.l) => !!h && h.charge >= 1 && h.pos.y < g.shoulders.l.y;
+    const inferno = g.has('inferno') && up(hands.l) && up(hands.r);
+    const [name, hint] = inferno ? ['BLUE INFERNO', g.infernoIn <= 0 ? 'both fists blazing — bring them down hard!' : `recharging — ${Math.ceil(g.infernoIn)}s`]
+      : g.gather >= 1 ? ['FINISHER', g.ultimateIn <= 0 ? 'hands ablaze — spread them wide!' : `recharging — ${Math.ceil(g.ultimateIn)}s`]
       : g.gather > 0 ? ['GATHERING', 'hold your open hands together…']
       : g.xBlock ? ['X BLOCK', 'arms crossed: blocks attacks (not pillars or sweeps: move!)']
       : g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
@@ -54,6 +57,11 @@ export class Hud {
     ult.classList.toggle('ready', ready);
     ult.style.setProperty('--p', g.ultimateCharge.toFixed(3));
     $('ultNum').textContent = ready ? '' : String(Math.ceil(g.ultimateIn));
+    const inf = $('inferno'), infReady = g.infernoIn <= 0;
+    inf.classList.toggle('hidden', !g.has('inferno'));
+    inf.classList.toggle('ready', infReady);
+    inf.style.setProperty('--p', (1 - g.infernoIn / TUNE.infernoCooldownS).toFixed(3));
+    $('infernoNum').textContent = infReady ? '' : String(Math.ceil(g.infernoIn));
   }
 
   onEvent(e: GameEvent): void {
@@ -68,6 +76,7 @@ export class Hud {
       case 'combo': this.toast(COMBO_NAMES[e.name], e.name === 'charged' ? 'charged' : ''); break;
       case 'hint': this.toast(e.text, 'cool'); break;
       case 'ultimate': this.banner('ULTIMATE'); break;
+      case 'inferno': this.banner('BLUE INFERNO'); break;
       case 'wave': this.banner(`WAVE ${e.wave}`); break;
     }
   }

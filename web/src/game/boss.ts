@@ -66,9 +66,10 @@ export function updateBoss(g: Game, e: Enemy, dt: number): void {
  * How much a hit does to him: the stone wall stops fireballs (a charged punch or pillar breaks it
  * instead); winded, everything lands double.
  */
-export function bossDamage(e: Enemy, shot: 'normal' | 'charged' | 'flurry' | 'counter' | 'pillar' | 'wall' | 'blade', dmg: number): number {
+export function bossDamage(e: Enemy, shot: 'normal' | 'charged' | 'flurry' | 'counter' | 'pillar' | 'wall' | 'blade' | 'inferno', dmg: number): number {
   const b = e.boss!;
-  if (b.wall > 0 && shot !== 'blade') {
+  // (the ultimates reach past his stone wall: the blade cuts through it, the burning ground is under it)
+  if (b.wall > 0 && shot !== 'blade' && shot !== 'inferno') {
     if (shot === 'charged' || shot === 'pillar' || shot === 'wall') b.wall = Math.max(0, b.wall - 1);
     return 0;
   }

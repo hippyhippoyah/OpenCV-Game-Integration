@@ -70,12 +70,13 @@ export interface Palm {
   dir: Vec2 | null;
 }
 
-export type CastKind = 'wall' | 'ultimate' | 'push';
+export type CastKind = 'wall' | 'ultimate' | 'push' | 'inferno';
 
 /**
  * A two-hand move: fire wall (open hands sweep up), ultimate (open hands held together, as if
  * about to catch a ball, until they catch fire, then spread wide) or wall push (both open palms
- * shoved toward the camera: a fire wall rolls forward).
+ * shoved toward the camera: a fire wall rolls forward). And the blue inferno: both fists charged up
+ * by your head (blue), then brought down hard together — the ground bursts into blue flame.
  */
 export interface Cast {
   kind: CastKind;
@@ -236,6 +237,12 @@ export const TUNING = {
    * Slow is fine: it's the pose, not the speed, that makes it.
    */
   gatherGap: 26, gatherHoldS: 0.4, ultimateSpread: 24, spreadWindowS: 1.2,
+  /**
+   * Blue inferno: both fists charged (blue) and, within slamWindowS, up at head level (at most
+   * slamHighBelowHead below the head), then both brought down slamDrop view units. While both are
+   * charged, a fist moving down faster than slamSpeed isn't taken for a punch.
+   */
+  slamWindowS: 0.45, slamHighBelowHead: 10, slamDrop: 22, slamSpeed: 60,
   /**
    * Palm push (fist-punch mode only; the open-hand punch style already uses opening hands): one hand
    * open, shoved toward the camera — it may open on the way. The other hand is a fist, or open but
@@ -490,6 +497,8 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     s.palmPending = [];
   } else if (extendMode) {
     // A quick jolt of a fist toward the camera (more than the other fist moved); re-arms on a short pull-back.
+    // (with both fists charged, a fist coming down hard is a slam on its way, not a punch)
+    const primed = !!s.l && !!s.r && s.l.charge >= 1 && s.r.charge >= 1;
     for (const side of SIDES) {
       const tr = s[side], o = s[other(side)];
       if (!tr) continue;
@@ -521,7 +530,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
         fire = tr.armed && tr.extension >= TUNING.extendFireAbove && extensionRise(tr) >= TUNING.punchExtendRise;
       }
-      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY) {
+      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !(primed && tr.vel.y > TUNING.slamSpeed)) {
         tr.armed = false;
         tr.lastPunchT = f.t;
         s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t, charged: tr.charge >= 1 });
@@ -619,6 +628,14 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       } else if (gap < TUNING.gatherGap) s.shieldOn = false; // hands brought together: that's a gather now
     }
   }
+  // Blue inferno: both charged fists slammed down from by the head
+  if (extendMode && !xBlock && l && r && f.t >= s.castReadyAt && slammed(l, headView, f.t) && slammed(r, headView, f.t)) {
+    casts.push({ kind: 'inferno', at: { x: (l.pos.x + r.pos.x) / 2, y: (l.pos.y + r.pos.y) / 2 } });
+    s.castReadyAt = f.t + TUNING.castRefractoryS;
+    s.lastCastT = f.t;
+    s.pending = [];
+    for (const tr of [l, r]) { tr.charge = 0; tr.chargedAt = null; tr.chamberSince = null; }
+  }
   const gather = s.gathered ? 1 : s.gatherSince !== null ? Math.min(1, (f.t - s.gatherSince) / TUNING.gatherHoldS) : 0;
   const shield = s.shieldOn;
 
@@ -663,6 +680,14 @@ function updateCharge(tr: Track, side: Side, shoulder: Vec2, head: Vec2, t: numb
   const kept = tr.chargedAt !== null && t - tr.chargedAt <= TUNING.chargeKeepS && fist;
   if (kept) tr.charge = 1;
   else { tr.charge = 0; tr.chargedAt = null; }
+}
+
+/** This charged fist was up by the head within slamWindowS and has since come down slamDrop. */
+function slammed(tr: Track, head: Vec2, t: number): boolean {
+  if (tr.charge < 1 || tr.openness >= TUNING.clearlyOpen) return false;
+  let top: number | null = null;
+  for (const h of tr.hist) if (h.t >= t - TUNING.slamWindowS && (top === null || h.y < top)) top = h.y;
+  return top !== null && top - head.y <= TUNING.slamHighBelowHead && tr.pos.y - top >= TUNING.slamDrop;
 }
 
 /** Queue a palm push from this hand (it confirms after palmConfirmS). */
@@ -825,7 +850,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
   }
   tr.lastSeen = t;
   tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension, reach: reach !== null ? tr.reach : null, bx: reach !== null && b3 ? tr.body3!.x : null });
-  const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS, TUNING.quickWindowS, TUNING.palmPushWindowS);
+  const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS, TUNING.quickWindowS, TUNING.palmPushWindowS, TUNING.slamWindowS);
   while (tr.hist.length && t - tr.hist[0].t > keepS) tr.hist.shift();
   return { track: tr, opened };
 }

@@ -20,6 +20,8 @@ const KEYS: Record<string, Key[]> = {
   charge: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.2, ...G.l, false, 1, 20, 58, false, 0.9], [0.6, ...G.l, false, 1, 20, 58, false, 0.9], [0.75, ...G.l, false, 1, 4, 8, false, 1.7], [0.9, ...G.l, false, 1, ...G.r, false, 1], [1, ...G.l, false, 1, ...G.r, false, 1]],
   wall: [[0, -14, 44, true, 1, 14, 44, true, 1], [0.35, -14, 4, true, 1.1, 14, 4, true, 1.1], [0.7, -14, 4, true, 1.1, 14, 4, true, 1.1], [1, -14, 44, true, 1, 14, 44, true, 1]],
   // hands together as if to catch a ball, held (they catch fire), then spread wide
+  // both fists up by the head, held (they burn blue), then slammed down
+  inferno: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.2, -10, 2, false, 1.1, 10, 2, false, 1.1], [0.62, -10, 2, false, 1.1, 10, 2, false, 1.1], [0.72, -14, 46, false, 1.2, 14, 46, false, 1.2], [0.9, -14, 46, false, 1.2, 14, 46, false, 1.2], [1, ...G.l, false, 1, ...G.r, false, 1]],
   ultimate: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.15, -8, 18, true, 1, 8, 18, true, 1], [0.55, -8, 18, true, 1.05, 8, 18, true, 1.05], [0.7, -40, 16, true, 1.1, 40, 16, true, 1.1], [0.88, -40, 16, true, 1.1, 40, 16, true, 1.1], [1, ...G.l, false, 1, ...G.r, false, 1]],
 };
 

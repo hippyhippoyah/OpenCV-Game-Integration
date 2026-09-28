@@ -179,3 +179,6 @@ button kbd { margin-left: 6px; vertical-align: 1px; }
 .ult b { position: absolute; font-size: 11px; color: #fff4e4; text-shadow: 0 1px 3px #000; }
 .ult.ready svg { fill: #ffb347; filter: drop-shadow(0 0 6px rgba(255,140,50,.9)); }
 .ult.ready { box-shadow: 0 0 14px rgba(255,140,60,.7); animation: lowpulse 1.6s ease-in-out infinite; }
+.ult.blue { background: conic-gradient(#5a9bff calc(var(--p, 1) * 1turn), rgba(255,255,255,.08) 0); }
+.ult.blue.ready svg { fill: #8fc4ff; filter: drop-shadow(0 0 6px rgba(90,150,255,.9)); }
+.ult.blue.ready { box-shadow: 0 0 14px rgba(90,150,255,.7); }

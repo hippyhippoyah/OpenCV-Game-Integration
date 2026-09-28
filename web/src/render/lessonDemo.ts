@@ -161,6 +161,22 @@ export class LessonDemo {
         if (u > 1.3 && u < 2.2) this.arrow(cx, H * 0.98, cx, H * 0.72, 0.6);
         break;
       }
+      case 'inferno': {
+        // both fists up by the head, held till they burn blue, then slammed down: blue fire everywhere
+        const u = t % 3.4, up = ramp(u, 0.1, 0.4), down = ramp(u, 1.6, 0.15), glow = ramp(u, 0.6, 0.8) * (1 - down);
+        const y = H * 0.62 - up * H * 0.4 + down * H * 0.62;
+        for (const sx of [-1, 1]) {
+          const x = cx + sx * (28 - up * 8 + down * 10);
+          if (glow > 0) this.glow(x, y, 10 + glow * 14, `rgba(120,170,255,${0.3 + 0.5 * glow})`);
+          this.fist(x, Math.min(y, H * 0.92), 1 + down * 0.2);
+        }
+        if (u > 1.7 && u < 3.2) {
+          const k = 1 - ramp(u, 2.8, 0.4);
+          for (let i = 0; i < 9; i++) this.glow(cx + (i - 4) * 22, H * 0.9 - (i % 2) * 6, 14 + 6 * Math.sin(t * 9 + i), `rgba(100,160,255,${0.55 * k})`);
+        }
+        if (u > 0.9 && u < 1.6) { this.arrow(cx - 40, H * 0.2, cx - 40, H * 0.6, 0.7); this.arrow(cx + 40, H * 0.2, cx + 40, H * 0.6, 0.7); }
+        break;
+      }
       case 'ultimate': {
         // open hands brought together and held until they catch fire, then spread: the blade of fire
         const u = t % 3.4, d = 14 + 22 * (1 - ramp(u, 0.1, 0.4)) + 44 * ramp(u, 1.9, 0.25);

@@ -26,7 +26,7 @@ export interface ViewMapper { screenToView(x: number, y: number): Vec2 }
 /**
  * Pretends to be the camera. The mouse is where you aim; a punch drives that fist to the mouse
  * (opening it at the end in the open-hand punch style); holding Space opens both hands around the mouse (shield); A/D/S lean and duck;
- * W sweeps open hands up (fire wall); U holds open hands together, then spreads them (finisher); F pushes both open
+ * I held raises both fists by the head, released slams them down (blue inferno); W sweeps open hands up (fire wall); U holds open hands together, then spreads them (finisher); F pushes both open
  * palms forward (wall push); X crosses the arms; holding G holds the right fist at the hip to charge it;
  * E pushes an open right palm toward the mouse (pillar);
  * holding O swings the right hand out of the picture (only its arm is still tracked).
@@ -43,6 +43,9 @@ export class MockTracker implements Tracker {
   private casting: { kind: CastKind; t: number } | null = null;
   private palmReq: PalmKind | null = null;
   private palming: { kind: PalmKind; t: number } | null = null;
+  /** Blue inferno: I held raises both fists by the head; letting go slams them down (from slamAt). */
+  private raised = false;
+  private slamAt: number | null = null;
 
   constructor(private view: ViewMapper) {}
 
@@ -66,6 +69,10 @@ export class MockTracker implements Tracker {
     const head = { x: MOCK_CALIBRATION.head.x + mid.x - MID.x, y: MOCK_CALIBRATION.head.y + mid.y - MID.y };
     const aim = this.view.screenToView(this.mouse.x, this.mouse.y);
     const shield = this.keys.has(' ');
+    const raise = this.keys.has('i');
+    if (this.raised && !raise) this.slamAt = t;
+    this.raised = raise;
+    if (this.slamAt !== null && t - this.slamAt > 0.45) this.slamAt = null;
     if (this.castReq && !this.casting) this.casting = { kind: this.castReq, t };
     this.castReq = null;
     if (this.casting && t - this.casting.t > CAST_MOVE_S + CAST_HOLD_S + (this.casting.kind === 'ultimate' ? GATHER_S : 0)) this.casting = null;
@@ -101,6 +108,10 @@ export class MockTracker implements Tracker {
         pos = { x: lerp(GUARD.r.x, aim.x, e), y: lerp(GUARD.r.y, aim.y, e) };
         ext = 0.25 + 0.65 * e;
         reachM = GUARD_REACH_M + (PUNCH_REACH_M - GUARD_REACH_M) * e;
+      } else if (raise || this.slamAt !== null) {
+        // both fists up by the head (charging blue), then brought down hard
+        const e = this.slamAt === null ? 0 : clamp((t - this.slamAt) / 0.12, 0, 1);
+        pos = { x: sign * lerp(10, 16, e), y: lerp(-6, 42, e) };
       } else if (this.keys.has('g') && side === 'r' && (since === null || since > EXTEND_S + OPEN_HOLD_S)) {
         // down at the hip, elbow bent: charging
         pos = { x: 22, y: 58 };
