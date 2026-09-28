@@ -4,7 +4,7 @@ import { LESSONS } from '../game/tutorial';
 import type { UiSound } from '../audio/sfx';
 import { clampSensitivity, SENSITIVITY_MAX, SENSITIVITY_MIN, type InputKind, type Settings } from './settings';
 
-export type PlayMode = 'campaign' | 'tutorial' | 'waves' | 'training';
+export type PlayMode = 'campaign' | 'tutorial' | 'training';
 type ItemId = PlayMode | 'settings';
 export type Screen = 'title' | 'menu' | 'settings';
 
@@ -13,7 +13,6 @@ interface Item { id: ItemId; title: string; blurb: string }
 const ITEMS: Item[] = [
   { id: 'campaign', title: 'Campaign', blurb: 'Chapter 1 · The Ember Path' },
   { id: 'tutorial', title: 'Tutorial', blurb: 'Learn every move' },
-  { id: 'waves', title: 'Waves', blurb: 'Endless survival' },
   { id: 'training', title: 'Training', blurb: 'Dummies that never fight back' },
   { id: 'settings', title: 'Settings', blurb: 'Input, sensitivity, progress' },
 ];
@@ -178,12 +177,6 @@ export class Menu {
         d.append(chips);
         break;
       }
-      case 'waves':
-        head('Survive', 'Waves');
-        para('Water spirits and earthbenders, wave after wave, faster and fiercer. Lean out of their lanes, duck their waves, and see how long your flame holds.');
-        stat([[String(this.settings.data.best), 'Best score']]);
-        d.append(el('div', 'cta', 'Enter — start'));
-        break;
       case 'training':
         head('Practice', 'Training');
         para('A quiet yard of straw dummies that never fight back. Try any move, combo or ultimate as often as you like.');

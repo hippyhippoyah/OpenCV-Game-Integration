@@ -19,6 +19,14 @@ const KEYS: Record<string, Key[]> = {
   palm: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.2, ...G.l, false, 1, ...G.r, true, 1], [0.45, ...G.l, false, 1, 6, 10, true, 1.6], [0.7, ...G.l, false, 1, ...G.r, true, 1], [0.85, ...G.l, false, 1, ...G.r, false, 1], [1, ...G.l, false, 1, ...G.r, false, 1]],
   charge: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.2, ...G.l, false, 1, 20, 58, false, 0.9], [0.6, ...G.l, false, 1, 20, 58, false, 0.9], [0.75, ...G.l, false, 1, 4, 8, false, 1.7], [0.9, ...G.l, false, 1, ...G.r, false, 1], [1, ...G.l, false, 1, ...G.r, false, 1]],
   wall: [[0, -14, 44, true, 1, 14, 44, true, 1], [0.35, -14, 4, true, 1.1, 14, 4, true, 1.1], [0.7, -14, 4, true, 1.1, 14, 4, true, 1.1], [1, -14, 44, true, 1, 14, 44, true, 1]],
+  // forearms crossed in front of the chest, fists up
+  xblock: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.25, 9, 12, false, 1.1, -9, 12, false, 1.1], [0.8, 9, 12, false, 1.1, -9, 12, false, 1.1], [1, ...G.l, false, 1, ...G.r, false, 1]],
+  // jab, jab, then the right palm shoved forward
+  onetwo: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.1, ...G.l, false, 1, 4, 8, false, 1.6], [0.2, ...G.l, false, 1, ...G.r, false, 1], [0.3, -4, 8, false, 1.6, ...G.r, false, 1], [0.4, ...G.l, false, 1, ...G.r, true, 1], [0.55, ...G.l, false, 1, 6, 10, true, 1.6], [0.75, ...G.l, false, 1, ...G.r, false, 1], [1, ...G.l, false, 1, ...G.r, false, 1]],
+  // right palm pushed, then straight away the left
+  volley: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.12, ...G.l, false, 1, ...G.r, true, 1], [0.28, ...G.l, true, 1, 6, 10, true, 1.6], [0.44, -6, 10, true, 1.6, ...G.r, true, 1], [0.6, ...G.l, true, 1, ...G.r, true, 1], [0.75, ...G.l, false, 1, ...G.r, false, 1], [1, ...G.l, false, 1, ...G.r, false, 1]],
+  // sweep both open hands up (a wall), then shove both palms forward
+  wallbreaker: [[0, -14, 44, true, 1, 14, 44, true, 1], [0.25, -14, 4, true, 1.1, 14, 4, true, 1.1], [0.45, -14, 4, true, 1.1, 14, 4, true, 1.1], [0.6, -12, 8, true, 1.6, 12, 8, true, 1.6], [0.8, -12, 8, true, 1.6, 12, 8, true, 1.6], [1, -14, 44, true, 1, 14, 44, true, 1]],
   // hands together as if to catch a ball, held (they catch fire), then spread wide
   // hands together over the head, held (they burn blue), slammed down, then spread apart
   inferno: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.15, -6, -18, false, 1.1, 6, -18, false, 1.1], [0.5, -6, -18, false, 1.1, 6, -18, false, 1.1], [0.58, -8, 38, false, 1.2, 8, 38, false, 1.2], [0.7, -8, 38, false, 1.2, 8, 38, false, 1.2], [0.8, -42, 34, true, 1.2, 42, 34, true, 1.2], [0.92, -42, 34, true, 1.2, 42, 34, true, 1.2], [1, ...G.l, false, 1, ...G.r, false, 1]],

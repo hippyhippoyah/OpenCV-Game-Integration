@@ -1,5 +1,4 @@
 import './style.css';
-import { ghostAlpha } from './campaign/ghostFade';
 import { CampaignRunner } from './campaign/runner';
 import { CampaignUI, type HandoffCheck } from './campaign/ui';
 import { Progress } from './campaign/progress';
@@ -16,6 +15,7 @@ import { initialState, interpret, TUNING, type Cast, type Intent, type Interpret
 import { DebugView } from './render/debug';
 import { Hud } from './render/hud';
 import { Sfx } from './audio/sfx';
+import { LessonCoach } from './ui/lessonCoach';
 import { Menu } from './ui/menu';
 import { Settings, type InputKind } from './ui/settings';
 import { LessonDemo } from './render/lessonDemo';
@@ -28,12 +28,12 @@ const show = (id: string, on = true) => $(id).classList.toggle('hidden', !on);
 const renderer = new Renderer($('game') as HTMLCanvasElement);
 const hud = new Hud();
 const debug = new DebugView($('pip') as HTMLCanvasElement, $('debugText'));
-const lessonDemo = new LessonDemo($('lessonDemo') as HTMLCanvasElement);
+const coach = new LessonCoach(new LessonDemo($('lessonDemo') as HTMLCanvasElement));
 
-type Mode = 'tutorial' | 'waves' | 'training' | 'campaign';
+type Mode = 'tutorial' | 'training' | 'campaign';
 /** front: title, menu or settings (see ui/menu.ts); loading/calibrating: camera setup before play. */
 let phase: 'front' | 'loading' | 'calibrating' | 'play' = 'front';
-let mode: Mode = 'waves';
+let mode: Mode = 'training';
 let tutorial: Tutorial | null = null;
 /** The mouse & keys help is shown once, the first time you play with them. */
 let mockHelpShown = false;
@@ -54,12 +54,6 @@ const progress = Progress.load(storage);
 let campaign: CampaignRunner | null = null;
 let campUI: CampaignUI | null = null;
 let pathMap: PathMap | null = null;
-/** Ghost hands' fade state for the campaign's current practice lesson (see stepCampaign). */
-let ghostPractice: Tutorial | null = null;
-let ghostLessonIndex = -1;
-let ghostDone = 0;
-let ghostSinceProgress = 0;
-let ghostAlphaNow = 1;
 /** So "NOW FOR REAL" toasts only when practice just ended (the runner's previous state). */
 let prevCampaignState: string | null = null;
 /** True while the campaign's practice/fight is paused via Esc (see stepCampaign & togglePause). */
@@ -67,9 +61,9 @@ let campPaused = false;
 /** When R was first pressed on the campaign map (a second R soon after resets progress). */
 let resetAskedAt = -Infinity;
 const params = new URLSearchParams(location.search);
-/** Skip the mode menu with ?mode=tutorial|waves|training|campaign (?dummies = training). */
+/** Skip the mode menu with ?mode=tutorial|training|campaign (?dummies = training). */
 const startMode: Mode | null = params.has('dummies') ? 'training'
-  : (['tutorial', 'waves', 'training', 'campaign'] as const).find(m => m === params.get('mode')) ?? null;
+  : (['tutorial', 'training', 'campaign'] as const).find(m => m === params.get('mode')) ?? null;
 /** Fist punches by arm extension (default); open-hand punches only with ?punch=open (no key switches it). */
 if (params.get('punch') === 'open') TUNING.punchTrigger = 'open';
 const settings = Settings.load(storage);
@@ -157,7 +151,6 @@ function beginCalibration(): void {
   menu.hide();
   document.body.classList.add('setup');
   game = null;
-  show('over', false);
   show('away', false);
   show('calib');
   $('calibFill').style.width = '0%';
@@ -175,8 +168,9 @@ function showMenu(note = ''): void {
   show('status', false);
   renderer.ghost = null;
   renderer.scene = 'courtyard';
-  for (const id of ['calib', 'over', 'away', 'lesson', 'dodge', 'mockHelp']) show(id, false);
-  document.body.classList.remove('tutorial', 'exploring', 'setup');
+  coach.hide();
+  for (const id of ['calib', 'away', 'dodge', 'mockHelp']) show(id, false);
+  document.body.classList.remove('exploring', 'setup');
   menu.showMenu(note);
 }
 
@@ -189,7 +183,7 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
   pendingPalms = [];
   acc = 0;
   phase = 'play';
-  for (const id of ['calib', 'over', 'status']) show(id, false);
+  for (const id of ['calib', 'status']) show(id, false);
   menu.hide();
   document.body.classList.remove('setup');
   if (m === 'campaign') {
@@ -198,11 +192,7 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
     campaign = new CampaignRunner(progress, () => new Game(Math.random, renderer.viewHalfW, true));
     game = null;
     tutorial = null;
-    show('lesson', false);
-    document.body.classList.remove('tutorial');
-    ghostPractice = null;
-    ghostLessonIndex = -1;
-    ghostAlphaNow = 1;
+    coach.hide();
     prevCampaignState = null;
     campPaused = false;
     if (tracker instanceof MockTracker && !mockHelpShown) {
@@ -211,42 +201,16 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
     }
     return;
   }
-  // training (and the tutorial, which then takes the field over) start with dummies, not a wave
-  game = new Game(Math.random, renderer.viewHalfW, m !== 'waves');
-  // the waves are fought at the night temple; practice of any kind in the training yard
-  renderer.scene = m === 'waves' ? 'night' : 'training';
+  // training starts with dummies (the tutorial then takes the field over), in the training yard
+  game = new Game(Math.random, renderer.viewHalfW, true);
+  renderer.scene = 'training';
   tutorial = m === 'tutorial' ? new Tutorial(game, lesson) : null;
   if (tutorial) game.label = 'Tutorial';
-  show('lesson', !!tutorial);
-  document.body.classList.toggle('tutorial', !!tutorial);
-  if (tutorial) drawLesson(tutorial);
+  coach.hide();
   if (tracker instanceof MockTracker && !mockHelpShown) {
     mockHelpShown = true;
     show('mockHelp');
   }
-}
-
-/**
- * The lesson panel: which lesson, how to do it, and how far along the goal you are. Used for the
- * tutorial's own lessons and (with a different `Tutorial` instance) for a campaign practice.
- */
-function drawLesson(t: Tutorial): void {
-  const l = t.lesson, done = t.completedFor !== null;
-  $('lessonStep').textContent = `Lesson ${t.index + 1} of ${t.lessons.length}`;
-  $('lessonTitle').textContent = l.title;
-  $('lessonHow').textContent = l.how;
-  $('lessonGoal').textContent = done ? '✓ Done — next lesson…' : l.goal;
-  $('lessonCount').textContent = `${t.done} / ${l.need}`;
-  $('lessonFill').style.width = `${Math.round((t.done / l.need) * 100)}%`;
-  const steps = $('lessonSteps');
-  steps.replaceChildren(...(l.steps ?? []).map(st => {
-    const el = document.createElement('span');
-    el.textContent = t.marksDone.has(st.mark) ? `✓ ${st.label}` : st.label;
-    el.classList.toggle('done', t.marksDone.has(st.mark));
-    return el;
-  }));
-  show('lessonSteps', !!l.steps);
-  $('lesson').classList.toggle('done', done);
 }
 
 function onFrame(f: TrackingFrame): void {
@@ -288,18 +252,10 @@ function stepGame(dt: number): void {
   for (const e of events) {
     renderer.onEvent(e);
     hud.onEvent(e);
-    if (e.type === 'gameOver') {
-      $('overScore').textContent = String(game.score);
-      const best = mode === 'waves' && settings.recordScore(game.score);
-      $('overBest').textContent = best ? 'A new best!' : mode === 'waves' ? `Best: ${settings.data.best}` : '';
-      show('overBest', mode === 'waves');
-      show('over');
-    }
   }
   if (tutorial) {
-    if (tutorial.update(dt, events)) hud.toast('✓ LESSON COMPLETE', 'good');
-    if (tutorial.finished) { showMenu('Tutorial complete — you know every move. Try the waves!'); return; }
-    drawLesson(tutorial);
+    tutorial.update(dt, events);
+    if (tutorial.finished) { showMenu('Tutorial complete — you know every move.'); return; }
   }
   hud.update(game, intent.hands);
 }
@@ -351,30 +307,10 @@ function stepCampaign(dt: number, now: number): void {
   }
   if (prevCampaignState === 'practice' && r.state === 'fight') { hud.toast('NOW FOR REAL'); sfx.ui('go'); }
   prevCampaignState = r.state;
-  // the lesson card, shared with the tutorial's own: shown only while practising a campaign lesson
-  const practice = r.state === 'practice' ? r.practice : null;
-  show('lesson', !!practice);
-  document.body.classList.toggle('tutorial', !!practice);
-  if (practice) {
-    if (practice !== ghostPractice || practice.index !== ghostLessonIndex) {
-      ghostPractice = practice;
-      ghostLessonIndex = practice.index;
-      ghostDone = practice.done;
-      ghostSinceProgress = 0;
-      ghostAlphaNow = 1;
-    } else if (practice.done !== ghostDone) {
-      ghostDone = practice.done;
-      ghostSinceProgress = 0;
-    } else {
-      ghostSinceProgress += dt;
-    }
-    ghostAlphaNow = ghostAlpha(ghostAlphaNow, dt, practice.done, ghostSinceProgress, practice.finished);
-    drawLesson(practice);
-    renderer.ghost = ghostAlphaNow > 0.001 ? { lessonId: practice.lesson.id, alpha: ghostAlphaNow } : null;
-  } else {
-    ghostPractice = null;
-    renderer.ghost = null;
-  }
+  // practising a lesson: the same coach as the tutorial's
+  const practice = r.state === 'practice' && r.game ? r.practice : null;
+  if (practice) renderer.ghost = coach.update(practice, dt, now);
+  else { coach.hide(); renderer.ghost = null; }
   // practice always in the training yard; the real fight where it happens
   renderer.scene = r.state === 'fight' || r.state === 'lost' || r.state === 'result' ? STOPS[r.stop].scene : 'training';
   // on the map the fight HUD (health, bars, camera view) is put away
@@ -393,7 +329,6 @@ function stepCampaign(dt: number, now: number): void {
     }, dt);
   }
   campUI!.update(r, check, now, campPaused);
-  if (practice) lessonDemo.draw(practice.lesson.id, now / 1000);
 }
 
 /** Is the camera ready for a fight: you're seen, fists up, at a good distance? (Mouse & keys: always.) */
@@ -434,7 +369,7 @@ function loop(now: number): void {
   // held sounds (shield fire, ultimates warming up) only while actually fighting
   const helpOpen = !$('mockHelp').classList.contains('hidden');
   sfx.ambient(phase === 'play' && game && game.state === 'play' && !campPaused && !helpOpen && intent?.present ? game : null);
-  if (tutorial && phase === 'play') lessonDemo.draw(tutorial.lesson.id, now / 1000);
+  if (tutorial && phase === 'play') renderer.ghost = coach.update(tutorial, dt, now);
   debug.draw(lastFrame, intent, camera?.video ?? null);
   $('handsN').textContent = String(lastFrame?.hands.length ?? 0);
   $('headTag').textContent = headLabel(intent);
@@ -450,8 +385,6 @@ $('statusFallback').addEventListener('click', () => {
   play(next.mode, next.lesson);
 });
 $('statusBack').addEventListener('click', () => showMenu());
-$('againBtn').addEventListener('click', () => beginPlay());
-$('menuBtn').addEventListener('click', () => showMenu());
 $('mockHelpClose').addEventListener('click', () => show('mockHelp', false));
 $('campWalk').addEventListener('click', () => campaign?.walkOn());
 /** Fight the stop again from its result card (not saved as done) or after losing. */
@@ -501,10 +434,6 @@ addEventListener('keydown', e => {
     settings.data.sensitivity = TUNING.punchSensitivity;
     settings.save();
   }
-  if (k === 't' && game?.state === 'play' && mode !== 'tutorial' && mode !== 'campaign') {
-    game.setPractice(!game.practice);
-    mode = game.practice ? 'training' : 'waves';
-  }
   if (mode === 'campaign' && phase === 'play' && campaign) {
     const r = campaign;
     // the result and lost cards' buttons, from the keyboard
@@ -520,11 +449,11 @@ addEventListener('keydown', e => {
           resetAskedAt = -Infinity;
           progress.reset();
           campaign = new CampaignRunner(progress, () => new Game(Math.random, renderer.viewHalfW, true));
-          campaign.notes.push({ kind: 'info', text: 'Campaign progress reset — Chapter 1 starts fresh' });
+          campaign.notes.push({ kind: 'info', text: 'Progress reset' });
           sfx.ui('reset');
         } else {
           resetAskedAt = performance.now();
-          r.notes.push({ kind: 'info', text: 'Press R again to erase all scrolls, stops and flames' });
+          r.notes.push({ kind: 'info', text: 'Press R again to reset' });
         }
       }
     }
@@ -540,10 +469,8 @@ addEventListener('keydown', e => {
   if (k === 'escape' && phase === 'play' && mode !== 'campaign') showMenu();
   if (tutorial && phase === 'play' && (k === 'n' || k === 'b')) {
     if (k === 'n') tutorial.next(); else tutorial.back();
-    if (tutorial.finished) showMenu('Tutorial complete — you know every move. Try the waves!');
-    else drawLesson(tutorial);
+    if (tutorial.finished) showMenu('Tutorial complete — you know every move.');
   }
-  if (k === 'r' && game?.state === 'over' && mode !== 'campaign') beginPlay();
   if (k === 'c' && camera && tracker === camera && phase === 'play') {
     pendingPlay = { mode, lesson: tutorial?.index ?? 0 };
     beginCalibration();

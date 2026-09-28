@@ -61,13 +61,10 @@ export class CampaignRunner {
       case 'walk': {
         const hit = this.rail.advance(dt, this.pauseList);
         if (!hit) break;
+        // a scroll you already have, or an arena you've already cleared (replaying), doesn't stop you
+        if (!this.stopsYou(hit)) { this.rail.leave(); break; }
         this.stop = hit.stop;
         this.ren = STOPS[hit.stop].ren;
-        // a scroll you already have (replaying) doesn't stop you
-        const sc = STOPS[hit.stop].scroll;
-        if (hit.kind === 'scroll' && sc && this.progress.hasScroll(sc)) { this.rail.leave(); break; }
-        // an arena you've already cleared (replaying) doesn't stop you either
-        if (hit.kind === 'arena' && this.progress.isDone(STOPS[hit.stop].id)) { this.rail.leave(); break; }
         this.state = hit.kind;
         break;
       }
@@ -96,13 +93,19 @@ export class CampaignRunner {
     }
   }
 
-  /** E: skip ahead while walking (never past the next scroll or arena), pick up a scroll, or step into an arena. */
+  /** Does this pause stop you: a scroll you don't have yet, or an arena you haven't cleared? */
+  private stopsYou(p: Pause): boolean {
+    const s = STOPS[p.stop];
+    return p.kind === 'scroll' ? !!s.scroll && !this.progress.hasScroll(s.scroll) : !this.progress.isDone(s.id);
+  }
+
+  /** E: skip ahead while walking (to the next scroll or arena, never past it), pick up a scroll, or step into an arena. */
   interact(): void {
     if (this.state === 'walk') this.skip();
     else if (this.state === 'scroll') {
       const s = STOPS[this.stop], id = (this.epilogue ? s.reward : s.scroll) as ScrollId;
       if (this.progress.addScroll(id)) {
-        this.notes.push({ kind: 'scroll', text: `New move learned: ${SCROLLS[id].name} — scroll added to your Scrolls (Tab)` });
+        this.notes.push({ kind: 'scroll', text: `New move: ${SCROLLS[id].name}` });
       }
       this.progress.save();
       if (this.epilogue) {
@@ -118,8 +121,11 @@ export class CampaignRunner {
     }
   }
 
+  /** Jump straight to the next place that stops you (a scroll to pick up or a fight), never past it. */
   skip(): void {
-    if (this.state === 'walk') this.rail.skip(this.pauseList);
+    if (this.state !== 'walk') return;
+    const next = this.pauseList.find(p => p.at > this.rail.d + 1e-6 && this.stopsYou(p));
+    if (next) this.rail.skipTo(next.at);
   }
 
   back(): void {

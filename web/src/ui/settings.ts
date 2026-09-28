@@ -8,8 +8,6 @@ export interface SettingsData {
   input: InputKind;
   /** Fist punch sensitivity (TUNING.punchSensitivity). */
   sensitivity: number;
-  /** Best Waves score. */
-  best: number;
   /** Sound effects volume, 0 … 1. */
   volume: number;
 }
@@ -17,7 +15,7 @@ export interface SettingsData {
 export const SETTINGS_KEY = 'flowbound.settings.v1';
 export const SENSITIVITY_MIN = 0.5, SENSITIVITY_MAX = 2.5;
 
-const fresh = (): SettingsData => ({ version: 1, input: 'camera', sensitivity: 1.4, best: 0, volume: 0.7 });
+const fresh = (): SettingsData => ({ version: 1, input: 'camera', sensitivity: 1.4, volume: 0.7 });
 
 /** Player settings, kept on this device. Storage failing never breaks the game. */
 export class Settings {
@@ -34,14 +32,6 @@ export class Settings {
 
   save(): void {
     try { this.store?.setItem(SETTINGS_KEY, JSON.stringify(this.data)); } catch { /* storage full or blocked */ }
-  }
-
-  /** Record a Waves score; returns true if it's a new best. */
-  recordScore(score: number): boolean {
-    if (score <= this.data.best) return false;
-    this.data.best = score;
-    this.save();
-    return true;
   }
 }
 

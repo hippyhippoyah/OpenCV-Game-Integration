@@ -40,7 +40,7 @@ export class CampaignUI {
     const s = r.state, exploring = s === 'walk' || s === 'scroll' || s === 'arena';
     const pausable = s === 'practice' || s === 'fight';
     $('campControls').innerHTML = exploring
-      ? (s === 'walk' ? '<span><kbd>E</kbd> skip ahead</span>' : '<span><kbd>E</kbd> interact</span>') + '<span><kbd>Tab</kbd> scrolls</span><span><kbd>Click</kbd> a lit stop to replay it</span><span><kbd>R</kbd><kbd>R</kbd> reset progress</span><span><kbd>Esc</kbd> menu</span>'
+      ? (s === 'walk' ? '<span><kbd>E</kbd> skip to next</span>' : '<span><kbd>E</kbd> go</span>') + '<span><kbd>Tab</kbd> scrolls</span><span><kbd>Click</kbd> a stop: replay</span><span><kbd>R</kbd><kbd>R</kbd> reset</span><span><kbd>Esc</kbd> menu</span>'
       : s === 'result' ? '<span><kbd>Enter</kbd> walk on</span><span><kbd>R</kbd> try again</span>'
       : s === 'lost' ? '<span><kbd>R</kbd> try again</span>'
       : pausable && paused ? '<span><kbd>Esc</kbd> resume</span>' : '<span><kbd>Esc</kbd> pause</span>';
@@ -51,7 +51,7 @@ export class CampaignUI {
     if (ren) $('campRen').innerHTML = r.ren!.map(l => `<b>Ren:</b> ${l}`).join('<br>');
     // prompt
     const stop = STOPS[r.stop];
-    const prompt = s === 'scroll' ? `<kbd>E</kbd> Pick up the scroll` : s === 'arena' ? `<kbd>E</kbd> Enter ${stop.place}` : '';
+    const prompt = s === 'scroll' ? `<kbd>E</kbd> Take the scroll` : s === 'arena' ? `<kbd>E</kbd> ${stop.place}` : '';
     show('campPrompt', !!prompt);
     $('campPrompt').innerHTML = prompt;
     // camera handoff

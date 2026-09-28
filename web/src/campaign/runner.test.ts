@@ -80,11 +80,25 @@ describe('CampaignRunner', () => {
     expect(r.game!.hp).toBeGreaterThan(0);
   });
 
-  it('skip jumps ahead to the next pause', () => {
+  it('skip jumps straight to the next pause', () => {
     const r = fresh();
     r.skip();
-    r.update(1, true, []);
+    r.update(1 / 60, true, []);
     expect(r.state).toBe('arena');
+  });
+
+  it('skip passes what no longer stops you (a scroll you have, a cleared arena) and lands on what does', () => {
+    const p = Progress.load(null);
+    p.completeStop(STOPS[0].id, 1);
+    p.addScroll(STOPS[1].scroll!);
+    p.completeStop(STOPS[1].id, 1);
+    const r = new CampaignRunner(p, make);
+    r.rail.d = 0.5; // back at the start of the path, as after replaying the first stop
+    r.skip();
+    r.update(1 / 60, true, []);
+    // the bridge's scroll: the first thing you still have to do
+    expect(r.state).toBe('scroll');
+    expect(r.stop).toBe(2);
   });
 
   it('E while walking skips ahead, but never past a scroll to pick up', () => {
@@ -92,7 +106,7 @@ describe('CampaignRunner', () => {
     p.completeStop(STOPS[0].id, 1);
     const r = new CampaignRunner(p, make);
     expect(r.state).toBe('walk');
-    // mash E while walking: it jumps to just short of the next pause, then walks into it
+    // mash E while walking: it jumps straight to the scroll, and stops there
     for (let i = 0; i < 60 && r.state === 'walk'; i++) { r.interact(); r.update(0.1, true, []); }
     expect(r.state).toBe('scroll');
     expect(p.hasScroll(STOPS[1].scroll!)).toBe(false);

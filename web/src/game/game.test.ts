@@ -401,8 +401,11 @@ describe('Game', () => {
       expect(g.hp).toBe(TUNE.maxHp);
     });
 
-    it('waves bring spirits and earthbenders, and keep them all near the middle of the screen', () => {
+    it('spirits and earthbenders attack in every way, and stay near the middle of the screen', () => {
       const g = new Game(mulberry32(3));
+      g.addEnemy({ kind: 'spirit', x: 30, z: 8 });
+      g.addEnemy({ kind: 'spirit', x: -10, z: 10 });
+      g.addEnemy({ kind: 'earth', x: -30, z: 9 });
       const kinds = new Set<string>();
       let widest = 0;
       for (let t = 0; t < 120; t += 1 / 60) {
@@ -490,7 +493,6 @@ describe('Game', () => {
       run(g, 1, intent());
       expect(g.enemies.every(e => e.hp <= 0)).toBe(true);
       expect(g.projs.filter(p => p.kind === 'enemy')).toHaveLength(0);
-      expect(g.score).toBeGreaterThanOrEqual(200);
       expect(g.hp).toBe(TUNE.maxHp);
     });
 
@@ -583,17 +585,15 @@ describe('Game', () => {
     });
   });
 
-  it('announces and spawns the first wave', () => {
+  it('without practice the field starts empty and stays so (a script fills it)', () => {
     const g = new Game(mulberry32(2));
-    expect(g.drainEvents()).toContainEqual({ type: 'wave', wave: 1 });
     run(g, 3, intent());
-    expect(g.enemies.length).toBeGreaterThan(0);
+    expect(g.enemies).toHaveLength(0);
   });
 
   describe('practice mode', () => {
     it('sets up still dummies that never attack', () => {
       const g = new Game(mulberry32(3), 70, true);
-      expect(g.drainEvents().some(e => e.type === 'wave')).toBe(false);
       const x0 = g.enemies.map(e => e.x);
       run(g, 10, intent());
       expect(g.enemies).toHaveLength(3);
@@ -611,17 +611,6 @@ describe('Game', () => {
       expect(g.enemies.find(e => e.id === d.id)).toBeUndefined();
       run(g, 2, intent());
       expect(g.enemies).toHaveLength(3);
-    });
-
-    it('toggles between dummies and spirit waves', () => {
-      const g = new Game(mulberry32(3));
-      g.drainEvents();
-      g.setPractice(true);
-      expect(g.practice).toBe(true);
-      expect(g.enemies.every(e => e.dummy)).toBe(true);
-      g.setPractice(false);
-      expect(g.enemies).toHaveLength(0);
-      expect(g.drainEvents()).toContainEqual({ type: 'wave', wave: 1 });
     });
   });
 

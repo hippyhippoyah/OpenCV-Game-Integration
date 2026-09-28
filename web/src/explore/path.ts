@@ -59,8 +59,8 @@ export class Rail {
   /** Move on past the pause you're standing at (after it's done). */
   leave(): void { this.d += 0.02; }
 
-  skip(from: Pause[]): void {
-    const next = from.find(p => p.at > this.d + 1e-6);
-    if (next) this.d = Math.max(this.d, next.at - 2);
+  /** Jump ahead to just short of `at` (the next step's walk arrives there). */
+  skipTo(at: number): void {
+    this.d = Math.max(this.d, at - 1e-3);
   }
 }

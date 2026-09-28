@@ -3,7 +3,7 @@
 Run `npm run dev`, play with the camera in Chrome. Note the result of each item.
 
 - [ ] Frame rate (corner panel) stays ≥ 30 fps while playing.
-- [ ] After calibrating, the mode menu offers Tutorial, Waves and Training; Esc gets back to it.
+- [ ] The main menu offers Campaign, Tutorial, Training and Settings; Esc gets back to it.
 - [ ] The tutorial: each lesson's instructions make sense on their own, its goal is reachable, and it moves on by itself.
 - [ ] Fire follows your hands without noticeable lag.
 - [ ] Fists read as FIST and open hands as OPEN in the corner panel at 1 m, 1.5 m and 2.5 m.

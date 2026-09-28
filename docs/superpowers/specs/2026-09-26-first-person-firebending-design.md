@@ -478,3 +478,21 @@ for a right hand and the back's for a left, so the arm each hand is matched to d
   the HUD says to turn them in for the shield.
 - The simulator can turn open palms in (`turn`), and the recording fixtures carry each hand's
   `normal`, recomputed from the raw landmarks.
+
+## One way to teach, less text
+
+- **Waves is gone** (menu, `?mode=waves`, the T toggle, score, best score, game-over card, and the
+  engine's wave spawner). A game is either a yard of training dummies or an empty field a script
+  fills (tutorial, campaign).
+- **Lessons are taught one way** (`ui/lessonCoach.ts`), in the tutorial and in campaign practice
+  alike: a big cue of a few words in the middle of the top of the screen, dots for how many times,
+  and ghost hands doing the move (fading once you get it, back if you stall). Dodges (move, pillar,
+  wave) show the little figure instead. Each lesson's `cue` follows its steps (e.g. "HOLD A FIST AT
+  YOUR HIP" → "HOLD IT…" → "NOW PUNCH!"; "PALMS FACING · HOLD STILL" → "BLOCK THE ORBS"). The long
+  `how`/`goal` paragraphs are gone. Every hand move now has ghost hands (X block, one-two, volley
+  and wall breaker added).
+- **Short text everywhere**: HUD hints are a few words (none in plain guard), Ren's lines are one
+  short sentence, notices ("New move: Flame Shield", "Press R again to reset"), the controls strip
+  and the mouse & keys card are trimmed.
+- **E on the campaign map** jumps straight to the next thing that stops you — a scroll you don't
+  have or an arena you haven't cleared — never past it, passing what no longer stops you.

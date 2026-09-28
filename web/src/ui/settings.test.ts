@@ -23,11 +23,4 @@ describe('Settings', () => {
     store.setItem(SETTINGS_KEY, '{nope');
     expect(Settings.load(store).data.input).toBe('camera');
   });
-
-  it('keeps the best Waves score', () => {
-    const s = Settings.load(memory());
-    expect(s.recordScore(300)).toBe(true);
-    expect(s.recordScore(200)).toBe(false);
-    expect(s.data.best).toBe(300);
-  });
 });

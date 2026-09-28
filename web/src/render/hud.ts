@@ -8,7 +8,7 @@ import { palmsFaceEachOther, TUNING, type Intent } from '../intent/interpret';
 
 const $ = (id: string) => document.getElementById(id)!;
 
-/** DOM overlay: health, score, current move, shield energy, toasts and wave banners. */
+/** DOM overlay: health, breath, current move, dodge cue, toasts and banners. */
 export class Hud {
   /** `hands` is the live tracking, so the HUD is right even before the game has stepped (e.g. paused). */
   update(g: Game, hands: Intent['hands'] = g.hands): void {
@@ -19,8 +19,7 @@ export class Hud {
     $('hpBar').classList.toggle('low', g.hp <= 30);
     $('breathFill').style.width = `${Math.round((g.breath / TUNE.breathMax) * 100)}%`;
     $('breathBar').classList.toggle('low', g.breath < TUNE.breathPunch * 2);
-    $('score').textContent = String(g.score);
-    $('wave').textContent = g.label ?? (g.practice ? 'Practice dummies' : `Wave ${g.wave}`);
+    $('place').textContent = g.label ?? (g.practice ? 'Training' : '');
     // both hands open and still-ish, but the palms don't face each other: say how to make a shield
     const openPalmsApart = !!hands.l?.open && !!hands.r?.open && !!hands.l.palm && !!hands.r.palm
       && !palmsFaceEachOther(hands.l, hands.r, TUNING.shieldFacing);
@@ -28,23 +27,22 @@ export class Hud {
     const noHands = !hands.l && !hands.r;
     pill.classList.toggle('off', noHands);
     pill.classList.toggle('shield', g.shield.on);
-    const [name, hint] = g.infernoSpreadIn > 0 ? ['BLUE INFERNO', 'now spread your hands apart!']
-      : g.infernoPrep >= 1 ? ['BLUE INFERNO', g.infernoIn <= 0 ? 'hands ablaze — slam them down!' : `recharging — ${Math.ceil(g.infernoIn)}s`]
-      : g.infernoPrep > 0 ? ['BLUE INFERNO', 'hold them together over your head…']
-      : g.gather >= 1 ? ['FINISHER', g.ultimateIn <= 0 ? 'hands ablaze — spread them wide!' : `recharging — ${Math.ceil(g.ultimateIn)}s`]
-      : g.gather > 0 ? ['GATHERING', 'hold your open hands together…']
-      : g.xBlock ? ['X BLOCK', 'arms crossed: blocks attacks (not pillars or sweeps: move!)']
-      : g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
-      : noHands ? ['NO HANDS', 'raise your fists into view']
-      : openPalmsApart ? ['OPEN PALMS', 'turn your palms to face each other to raise the shield · palms forward and shove: push']
-      : tooFar ? ['GUARD', 'step closer (about 1.5 m) so fist punches can see your fists clearly']
-        : ['GUARD', TUNING.punchTrigger === 'extend'
-          ? 'fist: punch (pull back & hold: charge) · palm forward, shove: pillar · palms facing each other: shield · sweep up: wall, then push · hands together, then spread: finisher'
-          : 'punch & open: shoot · still open hands: shield · sweep up: wall · hands together, then spread: finisher'];
+    // a word or two, never a paragraph: the name of what you're doing, and what to do next
+    const [name, hint] = g.infernoSpreadIn > 0 ? ['BLUE INFERNO', 'spread your hands!']
+      : g.infernoPrep >= 1 ? ['BLUE INFERNO', g.infernoIn <= 0 ? 'slam them down!' : `recharging ${Math.ceil(g.infernoIn)}s`]
+      : g.infernoPrep > 0 ? ['BLUE INFERNO', 'hold them overhead…']
+      : g.gather >= 1 ? ['FINISHER', g.ultimateIn <= 0 ? 'spread them wide!' : `recharging ${Math.ceil(g.ultimateIn)}s`]
+      : g.gather > 0 ? ['GATHERING', 'hold them together…']
+      : g.xBlock ? ['X BLOCK', 'blocks orbs']
+      : g.shield.on ? ['FLAME SHIELD', 'cover the red rings']
+      : noHands ? ['NO HANDS', 'raise your fists']
+      : openPalmsApart ? ['OPEN PALMS', 'face them together: shield']
+      : tooFar ? ['GUARD', 'step closer (about 1.5 m)']
+      : ['GUARD', ''];
     const lost = (['l', 'r'] as const).filter(side => hands[side] && !hands[side]!.inView);
     $('modeName').textContent = name;
     $('modeHint').textContent = lost.length
-      ? `${lost.map(side => (side === 'l' ? 'left' : 'right')).join(' and ')} hand out of camera view`
+      ? `${lost.map(side => (side === 'l' ? 'left' : 'right')).join(' and ')} hand out of view`
       : hint;
     // the attack you most need to move out of: red with what to do, green once you're clear
     const next = g.incoming()[0];
@@ -74,14 +72,12 @@ export class Hud {
       case 'dodged': this.toast('✓ DODGED', 'good'); break;
       case 'clash': this.toast('CLASH', 'cool'); break;
       case 'playerHit': this.toast('HIT', 'bad'); break;
-      case 'killEnemy': this.toast('+100'); break;
       case 'wall': this.toast('FIRE WALL'); break;
       case 'pillar': this.toast('PILLAR'); break;
       case 'combo': this.toast(COMBO_NAMES[e.name], e.name === 'charged' ? 'charged' : ''); break;
       case 'hint': this.toast(e.text, 'cool'); break;
       case 'ultimate': this.banner('ULTIMATE'); break;
       case 'inferno': this.banner('BLUE INFERNO'); break;
-      case 'wave': this.banner(`WAVE ${e.wave}`); break;
     }
   }
 

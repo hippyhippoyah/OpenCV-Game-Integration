@@ -20,11 +20,11 @@ describe('Rail', () => {
     expect(r.advance(1, p)).toBeNull(); // stays until moved on past it
   });
 
-  it('walks on past a pause once nudged, and can skip to the next', () => {
+  it('can skip ahead to just short of a pause, and then walks into it', () => {
     const p = pauses(), r = new Rail(p[0].at + 0.01);
-    r.skip(p);
-    expect(r.d).toBeGreaterThan(p[1].at - 3);
+    r.skipTo(p[1].at);
     expect(r.d).toBeLessThan(p[1].at);
+    expect(r.advance(0.01, p)).toEqual(p[1]);
   });
 
   it('draws the path on the map through every route point, inside the map', () => {

@@ -66,7 +66,7 @@ export const TUNE = {
   /** Both palms pushed: a fire wall pushWallHalfW wide rolls forward at pushWallSpeed, burning (palmDamage) what it passes. */
   pushWallHalfW: 40, pushWallSpeed: 7, pushWallStartZ: 1.2, pushWallCooldownS: 2.5,
   /**
-   * Enemies: water spirits and (earthShare of them) earthbenders. Spirits throw water orbs, or
+   * Enemies: water spirits and earthbenders. Spirits throw water orbs, or
    * (slabShare) a high sweep: a wave of water crossing the whole field, always at slabY (your eye
    * height standing up, even if you were ducking when it was sent) — duck at least slabDuck below
    * it. Earthbenders raise stone pillars (over their pillarWindupS
@@ -75,7 +75,7 @@ export const TUNE = {
    * them straight down that lane at stonePillarSpeed: lean or step the other way (your body is
    * bodyHalfW wide). Shield and X block don't stop pillars or sweeps; a fire wall does.
    */
-  earthShare: 0.35, slabShare: 0.3, slabSpeed: 6, slabY: 0, slabDuck: 14, bodyHalfW: 12,
+  slabShare: 0.3, slabSpeed: 6, slabY: 0, slabDuck: 14, bodyHalfW: 12,
   pillarWindupS: 1.4, stonePillarSpeed: 3.5, stonePillarHalfW: 20, pillarHeightStone: 70, pillarOffset: 22,
   /** Enemies stay within this fraction of the screen's half-width of its centre (easier to aim at). */
   enemyBand: 0.4,
@@ -103,7 +103,9 @@ export const TUNE = {
   volleyWindowS: 0.6, volleyWidth: 3, volleyDamage: 3,
   /** Testing: the shield never drains or breaks. */
   shieldReach: 8,
-  enemyHp: 2, enemyProjRadius: 4.2, windupS: 1, waveBreakS: 2.2,
+  enemyHp: 2, enemyProjRadius: 4.2, windupS: 1,
+  /** Seconds between an enemy's attacks (plus up to 1.5 s at random, unless it has a set pace), and a water orb's speed. */
+  attackCdS: 3.4, orbSpeed: 4.6,
 };
 
 export interface Enemy {
@@ -156,7 +158,7 @@ export type GameEvent =
   /** A move that didn't go off, and what it needs (e.g. the wall push needs a wall). */
   | { type: 'hint'; text: string }
   | { type: 'gameOver' }
-  | { type: 'wave'; wave: number };
+
 
 export type Rand = () => number;
 
@@ -215,8 +217,6 @@ export function arrival(p: Proj): Vec2 {
 export class Game {
   state: 'play' | 'over' = 'play';
   hp = TUNE.maxHp;
-  score = 0;
-  wave = 0;
   cam: Vec2 = { x: 0, y: 0 };
   hands: Intent['hands'] = { l: null, r: null };
   shield = { on: false };
@@ -262,11 +262,6 @@ export class Game {
   label: string | null = null;
 
   private events: GameEvent[] = [];
-  private toSpawn = 0;
-  /** An earthbender has come this wave (every wave brings at least one). */
-  private waveEarth = false;
-  private spawnT = 0;
-  private waveBreak = 0;
   private nextId = 1;
   private dummyTimers = DUMMY_SLOTS.map(() => 0);
   private punchCool: Record<Side, number> = { l: 0, r: 0 };
@@ -279,9 +274,12 @@ export class Game {
   private lastFlurryT = -Infinity;
   private lastShieldBlockT = -Infinity;
 
+  /** practice: a yard of dummies (training); otherwise an empty field for a script to fill. */
   constructor(private rand: Rand = Math.random, public viewHalfW = 70, practice = false) {
-    if (practice) this.setPractice(true);
-    else this.startWave();
+    if (practice) {
+      this.practice = true;
+      this.spawnDummies(0);
+    }
   }
 
   /** Do you have this move? */
@@ -349,22 +347,6 @@ export class Game {
     this.emit('slab', e.x, TUNE.slabY, z);
   }
 
-  /** Switch between practice dummies and spirit waves, clearing the field. */
-  setPractice(on: boolean): void {
-    this.practice = on;
-    this.enemies = [];
-    this.projs = this.projs.filter(p => p.kind === 'player');
-    this.hazards = [];
-    if (on) {
-      this.dummyTimers = DUMMY_SLOTS.map(() => 0);
-      this.spawnDummies(0);
-    } else {
-      this.wave = 0;
-      this.waveBreak = 0;
-      this.startWave();
-    }
-  }
-
   step(dt: number, intent: Intent): void {
     this.cam = { ...intent.head };
     this.hands = intent.hands;
@@ -395,7 +377,7 @@ export class Game {
     this.updateBlades(dt);
     this.updateGroundFire(dt);
     this.updatePillars(dt);
-    this.updateWaves(dt);
+    if (this.spawning && this.practice) this.spawnDummies(dt);
     this.updateEnemies(dt);
     this.updateProjs(dt);
     this.updateHazards(dt);
@@ -604,7 +586,6 @@ export class Game {
       const wall = this.wallMet(h.kind === 'stonePillar' ? h.x : this.cam.x, h.kind === 'stonePillar' ? h.halfW ?? TUNE.stonePillarHalfW : 0, z0, h.z, dt);
       if (wall) {
         dead.add(h.id);
-        this.score += 15;
         this.emit('blocked', h.x, h.kind === 'stonePillar' ? FLOOR_Y - 20 : h.y, wall.z);
         continue;
       }
@@ -612,7 +593,6 @@ export class Game {
         h.resolved = true;
         const hit = !this.outOfWay(h);
         if (!hit) {
-          this.score += 20;
           this.emit('dodged', this.cam.x, this.cam.y + 10, 0);
         } else if (this.inv <= 0) {
           this.hurt(this.cam.x, h.kind === 'stonePillar' ? this.cam.y + 20 : h.y);
@@ -659,7 +639,7 @@ export class Game {
     e.hp -= dealt;
     e.flash = 1;
     if (dealt === 0) this.emit('blocked', e.x, e.y, e.z);
-    else if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', e.x, e.y, e.z); }
+    else if (e.hp <= 0) { this.emit('killEnemy', e.x, e.y, e.z); }
     else this.emit('hitEnemy', e.x, e.y, e.z);
   }
 
@@ -677,7 +657,6 @@ export class Game {
       }
       this.projs = this.projs.filter(p => {
         if (p.kind !== 'enemy' || Math.abs(p.z - c.z) > 0.8 || Math.abs(p.x - c.x) > c.halfW + p.r) return true;
-        this.score += 25;
         this.emit('clash', p.x, p.y, p.z);
         return false;
       });
@@ -782,10 +761,9 @@ export class Game {
       b.r += TUNE.bladeSpeed * dt;
       for (const e of this.enemies) {
         if (e.hp <= 0 || !reach(b, e.x, e.z)) continue;
-        if (e.boss) { e.hp -= bossDamage(e, 'blade', 10); e.flash = 1; if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', e.x, e.y, e.z); } else this.emit('hitEnemy', e.x, e.y, e.z); continue; }
+        if (e.boss) { e.hp -= bossDamage(e, 'blade', 10); e.flash = 1; if (e.hp <= 0) { this.emit('killEnemy', e.x, e.y, e.z); } else this.emit('hitEnemy', e.x, e.y, e.z); continue; }
         e.hp = 0;
         e.flash = 1;
-        this.score += 100;
         this.emit('killEnemy', e.x, e.y, e.z);
       }
       this.projs = this.projs.filter(p => {
@@ -809,36 +787,6 @@ export class Game {
     return best;
   }
 
-  private startWave(): void {
-    this.wave++;
-    this.toSpawn = 2 + this.wave;
-    this.waveEarth = false;
-    this.spawnT = 0.6;
-    this.events.push({ type: 'wave', wave: this.wave });
-  }
-
-  private updateWaves(dt: number): void {
-    if (!this.spawning) return;
-    if (this.practice) {
-      this.spawnDummies(dt);
-      return;
-    }
-    const alive = this.enemies.filter(e => e.hp > 0).length;
-    if (this.toSpawn > 0) {
-      this.spawnT -= dt;
-      if (this.spawnT <= 0 && alive < 2 + Math.ceil(this.wave / 2)) {
-        this.spawnEnemy();
-        this.toSpawn--;
-        this.spawnT = this.rnd(0.8, 1.8);
-      }
-    } else if (this.enemies.length === 0) {
-      this.waveBreak += dt;
-      if (this.waveBreak > TUNE.waveBreakS) {
-        this.waveBreak = 0;
-        this.startWave();
-      }
-    }
-  }
 
   /** Fill empty dummy slots once their respawn timer runs out. */
   private spawnDummies(dt: number): void {
@@ -854,32 +802,13 @@ export class Game {
     });
   }
 
-  private spawnEnemy(): void {
-    const z = this.rnd(6.5, 11), s = depthScale(z);
-    // this.toSpawn still counts this one: if no earthbender yet, one of the last two is
-    const earth = (this.toSpawn <= 2 && !this.waveEarth) || this.rand() < TUNE.earthShare;
-    this.waveEarth ||= earth;
-    // near the middle of the screen, away from where the others stand
-    let x = 0;
-    for (let tries = 0; tries < 6; tries++) {
-      x = (this.rnd(-1, 1) * this.viewHalfW * TUNE.enemyBand) / s;
-      if (this.enemies.every(e => e.hp <= 0 || Math.abs(e.x * depthScale(e.z) - x * s) > 10)) break;
-    }
-    this.enemies.push({
-      id: this.nextId++, x, y: FLOOR_Y - 30, z,
-      hp: TUNE.enemyHp, t: 0, appear: 0, dying: 0, flash: 0,
-      cd: this.rnd(1.2, 2.6), winding: false, wind: 0, side: this.rand() < 0.5 ? -1 : 1, phase: this.rnd(0, 6),
-      earth,
-    });
-  }
-
   /** Most you can drift sideways (world x) at depth z and stay near the middle of the screen. */
   private bandAt(z: number): number {
     return (this.viewHalfW * TUNE.enemyBand) / depthScale(z);
   }
 
   private updateEnemies(dt: number): void {
-    const baseCd = Math.max(1.4, 3.4 - this.wave * 0.25);
+    const baseCd = TUNE.attackCdS;
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
       e.t += dt;
@@ -954,7 +883,7 @@ export class Game {
   private enemyThrow(e: Enemy): void {
     const tx = this.cam.x + this.rnd(-4, 4), ty = this.cam.y + this.rnd(-3, 12);
     const hx = e.x + e.side * 11, hy = e.y - 14, z = e.z - 0.1;
-    const vz = -(4.6 + this.wave * 0.35), T = z / -vz;
+    const vz = -TUNE.orbSpeed, T = z / -vz;
     this.projs.push({ id: this.nextId++, kind: 'enemy', x: hx, y: hy, z, vx: (tx - hx) / T, vy: (ty - hy) / T, vz, r: TUNE.enemyProjRadius, resolved: false });
   }
 
@@ -976,7 +905,7 @@ export class Game {
             e.flash = 1;
             dead.add(p.id);
             if (dealt === 0) this.emit('blocked', p.x, p.y, p.z);
-            else if (e.hp <= 0) { this.score += 100; this.emit('killEnemy', p.x, p.y, p.z); }
+            else if (e.hp <= 0) { this.emit('killEnemy', p.x, p.y, p.z); }
             else this.emit('hitEnemy', p.x, p.y, p.z);
             // a flurry's big fireball bursts, burning those standing nearby
             if (p.shot === 'flurry') {
@@ -993,7 +922,6 @@ export class Game {
           if (Math.hypot(p.x - q.x, p.y - q.y) < p.r + q.r + 2) {
             dead.add(p.id);
             dead.add(q.id);
-            this.score += 25;
             this.emit('clash', q.x, q.y, q.z);
             break;
           }
@@ -1003,7 +931,6 @@ export class Game {
         const wall = this.wallMet(p.x, p.r, p.z - p.vz * dt, p.z, dt);
         if (wall) {
           dead.add(p.id);
-          this.score += 15;
           this.emit('blocked', p.x, p.y, wall.z);
           continue;
         }
@@ -1021,13 +948,11 @@ export class Game {
   private resolveIncoming(q: Proj): boolean {
     const v = { x: q.x - this.cam.x, y: q.y - this.cam.y };
     if (this.xBlock && bodyHit(v, q.r * 2)) {
-      this.score += 15;
       this.emit('blocked', q.x, q.y, 0);
       return true;
     }
     if (this.shieldCovers(v, q.r)) {
       this.lastShieldBlockT = this.time;
-      this.score += 15;
       this.emit('blocked', q.x, q.y, 0);
       return true;
     }
@@ -1036,7 +961,6 @@ export class Game {
       return true;
     }
     if (Math.hypot(v.x, v.y - 10) < 30) {
-      this.score += 10;
       this.emit('dodged', q.x, q.y, 0);
     }
     return false;

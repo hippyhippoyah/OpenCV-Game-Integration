@@ -28,7 +28,7 @@
       </div>
       <div class="label">Breath</div>
     </div>
-    <div class="tr"><div class="label">Score</div><div class="score" id="score">0</div><div class="wave" id="wave"></div></div>
+    <div class="tr"><div class="place" id="place"></div></div>
     <div class="pill off" id="pill"><b id="modeName">GUARD</b><span id="modeHint"></span></div>
     <div class="br">
       <canvas id="pip"></canvas>
@@ -36,16 +36,10 @@
       <pre id="debugText" class="hidden"></pre>
     </div>
     <div id="lesson" class="lesson hidden">
+      <div class="lessonTag"><span id="lessonStep"></span><b id="lessonTitle"></b></div>
+      <div class="lessonCue" id="lessonCue"></div>
+      <div class="lessonPips" id="lessonPips"></div>
       <canvas id="lessonDemo" aria-label="How to do the move"></canvas>
-      <div class="lessonText">
-        <div class="label" id="lessonStep"></div>
-        <h2 id="lessonTitle"></h2>
-        <p id="lessonHow"></p>
-        <div class="steps" id="lessonSteps"></div>
-        <div class="goal"><span id="lessonGoal"></span><b id="lessonCount"></b></div>
-        <div class="bar wide"><i id="lessonFill"></i></div>
-        <div class="muted keys"><kbd>N</kbd> skip · <kbd>B</kbd> back · <kbd>Esc</kbd> menu</div>
-      </div>
     </div>
     <div id="toasts"></div>
     <div id="dodge" class="dodge hidden"><b id="dodgeText"></b><i id="dodgeBar"></i></div>
@@ -71,7 +65,6 @@
       <h1 id="campResultTitle"></h1>
       <div id="campFlames" class="flames"></div>
       <ul id="campReasons" class="checks"></ul>
-      <p class="muted">Take a seat — walk on when you're ready.</p>
       <div class="actions"><button id="campWalk">Walk on <kbd>Enter</kbd></button><button id="campAgain" class="secondary">Try again <kbd>R</kbd></button></div>
     </div>
     <div class="card hidden" id="campLost">
@@ -81,8 +74,7 @@
     </div>
     <div class="card hidden" id="campPause">
       <h1>Paused</h1>
-      <p>Catch your breath.</p>
-      <p class="muted">Leaving ends this fight; your scrolls and finished stops are kept.</p>
+      <p class="muted">Leaving ends this fight. Progress is kept.</p>
       <div class="actions"><button id="campResume">Resume</button><button id="campLeave" class="secondary">Leave to menu</button></div>
       <p class="muted"><kbd>Esc</kbd> resume</p>
     </div>
@@ -152,30 +144,18 @@
     <h1>Mouse &amp; keys</h1>
     <div class="grid">
       <div><kbd>Mouse</kbd> aim</div>
-      <div><kbd>Left click</kbd> right-hand punch</div>
-      <div><kbd>Right click</kbd> left-hand punch</div>
-      <div><kbd>Space</kbd> hold: open both hands → shield</div>
-      <div><kbd>W</kbd> sweep open hands up → fire wall</div>
-      <div><kbd>U</kbd> hands together, then spread → finisher</div>
-      <div><kbd>I</kbd> hold: hands together over the head (blue), let go: slam, then spread → blue inferno</div>
-      <div><kbd>F</kbd> push both palms after <kbd>W</kbd>: wall breaker</div>
-      <div><kbd>G</kbd> hold: right fist at the hip → charge (then click)</div>
-      <div><kbd>E</kbd> push open palm → rolling pillar</div>
+      <div><kbd>Click</kbd> punch (right click: left hand)</div>
+      <div><kbd>E</kbd> palm push</div>
+      <div><kbd>Space</kbd> shield</div>
+      <div><kbd>X</kbd> X block</div>
+      <div><kbd>W</kbd> fire wall · <kbd>F</kbd> push it</div>
+      <div><kbd>G</kbd> charge punch</div>
+      <div><kbd>U</kbd> finisher</div>
+      <div><kbd>I</kbd> blue inferno</div>
       <div><kbd>A</kbd><kbd>D</kbd> lean · <kbd>S</kbd> duck</div>
-      <div><kbd>T</kbd> practice dummies ↔ spirits</div>
-      <div><kbd>X</kbd> hold: cross your arms → X block</div>
-      <div><kbd>[</kbd><kbd>]</kbd> fist punch sensitivity</div>
-      <div><kbd>O</kbd> hold: right hand out of view</div>
-      <div><kbd>K</kbd> record 10 s of tracking (debug)</div>
     </div>
-    <div class="actions"><button id="mockHelpClose">Got it</button><span class="muted"><kbd>?</kbd> reopens · <kbd>`</kbd> debug numbers</span></div>
+    <div class="actions"><button id="mockHelpClose">Got it</button><span class="muted"><kbd>?</kbd> reopens · <kbd>`</kbd> debug · <kbd>K</kbd> record</span></div>
   </div>
 
-  <div class="card hidden" id="over">
-    <h1>Extinguished</h1>
-    <p>The spirits got through. Final score: <b id="overScore">0</b></p>
-    <p id="overBest" class="muted hidden"></p>
-    <div class="actions"><button id="againBtn">Rekindle</button><button id="menuBtn" class="secondary">Menu</button><span class="muted"><kbd>R</kbd> restart · <kbd>C</kbd> recalibrate</span></div>
-  </div>
 </body>
 </html>
