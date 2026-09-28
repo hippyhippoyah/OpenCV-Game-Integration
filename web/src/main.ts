@@ -63,6 +63,8 @@ let ghostAlphaNow = 1;
 let prevCampaignState: string | null = null;
 /** True while the campaign's practice/fight is paused via Esc (see stepCampaign & togglePause). */
 let campPaused = false;
+/** When R was first pressed on the campaign map (a second R soon after resets progress). */
+let resetAskedAt = -Infinity;
 const params = new URLSearchParams(location.search);
 /** Skip the mode menu with ?mode=tutorial|waves|training|campaign (?dummies = training). */
 const startMode: Mode | null = params.has('dummies') ? 'training'
@@ -476,6 +478,18 @@ addEventListener('keydown', e => {
       if (k === 'e') r.interact();
       if (k === ' ') { e.preventDefault(); r.skip(); }
       if (k === 'tab') { e.preventDefault(); campUI?.toggleScrolls(); }
+      // R twice (within a few seconds) erases the campaign and starts Chapter 1 over
+      if (k === 'r') {
+        if (performance.now() - resetAskedAt < 4000) {
+          resetAskedAt = -Infinity;
+          progress.reset();
+          campaign = new CampaignRunner(progress, () => new Game(Math.random, renderer.viewHalfW, true));
+          campaign.notes.push({ kind: 'info', text: 'Campaign progress reset — Chapter 1 starts fresh' });
+        } else {
+          resetAskedAt = performance.now();
+          r.notes.push({ kind: 'info', text: 'Press R again to erase all scrolls, stops and flames' });
+        }
+      }
     }
     if (k === 'escape') {
       if (r.state === 'handoff' || r.state === 'countdown') r.back();
