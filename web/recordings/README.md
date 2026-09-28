@@ -15,3 +15,5 @@ the tracking frames (no raw landmarks) plus what fired at the time:
   fired. Now at most 2.
 - `charge-high.json` — about 11 right punches, most thrown from a fist cocked high by or over the
   head (charging). Only the 4 near head height fired; now 8, 5 of them charged.
+- `open-close.json` — only opening and closing the hands in place; closing reads as a 15–25 cm
+  climb in reach. 8 punches and a palm push fired; now at most 1.

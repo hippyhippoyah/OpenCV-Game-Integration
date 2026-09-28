@@ -7,6 +7,7 @@ import swayingRaw from '../../recordings/swaying.json?raw';
 import raised1Raw from '../../recordings/raised-hands-1.json?raw';
 import raised2Raw from '../../recordings/raised-hands-2.json?raw';
 import chargeHighRaw from '../../recordings/charge-high.json?raw';
+import openCloseRaw from '../../recordings/open-close.json?raw';
 import { initialState, interpret, TUNING, type Intent } from './interpret';
 import type { TrackingFrame } from '../input/types';
 import type { Calibration } from './calibration';
@@ -45,7 +46,8 @@ describe('real-camera recordings', () => {
     // punching while moving about: all but three slow 2–3 cm drifts (shaped like a sway), and the
     // sharp ones thrown mid-lean (e.g. 14 cm in 0.1 s at 5.8 s) still land
     const p2 = punchTimes(replay(punches2Raw));
-    expect(p2.length).toBeGreaterThanOrEqual(17);
+    // (one more, thrown with the hand still open, no longer counts: a punch comes from a fist)
+    expect(p2.length).toBeGreaterThanOrEqual(16);
     expect(p2.some(x => x.hand === 'l' && Math.abs(x.t - 5.84) < 0.15)).toBe(true);
     // alternating jabs about every half second, recorded by mistake in open-hand mode (P), where
     // only 7 of them fired: the fist detector catches them
@@ -66,6 +68,13 @@ describe('real-camera recordings', () => {
     // the hand overlaps the face and its depth jumps 10–30 cm a frame; 22 and 13 punches fired.
     const p = [...punchTimes(replay(raised1Raw)), ...punchTimes(replay(raised2Raw))];
     expect(p.length).toBeLessThanOrEqual(2);
+  });
+
+  it('opening and closing the hands in place is not an attack', () => {
+    // closing a hand makes its distance reading climb 15–25 cm with no movement: 8 punches and a
+    // palm push fired. (A both-palms push with no fire wall up only shows a hint.)
+    const out = replay(openCloseRaw);
+    expect(out.flatMap(o => [...o.intent.punches, ...o.intent.palms]).length).toBeLessThanOrEqual(1);
   });
 
   it('does not punch while leaning quickly', () => {

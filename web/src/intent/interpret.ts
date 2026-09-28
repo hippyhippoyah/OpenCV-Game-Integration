@@ -256,6 +256,12 @@ export const TUNING = {
    */
   aboveHead: 13, highFistRise: 0.4,
   /**
+   * A punch comes from a fist: closing an open hand makes its distance reading climb 15–25 cm
+   * while it doesn't move at all — just like a jolt. So a hand that was open (openness at least
+   * startedOpenAbove) within the last startedOpenS isn't punching.
+   */
+  startedOpenAbove: 0.75, startedOpenS: 0.35,
+  /**
    * Palm push (fist-punch mode only; the open-hand punch style already uses opening hands): one hand
    * open, shoved toward the camera — it may open on the way. The other hand is a fist, or open but
    * held still (it came forward less than palmOtherStill as far; both pushing is a wall push). With
@@ -280,7 +286,7 @@ interface Track extends HandState {
   armed: boolean;
   lastSeen: number;
   /** bx: the hand's 3D sideways position (m), when known. */
-  hist: { t: number; x: number; y: number; speed: number; size: number | null; ext: number | null; reach: number | null; bx: number | null }[];
+  hist: { t: number; x: number; y: number; speed: number; size: number | null; ext: number | null; reach: number | null; bx: number | null; open: number }[];
   filters: { x: OneEuro; y: OneEuro; depth: OneEuro; bx: OneEuro; by: OneEuro };
   /** Filtered 3D palm position (m, relative to the shoulder centre). */
   body3: { x: number; y: number; z: number } | null;
@@ -547,7 +553,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
         fire = tr.armed && tr.extension >= TUNING.extendFireAbove && extensionRise(tr) >= TUNING.punchExtendRise;
       }
-      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView, tr.reach !== null ? reachRise(tr, TUNING.quickWindowS) : 0) && s.infernoSince === null && !s.infernoReady) {
+      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView, tr.reach !== null ? reachRise(tr, TUNING.quickWindowS) : 0) && !startedOpen(tr, TUNING.startedOpenS) && s.infernoSince === null && !s.infernoReady) {
         tr.armed = false;
         tr.lastPunchT = f.t;
         // (only a punch that fires starts a new peak: a jolt held back by a check above keeps building)
@@ -837,7 +843,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     track.reachBase = track.reach;
     if (track.reach !== null) track.reachSince = t;
     if (track.body3 && track.reach !== null) track.body3.z = track.reach;
-    track.hist.push({ t, x: pos.x, y: pos.y, speed: 0, size, ext, reach: track.reach, bx: track.body3?.x ?? null });
+    track.hist.push({ t, x: pos.x, y: pos.y, speed: 0, size, ext, reach: track.reach, bx: track.body3?.x ?? null, open: track.openness });
     return { track, opened: false };
   }
   // Opening or closing the hand switches how its distance is measured, which jumps the reading:
@@ -885,7 +891,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     else if (tr.open && tr.openness < TUNING.fistBelow) tr.open = false;
   }
   tr.lastSeen = t;
-  tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension, reach: reach !== null ? tr.reach : null, bx: reach !== null && b3 ? tr.body3!.x : null });
+  tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension, reach: reach !== null ? tr.reach : null, bx: reach !== null && b3 ? tr.body3!.x : null, open: tr.openness });
   const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS, TUNING.quickWindowS, TUNING.palmPushWindowS, TUNING.slamWindowS);
   while (tr.hist.length && t - tr.hist[0].t > keepS) tr.hist.shift();
   return { track: tr, opened };
@@ -923,6 +929,12 @@ export function fistThresholds(noise: number, leanExtra = 0): { rise: number; le
  * that time, metres — counting only since its last punch peaked, so pulling back from one punch
  * never counts toward the next.
  */
+/** Was the hand open within the last windowS? (Closing an open hand reads as a climb in reach, with no punch in it.) */
+function startedOpen(tr: Track, windowS: number): boolean {
+  const now = tr.hist[tr.hist.length - 1]?.t ?? 0;
+  return tr.hist.some(h => now - h.t <= windowS && h.open >= TUNING.startedOpenAbove);
+}
+
 function reachRise(tr: Track, windowS: number): number {
   if (tr.reach === null) return 0;
   let low = tr.reach;
