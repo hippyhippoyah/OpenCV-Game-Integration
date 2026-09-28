@@ -432,7 +432,9 @@ addEventListener('keydown', e => {
     recorder.start(RECORD_SECONDS, calibration);
     show('recording');
   }
-  if (k === 'p') {
+  // open-hand punches are a debugging fallback: P only switches with the debug numbers open (`),
+  // so a stray key press can't quietly turn fist punches off
+  if (k === 'p' && debug.detailed) {
     TUNING.punchTrigger = TUNING.punchTrigger === 'extend' ? 'open' : 'extend';
     istate.pending = [];
     hud.toast(TUNING.punchTrigger === 'extend' ? 'PUNCH: FIST' : 'PUNCH: OPEN HAND', 'cool');

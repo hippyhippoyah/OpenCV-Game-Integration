@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import punchesCloseRaw from '../../recordings/punches-close.json?raw';
 import punches2Raw from '../../recordings/punches-2.json?raw';
+import punches3Raw from '../../recordings/punches-3.json?raw';
 import leaningRaw from '../../recordings/leaning.json?raw';
 import swayingRaw from '../../recordings/swaying.json?raw';
 import { initialState, interpret, TUNING, type Intent } from './interpret';
@@ -42,6 +43,11 @@ describe('real-camera recordings', () => {
     const p2 = punchTimes(replay(punches2Raw));
     expect(p2.length).toBeGreaterThanOrEqual(17);
     expect(p2.some(x => x.hand === 'l' && Math.abs(x.t - 5.84) < 0.15)).toBe(true);
+    // alternating jabs about every half second, recorded by mistake in open-hand mode (P), where
+    // only 7 of them fired: the fist detector catches them
+    const p3 = punchTimes(replay(punches3Raw));
+    expect(p3.length).toBeGreaterThanOrEqual(17);
+    expect(new Set(p3.map(x => x.hand))).toEqual(new Set(['l', 'r']));
   });
 
   it('does not punch while leaning quickly', () => {
@@ -52,7 +58,7 @@ describe('real-camera recordings', () => {
   });
 
   it('never charges a punch by accident (none of these pull a fist back and hold it)', () => {
-    for (const raw of [punchesCloseRaw, punches2Raw, leaningRaw, swayingRaw]) {
+    for (const raw of [punchesCloseRaw, punches2Raw, punches3Raw, leaningRaw, swayingRaw]) {
       const out = replay(raw);
       expect(out.flatMap(o => o.intent.punches).filter(p => p.charged)).toEqual([]);
       expect(out.filter(o => (o.intent.hands.l?.charge ?? 0) >= 1 || (o.intent.hands.r?.charge ?? 0) >= 1)).toEqual([]);

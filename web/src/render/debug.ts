@@ -5,7 +5,7 @@ import type { Vec2 } from '../math';
 /** Corner panel: what the camera sees plus the tracked points; backtick adds live numbers. */
 export class DebugView {
   private ctx: CanvasRenderingContext2D;
-  private detailed = false;
+  detailed = false;
 
   constructor(private canvas: HTMLCanvasElement, private text: HTMLElement) {
     this.ctx = canvas.getContext('2d')!;
