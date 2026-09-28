@@ -136,7 +136,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'inferno', title: 'Blue Inferno',
-    how: 'Raise both hands together over your head — fists or open palms — and hold them there until they burn blue. Then slam them down together: the whole ground bursts into blue flame for five seconds, burning everything on it. A long recharge.',
+    how: 'Three steps. Raise both hands together over your head and hold them there until they burn blue. Slam them down together: a line of blue flame shoots straight ahead. Then spread your hands wide apart: the flame spreads over the whole ground for five seconds, burning everything on it. A long recharge.',
     goal: 'Set the ground ablaze', need: 1,
     cast: [{ tag: 'a', kind: 'dummy', x: -24, z: 6 }, { tag: 'b', kind: 'dummy', x: 0, z: 10 }, { tag: 'c', kind: 'dummy', x: 24, z: 7 }],
     setup: g => { g.infernoIn = 0; },

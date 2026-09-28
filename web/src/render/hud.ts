@@ -25,7 +25,8 @@ export class Hud {
     const noHands = !hands.l && !hands.r;
     pill.classList.toggle('off', noHands);
     pill.classList.toggle('shield', g.shield.on);
-    const [name, hint] = g.infernoPrep >= 1 ? ['BLUE INFERNO', g.infernoIn <= 0 ? 'hands ablaze — slam them down!' : `recharging — ${Math.ceil(g.infernoIn)}s`]
+    const [name, hint] = g.infernoSpreadIn > 0 ? ['BLUE INFERNO', 'now spread your hands apart!']
+      : g.infernoPrep >= 1 ? ['BLUE INFERNO', g.infernoIn <= 0 ? 'hands ablaze — slam them down!' : `recharging — ${Math.ceil(g.infernoIn)}s`]
       : g.infernoPrep > 0 ? ['BLUE INFERNO', 'hold them together over your head…']
       : g.gather >= 1 ? ['FINISHER', g.ultimateIn <= 0 ? 'hands ablaze — spread them wide!' : `recharging — ${Math.ceil(g.ultimateIn)}s`]
       : g.gather > 0 ? ['GATHERING', 'hold your open hands together…']

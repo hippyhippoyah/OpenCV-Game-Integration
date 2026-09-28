@@ -42,6 +42,13 @@ export const TUNE = {
    * burning every enemy on it infernoDamage each infernoTickS; then it recharges for infernoCooldownS.
    */
   infernoS: 5, infernoTickS: 0.5, infernoDamage: 1, infernoCooldownS: 20,
+  /**
+   * The blue inferno has three steps: hands together over the head (they burn blue), slammed down —
+   * a narrow line of blue flame shoots straight ahead (slamLineHalfW wide, slamLineSpeed, burning
+   * slamLineDamage) and the cooldown starts — then spread apart within infernoSpreadS: the flame
+   * spreads over the whole ground.
+   */
+  slamLineHalfW: 4, slamLineSpeed: 16, slamLineDamage: 3, infernoSpreadS: 1.5,
   ultimateCooldownS: 7, bladeSpeed: 16, bladeWidthPerDepth: 30, bladeMaxR: 18,
   /**
    * How far below the hands the blade sweeps, as a fraction of the way to the floor. At hand height
@@ -139,7 +146,7 @@ export type ComboName = 'charged' | 'flurry' | 'counter' | 'oneTwo' | 'volley' |
 export type MoveName = 'punch' | 'flurry' | 'shield' | 'palm' | 'charge' | 'wall' | 'finisher'
   | 'xBlock' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker' | 'inferno';
 
-type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab' | 'fizzle' | 'inferno';
+type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab' | 'fizzle' | 'inferno' | 'slam';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
   | { type: 'punch' | 'pillar'; x: number; y: number; z: number; side: Side }
@@ -156,7 +163,11 @@ export type Rand = () => number;
 export interface Blade { id: number; x: number; y: number; r: number }
 
 /** A palm push: a column of fire rolling forward from the floor, `hit` = enemies it already burned. */
-export interface Pillar { id: number; x: number; z: number; vx: number; age: number; hit: number[]; hand: Side; halfW: number; damage: number }
+export interface Pillar {
+  id: number; x: number; z: number; vx: number; age: number; hit: number[]; hand: Side; halfW: number; damage: number;
+  /** Blue fire (the one-two push, the blue inferno's line), and its own speed if not pillarSpeed. */
+  blue?: boolean; speed?: number;
+}
 
 export type AttackKind = 'orb' | 'slab' | 'pillar';
 
@@ -226,6 +237,8 @@ export class Game {
   groundFire = 0;
   /** Blue inferno: how long the hands have been held together over the head, 0 → 1 (1 = slam them down). */
   infernoPrep = 0;
+  /** Blue inferno: seconds left after the slam to spread the hands and set the ground ablaze. */
+  infernoSpreadIn = 0;
   private groundTick = 0;
   /** Finisher: how gathered your open hands are, 0 → 1 (1 = spread them to cast). */
   gather = 0;
@@ -361,6 +374,7 @@ export class Game {
     this.palmCool = { l: Math.max(0, this.palmCool.l - dt), r: Math.max(0, this.palmCool.r - dt) };
     this.ultimateIn = Math.max(0, this.ultimateIn - dt);
     this.infernoIn = Math.max(0, this.infernoIn - dt);
+    this.infernoSpreadIn = Math.max(0, this.infernoSpreadIn - dt);
     const rested = this.time - this.breathSpentT >= TUNE.breathRestS;
     this.breath = Math.min(TUNE.breathMax, this.breath + (rested ? TUNE.breathRestRegen : TUNE.breathRegen) * dt);
     this.updateShield(intent.shield && this.has('shield'));
@@ -369,7 +383,7 @@ export class Game {
     if (this.state !== 'play') return;
     if (this.has('punch')) for (const p of intent.punches) this.punch(this.has('charge') ? p : { ...p, charged: false });
     for (const c of intent.casts) {
-      const needs: MoveName = c.kind === 'wall' ? 'wall' : c.kind === 'push' ? 'wallBreaker' : c.kind === 'inferno' ? 'inferno' : 'finisher';
+      const needs: MoveName = c.kind === 'wall' ? 'wall' : c.kind === 'push' ? 'wallBreaker' : c.kind === 'inferno' || c.kind === 'slam' ? 'inferno' : 'finisher';
       if (this.has(needs)) this.cast(c);
     }
     if (this.has('palm')) for (const p of intent.palms ?? []) this.palm(p);
@@ -535,6 +549,8 @@ export class Game {
     this.pillars.push({
       id: this.nextId++, x: start, z, vx, age: 0, hit: [], hand: p.hand,
       halfW: TUNE.pillarHalfW * (oneTwo ? TUNE.oneTwoWidth : 1), damage: oneTwo ? TUNE.oneTwoDamage : TUNE.palmDamage,
+      // the one-two push burns blue
+      blue: oneTwo || undefined,
     });
     if (oneTwo) this.events.push({ type: 'combo', name: 'oneTwo', x: start, y: FLOOR_Y, z, side: p.hand });
   }
@@ -648,7 +664,7 @@ export class Game {
     for (const c of this.pillars) {
       const z0 = c.z;
       c.x += c.vx * dt;
-      c.z += TUNE.pillarSpeed * dt;
+      c.z += (c.speed ?? TUNE.pillarSpeed) * dt;
       c.age += dt;
       for (const e of this.enemies) {
         if (e.hp <= 0 || c.hit.includes(e.id) || e.z < z0 - 0.5 || e.z > c.z + 0.5 || Math.abs(e.x - c.x) > c.halfW + 7) continue;
@@ -681,12 +697,23 @@ export class Game {
   }
 
   private cast(c: Cast): void {
-    if (c.kind === 'inferno') {
+    if (c.kind === 'slam') {
       if (this.infernoIn > 0) {
         this.events.push({ type: 'hint', text: `BLUE INFERNO RECHARGING — ${Math.ceil(this.infernoIn)}s` });
         return;
       }
+      // step two: a line of blue flame straight ahead from where the hands came down
       this.infernoIn = TUNE.infernoCooldownS;
+      this.infernoSpreadIn = TUNE.infernoSpreadS;
+      const x = this.handWorld(c.at).x;
+      this.pillars.push({ id: this.nextId++, x, z: TUNE.launchZ, vx: 0, age: 0, hit: [], hand: 'r', halfW: TUNE.slamLineHalfW, damage: TUNE.slamLineDamage, blue: true, speed: TUNE.slamLineSpeed });
+      this.emit('slam', x, FLOOR_Y, TUNE.launchZ);
+      return;
+    }
+    if (c.kind === 'inferno') {
+      // step three: spreading the hands after the slam sets the whole ground ablaze
+      if (this.infernoSpreadIn <= 0) return;
+      this.infernoSpreadIn = 0;
       this.groundFire = TUNE.infernoS;
       this.groundTick = TUNE.infernoTickS;
       const at = this.handWorld(c.at);

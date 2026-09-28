@@ -72,7 +72,7 @@ export class MockTracker implements Tracker {
     const raise = this.keys.has('i');
     if (this.raised && !raise) this.slamAt = t;
     this.raised = raise;
-    if (this.slamAt !== null && t - this.slamAt > 0.45) this.slamAt = null;
+    if (this.slamAt !== null && t - this.slamAt > 0.8) this.slamAt = null;
     if (this.castReq && !this.casting) this.casting = { kind: this.castReq, t };
     this.castReq = null;
     if (this.casting && t - this.casting.t > CAST_MOVE_S + CAST_HOLD_S + (this.casting.kind === 'ultimate' ? GATHER_S : 0)) this.casting = null;
@@ -109,9 +109,10 @@ export class MockTracker implements Tracker {
         ext = 0.25 + 0.65 * e;
         reachM = GUARD_REACH_M + (PUNCH_REACH_M - GUARD_REACH_M) * e;
       } else if (raise || this.slamAt !== null) {
-        // both fists together over the head (burning blue), then slammed down
+        // both fists together over the head (burning blue), slammed down, then spread apart
         const e = this.slamAt === null ? 0 : clamp((t - this.slamAt) / 0.12, 0, 1);
-        pos = { x: sign * lerp(6, 16, e), y: lerp(-18, 42, e) };
+        const out = this.slamAt === null ? 0 : clamp((t - this.slamAt - 0.3) / 0.15, 0, 1);
+        pos = { x: sign * (lerp(6, 8, e) + 34 * out), y: lerp(-18, 40, e) };
       } else if (this.keys.has('g') && side === 'r' && (since === null || since > EXTEND_S + OPEN_HOLD_S)) {
         // down at the hip, elbow bent: charging
         pos = { x: 22, y: 58 };

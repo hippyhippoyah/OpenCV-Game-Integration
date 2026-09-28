@@ -172,6 +172,7 @@ export class Sfx {
       case 'wall': this.wall(pan); break;
       case 'wallPush': this.wall(pan, true); break;
       case 'ultimate': this.ultimate(); break;
+      case 'slam': this.slam(pan); break;
       case 'inferno': this.inferno(); break;
       case 'hitEnemy': this.hit(pan, false); break;
       case 'killEnemy': this.hit(pan, true); break;
@@ -247,6 +248,15 @@ export class Sfx {
     this.burst(c, { dur: 1.6, type: 'lowpass', f0: 2500, f1: 200, gain: 0.7, delay: 0.3, crackle: 0.5, pan: -0.4 });
     this.burst(c, { dur: 1.6, type: 'lowpass', f0: 2200, f1: 180, gain: 0.7, delay: 0.32, crackle: 0.5, pan: 0.4 });
     this.chime(c, [392, 523, 784], 0.09, 0.1, 0.3);
+  }
+
+  /** The slam: a deep thud, and the line of blue flame tearing off ahead. */
+  private slam(pan: number): void {
+    const c = this.ready('slam', 0.3);
+    if (!c) return;
+    this.tone(c, { dur: 0.7, wave: 'sine', f0: 70, f1: 30, gain: 0.9, pan });
+    this.burst(c, { dur: 0.6, type: 'bandpass', f0: 500, f1: 3200, q: 0.8, gain: 1.6, attack: 0.02, pan, crackle: 0.5 });
+    this.tone(c, { dur: 0.6, wave: 'triangle', f0: 880, f1: 1760, gain: 0.08, pan, delay: 0.03 });
   }
 
   private inferno(): void {

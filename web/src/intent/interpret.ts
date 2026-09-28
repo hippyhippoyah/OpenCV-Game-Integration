@@ -70,7 +70,7 @@ export interface Palm {
   dir: Vec2 | null;
 }
 
-export type CastKind = 'wall' | 'ultimate' | 'push' | 'inferno';
+export type CastKind = 'wall' | 'ultimate' | 'push' | 'slam' | 'inferno';
 
 /**
  * A two-hand move: fire wall (open hands sweep up), ultimate (open hands held together, as if
@@ -243,10 +243,11 @@ export const TUNING = {
    * Blue inferno: both hands (fists or open) held together — within infernoGap view units — over
    * the head (their midpoint more than infernoAbove above the head's centre) for infernoHoldS burn
    * blue; then bringing them down together slamDrop view units, within slamWindowS of leaving the
-   * pose, casts it. Held up there they neither gather the finisher nor punch. A fist moving down
+   * pose, is the slam (a line of blue flame); then spreading them ultimateSpread further apart
+   * within infernoSpreadS of the slam casts the inferno. Held up there they neither gather the finisher nor punch. A fist moving down
    * faster than slamSpeed is never taken for a punch.
    */
-  infernoGap: 30, infernoAbove: 8, infernoHoldS: 0.5, slamWindowS: 0.45, slamDrop: 22, slamSpeed: 60,
+  infernoGap: 30, infernoAbove: 8, infernoHoldS: 0.5, slamWindowS: 0.45, slamDrop: 22, slamSpeed: 60, infernoSpreadS: 1.5,
   /**
    * Fists held up high (cocked by the ear, or just resting up there) overlap the face, and their
    * depth reading jumps about: a fist more than aboveHead view units above the centre of the head
@@ -342,6 +343,8 @@ export interface InterpretState {
   /** Blue inferno: since when the hands have been together over the head; ready once held long enough, and where/when they last were. */
   infernoSince: number | null;
   infernoReady: boolean;
+  /** Blue inferno after the slam: when, and how far apart the hands were (spreading them from there casts it). */
+  spreadFrom: { t: number; gap: number } | null;
   infernoTopY: number;
   infernoTopT: number;
   gatherSince: number | null;
@@ -365,7 +368,7 @@ export interface InterpretState {
 
 export const initialState = (): InterpretState => ({
   head: null, l: null, r: null, lastT: null, pending: [], palmPending: [], bothOpenAt: null, stillSince: null, shieldOn: false,
-  infernoSince: null, infernoReady: false, infernoTopY: 0, infernoTopT: -Infinity,
+  infernoSince: null, infernoReady: false, spreadFrom: null, infernoTopY: 0, infernoTopT: -Infinity,
   gatherSince: null, gathered: false, gatherGapNow: 0, gatherLastT: -Infinity,
   castReadyAt: -Infinity, lastCastT: -Infinity, crossedSince: null,
   shoulderSpan: null, bodyDist: new OneEuro(TUNING.bodyDepthMinCutoff, TUNING.bodyDepthBeta), noiseCoef: TUNING.noiseCoefStart,
@@ -402,6 +405,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     s.gathered = false;
     s.infernoSince = null;
     s.infernoReady = false;
+    s.spreadFrom = null;
     s.crossedSince = null;
     return {
       present: false, head: s.head ? { ...s.head } : { x: 0, y: 0 }, hands: { l: null, r: null },
@@ -618,7 +622,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     const gap = dist(l.pos, r.pos), mid = { x: (l.pos.x + r.pos.x) / 2, y: (l.pos.y + r.pos.y) / 2 };
     // (over the head it's the blue inferno, and not on the way down from one or just after a cast)
     const together = gap <= TUNING.gatherGap && mid.y >= headView.y - TUNING.infernoAbove
-      && s.infernoSince === null && !s.infernoReady && f.t >= s.castReadyAt;
+      && s.infernoSince === null && !s.infernoReady && !s.spreadFrom && f.t >= s.castReadyAt;
     if (together) {
       s.gatherSince ??= f.t;
       if (f.t - s.gatherSince >= TUNING.gatherHoldS) s.gathered = true;
@@ -668,12 +672,28 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     s.infernoSince = null;
     if (s.infernoReady && f.t - s.infernoTopT > TUNING.slamWindowS) s.infernoReady = false; // let go without slamming
     if (s.infernoReady && hmid && hmid.y - s.infernoTopY >= TUNING.slamDrop && f.t >= s.castReadyAt) {
-      casts.push({ kind: 'inferno', at: hmid });
+      casts.push({ kind: 'slam', at: hmid });
       s.infernoReady = false;
+      s.spreadFrom = { t: f.t, gap: dist(l!.pos, r!.pos) };
       s.castReadyAt = f.t + TUNING.castRefractoryS;
       s.lastCastT = f.t;
       s.pending = [];
       for (const tr of [l!, r!]) { tr.charge = 0; tr.chargedAt = null; tr.chamberSince = null; }
+    }
+  }
+  // …then spreading the hands apart after the slam spreads the flame over the ground
+  if (s.spreadFrom) {
+    if (f.t - s.spreadFrom.t > TUNING.infernoSpreadS) s.spreadFrom = null;
+    else if (both && hmid && !casts.some(c => c.kind === 'slam')) {
+      const gap = dist(l!.pos, r!.pos);
+      s.spreadFrom.gap = Math.min(s.spreadFrom.gap, gap); // (from wherever they came closest after the slam)
+      if (gap - s.spreadFrom.gap >= TUNING.ultimateSpread) {
+        casts.push({ kind: 'inferno', at: hmid });
+        s.spreadFrom = null;
+        s.castReadyAt = f.t + TUNING.castRefractoryS;
+        s.lastCastT = f.t;
+        s.pending = [];
+      }
     }
   }
   const inferno = s.infernoReady ? 1 : s.infernoSince !== null ? Math.min(1, (f.t - s.infernoSince) / TUNING.infernoHoldS) : 0;

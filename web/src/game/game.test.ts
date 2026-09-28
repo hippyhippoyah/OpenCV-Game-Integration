@@ -707,13 +707,27 @@ describe('breath', () => {
 });
 
 describe('blue inferno', () => {
-  const slam = intent({ casts: [{ kind: 'inferno', at: { x: 0, y: 30 } }] });
+  const slam = intent({ casts: [{ kind: 'slam', at: { x: 0, y: 30 } }] });
+  const spread = intent({ casts: [{ kind: 'inferno', at: { x: 0, y: 30 } }] });
 
-  it('sets the ground burning for a few seconds, burning every enemy on it, then recharges', () => {
+  it('the slam sends a narrow line of blue flame straight ahead, and starts the recharge', () => {
+    const g = quietGame();
+    g.step(1 / 60, slam);
+    expect(g.pillars).toHaveLength(1);
+    expect(g.pillars[0].blue).toBe(true);
+    expect(g.pillars[0].halfW).toBe(TUNE.slamLineHalfW);
+    expect(g.groundFire).toBe(0);
+    expect(g.infernoIn).toBeGreaterThan(0);
+    expect(g.drainEvents().some(e => e.type === 'slam')).toBe(true);
+  });
+
+  it('spreading the hands after the slam sets the ground burning, burning every enemy on it', () => {
     const g = quietGame();
     const a = g.addEnemy({ kind: 'spirit', x: -20, z: 8, hp: 4 }), b = g.addEnemy({ kind: 'earth', x: 20, z: 12, hp: 4 });
     for (const e of [a, b]) e.appear = 1;
     g.step(1 / 60, slam);
+    run(g, 0.4, intent());
+    g.step(1 / 60, spread);
     expect(g.groundFire).toBeGreaterThan(0);
     expect(g.drainEvents().some(e => e.type === 'inferno')).toBe(true);
     run(g, TUNE.infernoS + 0.5, intent());
@@ -721,14 +735,38 @@ describe('blue inferno', () => {
     expect(a.hp).toBeLessThanOrEqual(0);
     expect(b.hp).toBeLessThanOrEqual(0);
     g.step(1 / 60, slam);
-    expect(g.groundFire).toBe(0); // still recharging
+    expect(g.pillars.filter(p => p.blue)).toHaveLength(0); // still recharging
     expect(g.drainEvents()).toContainEqual({ type: 'hint', text: expect.stringContaining('RECHARGING') });
+  });
+
+  it('a spread with no slam just before it does nothing', () => {
+    const g = quietGame();
+    g.step(1 / 60, spread);
+    expect(g.groundFire).toBe(0);
+    g.step(1 / 60, slam);
+    run(g, TUNE.infernoSpreadS + 0.2, intent());
+    g.step(1 / 60, spread);
+    expect(g.groundFire).toBe(0);
+  });
+
+  it('the one-two push burns blue', () => {
+    const g = quietGame();
+    const jab = (hand: Side) => intent({ punches: [punch(hand, 0, 8)] });
+    g.step(1 / 60, jab('l'));
+    run(g, 0.2, intent());
+    g.step(1 / 60, jab('r'));
+    run(g, 0.2, intent());
+    g.step(1 / 60, intent({ palms: [{ kind: 'push', hand: 'r', at: { x: 0, y: 10 }, shoulder: SHOULDERS.r, dir: null }] }));
+    expect(g.pillars).toHaveLength(1);
+    expect(g.pillars[0].blue).toBe(true);
   });
 
   it('is a later move: only with it unlocked', () => {
     const g = quietGame();
     g.allowed = new Set(['punch', 'finisher']);
     g.step(1 / 60, slam);
+    g.step(1 / 60, spread);
+    expect(g.pillars).toHaveLength(0);
     expect(g.groundFire).toBe(0);
   });
 });

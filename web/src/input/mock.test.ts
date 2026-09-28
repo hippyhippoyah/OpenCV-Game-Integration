@@ -51,13 +51,13 @@ describe('MockTracker', () => {
     }
   });
 
-  it('holding I raises both fists by the head until they burn blue; letting go slams them into the blue inferno', () => {
+  it('holding I raises both hands together over the head; letting go slams them down, then spreads them: the blue inferno', () => {
     const m = new MockTracker(identity);
     m.setMouse(0, 5);
     const out = run(m, 120, i => { if (i === 5) m.setKey('i', true); if (i === 70) m.setKey('i', false); });
     expect(out[68].hands.l!.charge).toBe(1);
     expect(out[68].hands.r!.charge).toBe(1);
-    expect(out.flatMap(o => o.casts.map(c => c.kind))).toEqual(['inferno']);
+    expect(out.flatMap(o => o.casts.map(c => c.kind))).toEqual(['slam', 'inferno']);
     expect(out.flatMap(o => o.punches)).toHaveLength(0);
   });
 

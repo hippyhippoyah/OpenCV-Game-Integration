@@ -162,20 +162,26 @@ export class LessonDemo {
         break;
       }
       case 'inferno': {
-        // hands together over the head, held till they burn blue, then slammed down: blue fire everywhere
-        const u = t % 3.4, up = ramp(u, 0.1, 0.4), down = ramp(u, 1.6, 0.15), glow = ramp(u, 0.6, 0.8) * (1 - down);
-        const y = H * 0.62 - up * H * 0.48 + down * H * 0.7;
+        // hands together over the head till they burn blue; slammed down, a line of blue flame
+        // shoots ahead; then spread apart, the flame spreads over the ground
+        const u = t % 4.2, up = ramp(u, 0.1, 0.4), down = ramp(u, 1.5, 0.15), out = ramp(u, 2.3, 0.25), glow = ramp(u, 0.6, 0.7) * (1 - down);
+        const y = H * 0.62 - up * H * 0.48 + down * H * 0.62;
         if (glow > 0) this.glow(cx, y, 14 + glow * 20, `rgba(120,170,255,${0.35 + 0.5 * glow})`);
         for (const sx of [-1, 1]) {
-          const x = cx + sx * (28 - up * 18 + down * 18);
-          if (glow > 0) this.glow(x, y, 10 + glow * 14, `rgba(120,170,255,${0.3 + 0.5 * glow})`);
-          this.fist(x, Math.min(y, H * 0.92), 1 + down * 0.2);
+          const x = cx + sx * (28 - up * 18 + down * 8 + out * 40);
+          if (out > 0) this.palm(x, y, 1, sx > 0); else this.fist(x, y, 1 + down * 0.2);
         }
-        if (u > 1.7 && u < 3.2) {
-          const k = 1 - ramp(u, 2.8, 0.4);
+        if (u > 1.6 && u < 2.6) {
+          // the line: a narrow column of blue fire running up the middle
+          const k = ramp(u, 1.6, 0.4);
+          for (let i = 0; i < 5; i++) this.glow(cx, H * 0.95 - i * H * 0.13 * k, 12 - i, `rgba(110,170,255,${0.6 - i * 0.08})`);
+        }
+        if (u > 2.4 && u < 4.0) {
+          const k = 1 - ramp(u, 3.6, 0.4);
           for (let i = 0; i < 9; i++) this.glow(cx + (i - 4) * 22, H * 0.9 - (i % 2) * 6, 14 + 6 * Math.sin(t * 9 + i), `rgba(100,160,255,${0.55 * k})`);
         }
-        if (u > 0.9 && u < 1.6) { this.arrow(cx - 40, H * 0.2, cx - 40, H * 0.6, 0.7); this.arrow(cx + 40, H * 0.2, cx + 40, H * 0.6, 0.7); }
+        if (u > 0.9 && u < 1.5) { this.arrow(cx - 40, H * 0.2, cx - 40, H * 0.6, 0.7); this.arrow(cx + 40, H * 0.2, cx + 40, H * 0.6, 0.7); }
+        if (u > 1.9 && u < 2.4) { this.arrow(cx - 14, H * 0.5, cx - 60, H * 0.5, 0.8); this.arrow(cx + 14, H * 0.5, cx + 60, H * 0.5, 0.8); }
         break;
       }
       case 'ultimate': {

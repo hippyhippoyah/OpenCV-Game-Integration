@@ -227,24 +227,29 @@ describe('interpret', () => {
       expect(out.some(o => o.shield)).toBe(false);
     });
 
-    /** Both hands together over the head, held `hold` frames, then (if `slam`) brought down hard over 4 frames. */
-    function inferno(hold: number, slam: [boolean, boolean] = [true, true], open = 0): Intent[] {
+    /**
+     * Both hands together over the head, held `hold` frames, then (if `slam`) brought down hard over
+     * 4 frames, then (after `spreadAfter` frames, if given) spread wide apart over 5 frames.
+     */
+    function inferno(hold: number, slam: [boolean, boolean] = [true, true], open = 0, spreadAfter: number | null = null): Intent[] {
       const HIGH_L: HandSpec = { x: -0.25, y: -1.1, open }, HIGH_R: HandSpec = { x: 0.25, y: -1.1, open };
       const low = (h: HandSpec, k: number, on: boolean): HandSpec => (on ? { ...h, x: h.x * (1 + 0.6 * k), y: h.y + 1.2 * k } : h);
+      const wide = (h: HandSpec, k: number): HandSpec => ({ ...low(h, 1, true), x: low(h, 1, true).x * (1 + 2 * k) });
       return play([
         ...repeat(8, () => [GUARD_L, GUARD_R]),
         ...repeat(hold, () => [HIGH_L, HIGH_R]),
         ...repeat(4, i => [low(HIGH_L, (i + 1) / 4, slam[0]), low(HIGH_R, (i + 1) / 4, slam[1])]),
-        ...repeat(10, () => [low(HIGH_L, 1, slam[0]), low(HIGH_R, 1, slam[1])]),
+        ...repeat(spreadAfter ?? 10, () => [low(HIGH_L, 1, slam[0]), low(HIGH_R, 1, slam[1])]),
+        ...(spreadAfter === null ? [] : [...repeat(5, i => [wide(HIGH_L, (i + 1) / 5), wide(HIGH_R, (i + 1) / 5)]), ...repeat(8, () => [wide(HIGH_L, 1), wide(HIGH_R, 1)])]),
       ]);
     }
 
-    it('blue inferno: hands together over the head until they burn blue, then slammed down — and no punches', () => {
+    it('blue inferno: hands together over the head until they burn blue, then slammed down — the slam, and no punches', () => {
       const out = inferno(24);
       expect(out[8 + 5].inferno).toBeGreaterThan(0);
       expect(out[8 + 5].inferno).toBeLessThan(1);
       expect(out[8 + 20].inferno).toBe(1);
-      expect(kinds(out)).toEqual(['inferno']);
+      expect(kinds(out)).toEqual(['slam']);
       expect(punchesIn(out)).toHaveLength(0);
       // spent: the fists aren't left charged for a blue punch
       expect(out.at(-1)!.hands.l!.charge).toBe(0);
@@ -253,10 +258,21 @@ describe('interpret', () => {
 
     it('blue inferno: open palms together over the head work too, and never gather the finisher', () => {
       const out = inferno(24, [true, true], 1);
-      expect(kinds(out)).toEqual(['inferno']);
+      expect(kinds(out)).toEqual(['slam']);
       // (raising open palms together passes the finisher's gather zone; it never fills or casts)
       expect(out.some(o => (o.gather ?? 0) >= 1)).toBe(false);
       expect(out.some(o => o.shield)).toBe(false);
+    });
+
+    it('blue inferno: spreading the hands apart after the slam spreads the flame', () => {
+      const out = inferno(24, [true, true], 0, 6);
+      expect(kinds(out)).toEqual(['slam', 'inferno']);
+      expect(punchesIn(out)).toHaveLength(0);
+      expect(kinds(inferno(24, [true, true], 1, 6))).toEqual(['slam', 'inferno']);
+    });
+
+    it('blue inferno: a spread too long after the slam does nothing', () => {
+      expect(kinds(inferno(24, [true, true], 0, 60))).toEqual(['slam']);
     });
 
     it('blue inferno: not before they burn blue, and not with only one hand coming down', () => {

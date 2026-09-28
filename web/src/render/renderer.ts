@@ -148,8 +148,14 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.3);
         this.flare = { l: FLARE_S * 1.5, r: FLARE_S * 1.5 };
         break;
+      case 'slam':
+        // the hands come down: a burst of blue fire, and the line of flame shoots off
+        this.burst(e.x, FLOOR_Y - 4, 0.4, 'blue', 50, 40);
+        this.shake = Math.max(this.shake, 0.5);
+        this.flare = { l: FLARE_S * 1.5, r: FLARE_S * 1.5 };
+        break;
       case 'inferno':
-        // the ground bursts into blue flame from where the fists came down: lay out a field of flames
+        // the hands spread: the ground bursts into blue flame: lay out a field of flames
         this.infernoFlames = [];
         for (let i = 0; i < 150; i++) {
           const z = 0.4 + Math.random() ** 1.25 * 14;
@@ -245,7 +251,7 @@ export class Renderer {
     if (g) {
       g.walls.forEach(w => this.drawWall(w));
       // far pillars first, so nearer ones glow over them
-      [...g.pillars].sort((a, b) => b.z - a.z).forEach(p => this.drawColumn(p.x, p.z, p.halfW, Math.min(1, p.age / 0.1)));
+      [...g.pillars].sort((a, b) => b.z - a.z).forEach(p => this.drawColumn(p.x, p.z, p.halfW, Math.min(1, p.age / 0.1), p.blue));
       [...g.hazards].sort((a, b) => b.z - a.z).forEach(h => this.drawHazard(g, h));
     }
     this.drawParticles(true);
@@ -1149,15 +1155,15 @@ export class Renderer {
   }
 
   /** A pillar of fire standing on the floor at (x, z): a glowing column with a ragged top. */
-  private drawColumn(x: number, z: number, halfW: number, glow: number): void {
+  private drawColumn(x: number, z: number, halfW: number, glow: number, blue = false): void {
     if (glow <= 0) return;
     const c = this.ctx, top = FLOOR_Y - TUNE.pillarHeight;
     const a = this.project(x - halfW, FLOOR_Y, z), b = this.project(x + halfW, FLOOR_Y, z);
     const at = this.project(x - halfW, top, z), bt = this.project(x + halfW, top, z);
     const gr = c.createLinearGradient(0, a.y, 0, at.y);
-    gr.addColorStop(0, `rgba(255,200,90,${0.7 * glow})`);
-    gr.addColorStop(0.5, `rgba(255,120,40,${0.45 * glow})`);
-    gr.addColorStop(1, 'rgba(255,60,20,0)');
+    gr.addColorStop(0, blue ? `rgba(170,215,255,${0.75 * glow})` : `rgba(255,200,90,${0.7 * glow})`);
+    gr.addColorStop(0.5, blue ? `rgba(70,130,255,${0.5 * glow})` : `rgba(255,120,40,${0.45 * glow})`);
+    gr.addColorStop(1, blue ? 'rgba(40,60,255,0)' : 'rgba(255,60,20,0)');
     c.globalCompositeOperation = 'lighter';
     c.fillStyle = gr;
     c.beginPath();
@@ -1448,7 +1454,7 @@ export class Renderer {
     for (const col of g.pillars) {
       for (let i = nOf(420, dt); i > 0; i--) {
         this.emit(col.x + rnd(-col.halfW, col.halfW), FLOOR_Y - rnd(0, TUNE.pillarHeight * 0.8), col.z + rnd(-0.3, 0.3),
-          rnd(-6, 6), rnd(-90, -40), rnd(-2, 0), rnd(0.25, 0.55), rnd(5, 9));
+          rnd(-6, 6), rnd(-90, -40), rnd(-2, 0), rnd(0.25, 0.55), rnd(5, 9), col.blue ? 'blue' : 'fire');
       }
     }
     // fire walls: standing ones burn in place, rolling ones carry their flames forward
