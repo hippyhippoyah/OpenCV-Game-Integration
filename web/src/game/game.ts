@@ -30,6 +30,13 @@ export const TUNE = {
    * enemy and incoming attack it reaches, then recharges. Its reach grows at bladeSpeed depth
    * units/s; sideways, bladeWidthPerDepth world units count as one depth unit (a wide, flat disc).
    */
+  /**
+   * Breath: fire comes from your breath. Every attack spends some (a jab very little, a wall a
+   * lot); it comes back breathRegen per second, breathRestRegen once you've not attacked for
+   * breathRestS. An attack you haven't the breath for fizzles. The finisher uses the ultimate bar.
+   */
+  breathMax: 100, breathRegen: 12, breathRestRegen: 30, breathRestS: 0.8,
+  breathPunch: 6, breathCharged: 16, breathPalm: 12, breathWall: 25, breathWallPush: 10,
   ultimateCooldownS: 12, bladeSpeed: 16, bladeWidthPerDepth: 30, bladeMaxR: 18,
   /**
    * How far below the hands the blade sweeps, as a fraction of the way to the floor. At hand height
@@ -128,7 +135,7 @@ export type ComboName = 'charged' | 'flurry' | 'counter' | 'oneTwo' | 'volley' |
 export type MoveName = 'punch' | 'flurry' | 'shield' | 'palm' | 'charge' | 'wall' | 'finisher'
   | 'xBlock' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker';
 
-type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab';
+type PositionedType = 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab' | 'fizzle';
 export type GameEvent =
   | { type: PositionedType; x: number; y: number; z: number }
   | { type: 'punch' | 'pillar'; x: number; y: number; z: number; side: Side }
@@ -212,6 +219,10 @@ export class Game {
   ultimateIn = 0;
   /** Finisher: how gathered your open hands are, 0 → 1 (1 = spread them to cast). */
   gather = 0;
+  /** Breath left for attacks (see TUNE.breathMax), when you last spent some, and the last "out of breath" hint. */
+  breath: number = TUNE.breathMax;
+  private breathSpentT = -Infinity;
+  private breathHintT = -Infinity;
   /** Tests turn this off to control enemies by hand. */
   spawning = true;
   /** Dummies instead of attacking spirits. */
@@ -339,6 +350,8 @@ export class Game {
     this.time += dt;
     this.palmCool = { l: Math.max(0, this.palmCool.l - dt), r: Math.max(0, this.palmCool.r - dt) };
     this.ultimateIn = Math.max(0, this.ultimateIn - dt);
+    const rested = this.time - this.breathSpentT >= TUNE.breathRestS;
+    this.breath = Math.min(TUNE.breathMax, this.breath + (rested ? TUNE.breathRestRegen : TUNE.breathRegen) * dt);
     this.updateShield(dt, intent.shield && this.has('shield'));
     this.gather = this.has('finisher') ? intent.gather ?? 0 : 0;
     if (this.state !== 'play') return;
@@ -433,8 +446,25 @@ export class Game {
     return this.aimFor(at, this.shoulders[side], dir);
   }
 
+  /** Spend breath on an attack at view point `at`; without enough, it fizzles (a puff of smoke) and returns false. */
+  private spend(cost: number, at: Vec2): boolean {
+    if (this.breath >= cost) {
+      this.breath -= cost;
+      this.breathSpentT = this.time;
+      return true;
+    }
+    const w = this.handWorld(at);
+    this.emit('fizzle', w.x, w.y, TUNE.launchZ);
+    if (this.time - this.breathHintT > 1.5) {
+      this.breathHintT = this.time;
+      this.events.push({ type: 'hint', text: 'OUT OF BREATH — ease off a moment' });
+    }
+    return false;
+  }
+
   private punch(p: Punch): void {
     if (this.punchCool[p.hand] > 0) return;
+    if (!this.spend(p.charged ? TUNE.breathCharged : TUNE.breathPunch, p.at)) { this.punchCool[p.hand] = TUNE.punchCooldownS; return; }
     this.punchCool[p.hand] = TUNE.punchCooldownS;
     const now = this.time;
     this.recentPunches = [...this.recentPunches.filter(x => now - x.t <= Math.max(TUNE.flurryWindowS, TUNE.oneTwoWindowS)), { t: now, hand: p.hand }];
@@ -479,6 +509,7 @@ export class Game {
 
   private palm(p: Palm): void {
     if (this.palmCool[p.hand] > 0) return;
+    if (!this.spend(TUNE.breathPalm, p.at)) { this.palmCool[p.hand] = TUNE.palmCooldownS; return; }
     this.palmCool[p.hand] = TUNE.palmCooldownS;
     const now = this.time, start = this.handWorld(p.at).x, z = TUNE.launchZ;
     this.events.push({ type: 'pillar', x: start, y: FLOOR_Y, z, side: p.hand });
@@ -641,6 +672,7 @@ export class Game {
     if (c.kind === 'wall') {
       if (this.wallCool > 0) return;
       this.wallCool = TUNE.wallCooldownS;
+      if (!this.spend(TUNE.breathWall, c.at)) return;
       // stand the wall where the hands appear on screen, at its depth
       const x = this.cam.x + c.at.x / depthScale(TUNE.wallDepth);
       this.walls.push({ id: this.nextId++, x, z: TUNE.wallDepth, halfW: TUNE.wallHalfWidth, life: TUNE.wallLifeS, vz: 0, hit: [] });
@@ -651,6 +683,7 @@ export class Game {
       // wall breaker: your standing fire wall rolls forward
       const wall = this.walls.find(w => w.vz === 0);
       if (wall) {
+        if (!this.spend(TUNE.breathWallPush, c.at)) return;
         wall.vz = TUNE.pushWallSpeed;
         wall.life = Infinity;
         wall.hit = [];

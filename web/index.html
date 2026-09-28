@@ -13,7 +13,10 @@
   <canvas id="game"></canvas>
 
   <div class="hud">
-    <div class="tl"><div class="label">Vitality</div><div class="bar"><i id="hpFill"></i></div></div>
+    <div class="tl">
+      <div class="label">Vitality</div><div class="bar" id="hpBar"><i id="hpFill"></i></div>
+      <div class="label" style="margin-top:10px">Breath</div><div class="bar" id="breathBar"><i id="breathFill"></i></div>
+    </div>
     <div class="tr"><div class="label">Score</div><div class="score" id="score">0</div><div class="wave" id="wave"></div></div>
     <div class="pill off" id="pill"><b id="modeName">GUARD</b><span id="modeHint"></span></div>
     <div class="bl">

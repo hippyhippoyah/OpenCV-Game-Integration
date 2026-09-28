@@ -390,3 +390,17 @@ fist counts as up by the ear when it's at head level — no more than 4 view uni
 and held still. On the recordings a guard sits 7–26 under the head (reaching head level only at a
 punch's peak, which isn't held). The simulated guard sits unrealistically at head level, so the
 charge tests use a shoulder-height guard.
+
+## Breath
+
+Fire comes from your breath. A **Breath** bar (pale blue, under the green Vitality bar) is spent
+by every attack: a jab 6, a charged punch 16, a palm pillar 12, a fire wall 25, a wall push 10 (the
+finisher uses the ultimate bar instead). It refills 12/s, or 30/s once you haven't attacked for
+0.8 s, so steady jabbing (two a second) never runs dry but spamming walls or a long flurry does.
+An attack you haven't the breath for fizzles into a puff of smoke, with an "out of breath" hint.
+
+## Hands on screen
+
+A fist resting in guard is drawn low and a little bigger — close to you, as your own fists look
+from your eyes — and rises to where it's aimed only as it punches out. Open hands (shield, casts)
+are drawn where they are.

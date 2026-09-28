@@ -18,6 +18,8 @@ const LEAN_TILT = 0.0014;
 const MAX_PARTICLES = 3200;
 /** How long a hand keeps burning after it attacks. */
 const FLARE_S = 0.35;
+/** A fist resting in guard (above REST_LOW_Y) is drawn this much lower, near you (view units). */
+const REST_DROP = 16, REST_LOW_Y = 50;
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const nOf = (rate: number, dt: number) => { const x = rate * dt; return Math.floor(x) + (Math.random() < x % 1 ? 1 : 0); };
 
@@ -166,6 +168,8 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.08);
         break;
       case 'slab': this.burst(e.x, e.y, e.z, 'spirit', 20, 30); break;
+      // out of breath: the attack comes out as a puff of smoke
+      case 'fizzle': this.burst(e.x, e.y, e.z, 'earth', 10, 12); break;
       case 'cut': this.burst(e.x, e.y, e.z, 'fire', 16, 30); break;
       case 'hitEnemy':
       case 'killEnemy': this.burst(e.x, e.y, e.z, 'fire', 30, 40); break;
@@ -236,7 +240,7 @@ export class Renderer {
       for (const side of ['l', 'r'] as const) {
         const h = g.hands[side];
         if (!h?.inView || this.flare[side] <= 0) continue;
-        const p = this.viewToScreen(h.pos), r = 3 * u * (this.flare[side] / FLARE_S) ** 0.5;
+        const p = this.viewToScreen(this.shownAt(h)), r = 3 * u * (this.flare[side] / FLARE_S) ** 0.5;
         c.drawImage(SPR.fire[0], p.x - r, p.y - r, r * 2, r * 2);
       }
       c.globalCompositeOperation = 'source-over';
@@ -727,7 +731,7 @@ export class Renderer {
       const h = g.hands[side], burn = this.burning(g, side);
       if (h?.inView && h.charge > 0) {
         // a charging fist glows blue, brighter as it fills; charged, it pulses
-        const C = this.viewToScreen(h.pos), full = h.charge >= 1, rr = (14 + 16 * h.charge) * u;
+        const C = this.viewToScreen(this.shownAt(h)), full = h.charge >= 1, rr = (14 + 16 * h.charge) * u;
         const pulse = full ? 0.8 + 0.2 * Math.sin(this.t * 10) : 1;
         const gr = c.createRadialGradient(C.x, C.y, 0, C.x, C.y, rr);
         gr.addColorStop(0, `rgba(140,190,255,${(0.2 + 0.35 * h.charge) * pulse})`); gr.addColorStop(1, 'rgba(60,110,255,0)');
@@ -735,7 +739,7 @@ export class Renderer {
         c.fillRect(C.x - rr, C.y - rr, rr * 2, rr * 2);
       }
       if (!h?.inView || burn <= 0) continue;
-      const C = this.viewToScreen(h.pos), r = 32 * u;
+      const C = this.viewToScreen(this.shownAt(h)), r = 32 * u;
       const gr = c.createRadialGradient(C.x, C.y, 0, C.x, C.y, r);
       gr.addColorStop(0, `rgba(255,140,60,${0.26 * burn * flicker})`); gr.addColorStop(1, 'rgba(255,120,40,0)');
       c.fillStyle = gr;
@@ -824,6 +828,27 @@ export class Renderer {
     return h.reach === null || h.reachBase === null || h.open ? 0 : clamp((h.reach - h.reachBase) / 0.3, 0, 1);
   }
 
+  /**
+   * How much a fist is resting close to your body: 1 in guard, 0 punched all the way out (open
+   * hands and fists already low, e.g. at the hip, don't count).
+   */
+  private resting(h: NonNullable<Game['hands']['l']>): number {
+    return h.open ? 0 : (1 - this.punchOut(h)) * clamp((REST_LOW_Y - h.pos.y) / 24, 0, 1);
+  }
+
+  /**
+   * Where to draw a hand (view units): a fist resting in guard sits low and close to you, as your
+   * own fists look from your eyes; it rises to where it's aimed only as it punches out.
+   */
+  private shownAt(h: NonNullable<Game['hands']['l']>, p: Vec2 = h.pos): Vec2 {
+    return { x: p.x, y: p.y + REST_DROP * this.resting(h) };
+  }
+
+  /** Drawn size: a resting fist is close to the camera (bigger); punched out it's further away. */
+  private shownScale(h: NonNullable<Game['hands']['l']>): number {
+    return h.open ? 1 : 1.05 + 0.25 * this.resting(h);
+  }
+
   private drawHands(g: Game): void {
     const hands = ([['l', -1], ['r', 1]] as const)
       .map(([side, sign]) => ({ h: g.hands[side], sign, burn: this.burning(g, side) }))
@@ -834,7 +859,7 @@ export class Renderer {
     // idle hands keep only a faint warm rim so you can see them; burning hands glow
     for (const { h, sign, burn } of hands) {
       c.strokeStyle = c.fillStyle = `rgba(255,130,60,${(0.12 + 0.3 * burn) * flicker})`;
-      this.handShape(c, this.viewToScreen(h.pos), sign, 0.9 * u, h.open, h.elbow && this.viewToScreen(h.elbow), 1 + 0.5 * this.punchOut(h));
+      this.handShape(c, this.viewToScreen(this.shownAt(h)), sign, 0.9 * u, h.open, h.elbow && this.viewToScreen(this.shownAt(h, h.elbow)), this.shownScale(h));
     }
     const hl = this.handLayer.getContext('2d')!;
     hl.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -842,11 +867,11 @@ export class Renderer {
     hl.clearRect(0, 0, this.W, this.H);
     hl.strokeStyle = hl.fillStyle = g.inv > 0 && Math.sin(this.t * 40) > 0 ? '#3a1216' : '#150f19';
     for (const { h, sign } of hands) {
-      this.handShape(hl, this.viewToScreen(h.pos), sign, 0, h.open, h.elbow && this.viewToScreen(h.elbow), 1 + 0.5 * this.punchOut(h));
+      this.handShape(hl, this.viewToScreen(this.shownAt(h)), sign, 0, h.open, h.elbow && this.viewToScreen(this.shownAt(h, h.elbow)), this.shownScale(h));
     }
     hl.globalCompositeOperation = 'source-atop';
     for (const { h, burn } of hands) {
-      const C = this.viewToScreen(h.pos), gr = hl.createRadialGradient(C.x, C.y - 3 * u, 0, C.x, C.y, 30 * u);
+      const C = this.viewToScreen(this.shownAt(h)), gr = hl.createRadialGradient(C.x, C.y - 3 * u, 0, C.x, C.y, 30 * u);
       gr.addColorStop(0, `rgba(255,160,80,${(0.18 + 0.62 * burn) * flicker})`); gr.addColorStop(1, 'rgba(255,90,30,0)');
       hl.fillStyle = gr;
       hl.fillRect(0, 0, this.W, this.H);
@@ -1178,7 +1203,7 @@ export class Renderer {
     for (const side of ['l', 'r'] as const) {
       const h = g.hands[side], flare = this.flare[side] / FLARE_S;
       if (!h?.inView || flare <= 0 || g.shield.on) continue;
-      const w = g.handWorld(h.pos), vx0 = h.vel.x * 0.3, vy0 = h.vel.y * 0.3;
+      const w = g.handWorld(this.shownAt(h)), vx0 = h.vel.x * 0.3, vy0 = h.vel.y * 0.3;
       for (let i = nOf(140 * Math.min(1, flare), dt); i > 0; i--) {
         const a = Math.random() * 6.283, d = Math.sqrt(Math.random()) * 1.8;
         this.emit(w.x + Math.cos(a) * d, w.y - 2 + Math.sin(a) * d, 0, rnd(-5, 5) + vx0, rnd(-18, -6) + vy0, 0, rnd(0.3, 0.55), rnd(2.2, 3.6));
@@ -1251,7 +1276,7 @@ export class Renderer {
     for (const side of ['l', 'r'] as const) {
       const h = g.hands[side];
       if (!h?.inView || h.charge <= 0) continue;
-      const w = g.handWorld(h.pos);
+      const w = g.handWorld(this.shownAt(h));
       for (let i = nOf(200 * h.charge * h.charge, dt); i > 0; i--) {
         const a = Math.random() * 6.283, d = Math.sqrt(Math.random()) * 2;
         this.emit(w.x + Math.cos(a) * d, w.y - 2 + Math.sin(a) * d, 0, rnd(-4, 4), rnd(-16, -5), 0, rnd(0.25, 0.5), rnd(2, 3.4), 'blue');

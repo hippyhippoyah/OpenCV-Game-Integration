@@ -16,6 +16,9 @@ export class Hud {
     const tooFar = TUNING.punchTrigger === 'extend'
       && (['l', 'r'] as const).some(side => (hands[side]?.reachNoise ?? 0) > TUNING.reachNoiseMax);
     $('hpFill').style.width = `${g.hp}%`;
+    $('hpBar').classList.toggle('low', g.hp <= 30);
+    $('breathFill').style.width = `${Math.round((g.breath / TUNE.breathMax) * 100)}%`;
+    $('breathBar').classList.toggle('low', g.breath < TUNE.breathPunch * 2);
     $('score').textContent = String(g.score);
     $('wave').textContent = g.label ?? (g.practice ? 'Practice dummies' : `Wave ${g.wave}`);
     const pill = $('pill');

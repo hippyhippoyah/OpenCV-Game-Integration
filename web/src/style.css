@@ -165,3 +165,14 @@ body.exploring .hud .tl, body.exploring .hud .tr, body.exploring .hud .bl, body.
 button.linkish { justify-self: end; margin-top: -4px; padding: 2px 4px; background: none; border: none; box-shadow: none; color: var(--muted); font-size: 12px; text-decoration: underline; cursor: pointer; }
 button.linkish.confirm { color: #ff9a7a; }
 button kbd { margin-left: 6px; vertical-align: 1px; }
+/* vitality is health: green (amber, pulsing, when low); breath is air: pale blue */
+#hpBar { height: 12px; }
+#hpBar > i { background: linear-gradient(90deg, #1f9e5a, #4fd67e 70%, #a8f0b0); }
+#hpBar.low > i { background: linear-gradient(90deg, #c0392b, #f0a040); animation: lowpulse 0.9s ease-in-out infinite; }
+#breathBar > i { background: linear-gradient(90deg, #4a8fd0, #8fd0ff 70%, #e6f6ff); transition: width .08s; }
+#breathBar.low { box-shadow: 0 0 10px rgba(140,200,255,.6); animation: lowpulse 0.6s ease-in-out infinite; }
+@keyframes lowpulse { 50% { opacity: .55; } }
+/* shield and ultimate: bigger, easier to read mid-fight */
+.bl { width: min(310px, 46vw); padding: 14px 18px; }
+.bl .label { font-size: 13px; }
+.bl .bar { height: 15px; margin-top: 8px; border-radius: 8px; }

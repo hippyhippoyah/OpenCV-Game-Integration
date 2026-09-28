@@ -668,3 +668,41 @@ describe('Game', () => {
     expect(bodyHit({ x: 30, y: 0 }, 4)).toBe(false);
   });
 });
+
+describe('breath', () => {
+  const jab = (hand: Side) => intent({ punches: [punch(hand, 0, 8)] });
+  const wall = intent({ casts: [{ kind: 'wall', at: { x: 0, y: 10 } }] });
+
+  it('a jab costs a little breath, a wall a lot', () => {
+    const g = quietGame();
+    g.step(1 / 60, jab('l'));
+    expect(g.breath).toBeCloseTo(TUNE.breathMax - TUNE.breathPunch, 0);
+    g.step(1 / 60, wall);
+    expect(g.breath).toBeCloseTo(TUNE.breathMax - TUNE.breathPunch - TUNE.breathWall, 0);
+    expect(TUNE.breathWall).toBeGreaterThan(3 * TUNE.breathPunch);
+  });
+
+  it('out of breath, an attack fizzles (and says so); breath comes back faster once you rest', () => {
+    const g = quietGame();
+    g.breath = 2;
+    g.step(1 / 60, jab('l'));
+    expect(g.projs.filter(p => p.kind === 'player')).toHaveLength(0);
+    const ev = g.drainEvents();
+    expect(ev.some(e => e.type === 'fizzle')).toBe(true);
+    expect(ev).toContainEqual({ type: 'hint', text: expect.stringContaining('BREATH') });
+    run(g, 2, intent());
+    g.breath = 40;
+    g.step(1 / 60, jab('r'));
+    const b0 = g.breath;
+    run(g, 0.5, intent());
+    const gainBusy = g.breath - b0;
+    run(g, 1, intent());
+    expect((g.breath - b0 - gainBusy) / 1).toBeGreaterThan(gainBusy / 0.5); // resting refills faster
+  });
+
+  it('steady jabbing (two a second) can go on and on', () => {
+    const g = quietGame();
+    for (let i = 0; i < 40; i++) { g.step(1 / 60, jab(i % 2 ? 'l' : 'r')); run(g, 0.5, intent()); }
+    expect(g.breath).toBeGreaterThan(40);
+  });
+});

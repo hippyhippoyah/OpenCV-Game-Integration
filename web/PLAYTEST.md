@@ -49,3 +49,6 @@ Tuning knobs: `TUNING` in `src/intent/interpret.ts` (tracking feel), `TUNE` in `
 - [ ] Ghost hands make each new move obvious; they fade once you've got it.
 - [ ] Every fight is winnable with the moves you have, and the boss's attacks are readable.
 - [ ] Clicking a lit stop on the map replays it.
+- [ ] Resting fists look close to your body; they only reach out when you punch.
+- [ ] Breath: jabbing steadily never runs out; spamming walls or a long flurry does, and the attack fizzles with a hint. The balance feels fair.
+- [ ] Vitality reads as health (green); shield and ultimate are easy to read mid-fight.
