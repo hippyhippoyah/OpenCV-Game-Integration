@@ -420,11 +420,12 @@ Three steps:
    units of each other, their midpoint more than 8 above the head's centre) and hold them there
    0.5 s: a blue fireball swells above them ("BLUE INFERNO — slam them down!").
 2. **Slam** — bring them down together (the midpoint drops ≥ 22 view units within 0.45 s of
-   leaving the pose): a narrow line of blue flame shoots straight ahead from where they came down
-   (4 wide, fast, 3 damage to everything it passes), and the 20 s cooldown starts.
+   leaving the pose): a line of tall blue flames bursts up along the ground, straight ahead from
+   where the hands came down, racing down the field; it burns there for 3 s (7 to each side),
+   burning whatever stands in it every 0.5 s, and the 20 s cooldown starts.
 3. **Spread** — within 1.5 s, spread the hands 24 view units further apart than they came closest
-   after the slam ("now spread your hands apart!"): the flame spreads over the whole ground for
-   5 s, burning every enemy on the field 1 damage every 0.5 s (it reaches under Daro's stone wall).
+   after the slam ("now spread your hands apart!"): the line spreads out sideways over the whole
+   ground (flames lighting outward from it in about a second) and burns for 5 s, burning every enemy on the field 1 damage every 0.5 s (it reaches under Daro's stone wall).
 
 The cooldown shows as a blue flame icon beside the finisher's. Held up there the hands neither
 gather the finisher nor punch; after the slam, they don't gather it until the spread's chance has

@@ -52,7 +52,7 @@ Tuning knobs: `TUNING` in `src/intent/interpret.ts` (tracking feel), `TUNE` in `
 - [ ] Resting fists look close to your body; they only reach out when you punch.
 - [ ] Breath: jabbing steadily never runs out; spamming walls or a long flurry does, and the attack fizzles with a hint. The balance feels fair.
 - [ ] Vitality reads as health (green); Breath (orange, top centre) is the first thing you look at; the finisher icon beside it is clear when ready.
-- [ ] Blue inferno: hands together over the head swell a blue fireball; slamming them down sends a line of blue flame; spreading them after sets the ground ablaze. Holding them up there doesn't gather the finisher or punch.
+- [ ] Blue inferno: hands together over the head swell a blue fireball; slamming them down leaves a line of tall blue flames on the ground; spreading them after spreads it over the whole ground. It feels powerful. Holding them up there doesn't gather the finisher or punch.
 - [ ] The one-two push's pillar is blue.
 - [ ] The title and menu look like a finished game; keyboard and mouse both work; the camera is only asked for when you start a mode.
 - [ ] Sound: jabs feel punchy and vary; big moves feel big; nothing is too loud or grating over a long session. Volume in Settings works.

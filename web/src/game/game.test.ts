@@ -710,15 +710,20 @@ describe('blue inferno', () => {
   const slam = intent({ casts: [{ kind: 'slam', at: { x: 0, y: 30 } }] });
   const spread = intent({ casts: [{ kind: 'inferno', at: { x: 0, y: 30 } }] });
 
-  it('the slam sends a narrow line of blue flame straight ahead, and starts the recharge', () => {
+  it('the slam lays a line of blue fire on the ground straight ahead, burning what stands in it, and starts the recharge', () => {
     const g = quietGame();
+    const inLine = g.addEnemy({ kind: 'spirit', x: 0, z: 10, hp: 9 }), aside = g.addEnemy({ kind: 'spirit', x: 40, z: 10, hp: 9 });
+    for (const e of [inLine, aside]) e.appear = 1;
     g.step(1 / 60, slam);
-    expect(g.pillars).toHaveLength(1);
-    expect(g.pillars[0].blue).toBe(true);
-    expect(g.pillars[0].halfW).toBe(TUNE.slamLineHalfW);
+    expect(g.fireLine).not.toBeNull();
     expect(g.groundFire).toBe(0);
     expect(g.infernoIn).toBeGreaterThan(0);
     expect(g.drainEvents().some(e => e.type === 'slam')).toBe(true);
+    run(g, 1, intent());
+    expect(inLine.hp).toBeLessThan(9);
+    expect(aside.hp).toBe(9);
+    run(g, TUNE.slamLineS, intent());
+    expect(g.fireLine).toBeNull(); // not spread: it dies down
   });
 
   it('spreading the hands after the slam sets the ground burning, burning every enemy on it', () => {
@@ -735,7 +740,7 @@ describe('blue inferno', () => {
     expect(a.hp).toBeLessThanOrEqual(0);
     expect(b.hp).toBeLessThanOrEqual(0);
     g.step(1 / 60, slam);
-    expect(g.pillars.filter(p => p.blue)).toHaveLength(0); // still recharging
+    expect(g.fireLine).toBeNull(); // still recharging
     expect(g.drainEvents()).toContainEqual({ type: 'hint', text: expect.stringContaining('RECHARGING') });
   });
 
@@ -766,7 +771,7 @@ describe('blue inferno', () => {
     g.allowed = new Set(['punch', 'finisher']);
     g.step(1 / 60, slam);
     g.step(1 / 60, spread);
-    expect(g.pillars).toHaveLength(0);
+    expect(g.fireLine).toBeNull();
     expect(g.groundFire).toBe(0);
   });
 });

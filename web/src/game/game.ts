@@ -44,11 +44,12 @@ export const TUNE = {
   infernoS: 5, infernoTickS: 0.5, infernoDamage: 1, infernoCooldownS: 20,
   /**
    * The blue inferno has three steps: hands together over the head (they burn blue), slammed down —
-   * a narrow line of blue flame shoots straight ahead (slamLineHalfW wide, slamLineSpeed, burning
-   * slamLineDamage) and the cooldown starts — then spread apart within infernoSpreadS: the flame
-   * spreads over the whole ground.
+   * a line of blue fire bursts up along the ground straight ahead from the hands (slamLineHalfW to
+   * each side, all the way down the field) and burns there for slamLineS, burning whatever stands
+   * in it slamLineDamage every infernoTickS; the cooldown starts — then spread apart within
+   * infernoSpreadS: the line spreads out over the whole ground.
    */
-  slamLineHalfW: 4, slamLineSpeed: 16, slamLineDamage: 3, infernoSpreadS: 1.5,
+  slamLineHalfW: 7, slamLineS: 3, slamLineDamage: 1, infernoSpreadS: 1.5,
   ultimateCooldownS: 7, bladeSpeed: 16, bladeWidthPerDepth: 30, bladeMaxR: 18,
   /**
    * How far below the hands the blade sweeps, as a fraction of the way to the floor. At hand height
@@ -239,6 +240,9 @@ export class Game {
   infernoPrep = 0;
   /** Blue inferno: seconds left after the slam to spread the hands and set the ground ablaze. */
   infernoSpreadIn = 0;
+  /** Blue inferno: the line of fire the slam left on the ground (world x), and how long it burns on. */
+  fireLine: { x: number; life: number } | null = null;
+  private lineTick = 0;
   private groundTick = 0;
   /** Finisher: how gathered your open hands are, 0 → 1 (1 = spread them to cast). */
   gather = 0;
@@ -688,6 +692,18 @@ export class Game {
 
   /** The blue inferno's burning ground: every enemy on the field takes a hit each tick. */
   private updateGroundFire(dt: number): void {
+    const line = this.fireLine;
+    if (line) {
+      line.life -= dt;
+      if (line.life <= 0) this.fireLine = null;
+      this.lineTick -= dt;
+      if (this.fireLine && this.lineTick <= 0) {
+        this.lineTick += TUNE.infernoTickS;
+        for (const e of this.enemies) {
+          if (e.hp > 0 && e.appear >= 1 && Math.abs(e.x - line.x) <= TUNE.slamLineHalfW + 7) this.burn(e, TUNE.slamLineDamage, 'inferno');
+        }
+      }
+    }
     if (this.groundFire <= 0) return;
     this.groundFire = Math.max(0, this.groundFire - dt);
     this.groundTick -= dt;
@@ -702,11 +718,12 @@ export class Game {
         this.events.push({ type: 'hint', text: `BLUE INFERNO RECHARGING — ${Math.ceil(this.infernoIn)}s` });
         return;
       }
-      // step two: a line of blue flame straight ahead from where the hands came down
+      // step two: a line of blue fire on the ground, straight ahead from where the hands came down
       this.infernoIn = TUNE.infernoCooldownS;
       this.infernoSpreadIn = TUNE.infernoSpreadS;
       const x = this.handWorld(c.at).x;
-      this.pillars.push({ id: this.nextId++, x, z: TUNE.launchZ, vx: 0, age: 0, hit: [], hand: 'r', halfW: TUNE.slamLineHalfW, damage: TUNE.slamLineDamage, blue: true, speed: TUNE.slamLineSpeed });
+      this.fireLine = { x, life: TUNE.slamLineS };
+      this.lineTick = 0;
       this.emit('slam', x, FLOOR_Y, TUNE.launchZ);
       return;
     }
@@ -714,6 +731,7 @@ export class Game {
       // step three: spreading the hands after the slam sets the whole ground ablaze
       if (this.infernoSpreadIn <= 0) return;
       this.infernoSpreadIn = 0;
+      this.fireLine = null; // it spreads out into the ground fire
       this.groundFire = TUNE.infernoS;
       this.groundTick = TUNE.infernoTickS;
       const at = this.handWorld(c.at);

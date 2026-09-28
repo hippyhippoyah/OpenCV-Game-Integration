@@ -6,6 +6,8 @@ import { ghostPose } from './ghost';
 import { FLOORS, paintMid, paintSky, type Frame, type Glows, type Scene } from './scenes';
 
 type Pal = 'fire' | 'spirit' | 'earth' | 'blue';
+/** A flame standing on the ground (world x, depth z), its size and flicker, and d: when it lights (see drawGroundFire). */
+interface Flame { x: number; z: number; w: number; h: number; phase: number; speed: number; d: number }
 interface Particle {
   x: number; y: number; z: number; vx: number; vy: number; vz: number;
   life: number; max: number; size: number; pal: Pal; rise: number;
@@ -97,7 +99,11 @@ export class Renderer {
   /** The blue inferno's flames: where each stands (x across from you, z into the field) and how it flickers. */
   /** Screen-space trail of each charged shot (its dragon's body). */
   private dragonTrails = new Map<number, { x: number; y: number; r: number }[]>();
-  private infernoFlames: { x: number; z: number; w: number; h: number; phase: number; speed: number }[] = [];
+  private infernoFlames: Flame[] = [];
+  /** The blue inferno's line of fire (after the slam), and when it and the spread began. */
+  private lineFlames: Flame[] = [];
+  private lineStart = 0;
+  private spreadStart = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -149,19 +155,29 @@ export class Renderer {
         this.flare = { l: FLARE_S * 1.5, r: FLARE_S * 1.5 };
         break;
       case 'slam':
-        // the hands come down: a burst of blue fire, and the line of flame shoots off
+        // the hands come down: a burst of blue fire, and a line of tall flames bursts up along the
+        // ground, racing away down the field
+        this.lineFlames = [];
+        for (let i = 0; i < 34; i++) {
+          const z = 1.2 + (i / 34) ** 1.1 * 14;
+          this.lineFlames.push({ x: e.x + rnd(-1, 1) * TUNE.slamLineHalfW, z, w: rnd(7, 11), h: rnd(80, 120), phase: rnd(0, 20), speed: rnd(2.5, 4.5), d: z });
+        }
+        this.lineFlames.sort((a, b) => b.z - a.z);
+        this.lineStart = this.t;
         this.burst(e.x, FLOOR_Y - 4, 0.4, 'blue', 50, 40);
         this.shake = Math.max(this.shake, 0.5);
         this.flare = { l: FLARE_S * 1.5, r: FLARE_S * 1.5 };
         break;
       case 'inferno':
-        // the hands spread: the ground bursts into blue flame: lay out a field of flames
+        // the hands spread: the line spreads out sideways over the whole ground (each flame lights
+        // as the spread reaches it, d = how far across from the line it stands)
         this.infernoFlames = [];
-        for (let i = 0; i < 150; i++) {
-          const z = 0.4 + Math.random() ** 1.25 * 14;
-          this.infernoFlames.push({ x: rnd(-1, 1) * (70 + z * 26), z, w: rnd(3, 5.5), h: rnd(12, 22), phase: rnd(0, 20), speed: rnd(2.5, 4.5) });
+        for (let i = 0; i < 130; i++) {
+          const z = 1 + Math.random() ** 1.25 * 13, x = e.x + rnd(-1, 1) * (70 + z * 26);
+          this.infernoFlames.push({ x, z, w: rnd(6, 10), h: rnd(45, 80), phase: rnd(0, 20), speed: rnd(2.5, 4.5), d: Math.abs(x - e.x) });
         }
         this.infernoFlames.sort((a, b) => b.z - a.z);
+        this.spreadStart = this.t;
         this.burst(e.x, FLOOR_Y - 2, 0.4, 'blue', 90, 60);
         this.shake = Math.max(this.shake, 0.7);
         this.flare = { l: FLARE_S * 2, r: FLARE_S * 2 };
@@ -243,11 +259,11 @@ export class Renderer {
     const mx = -M - this.cam.x * u * PAR_MID, my = -M - this.cam.y * u * PAR_MID;
     c.drawImage(this.mid, mx, my, W + 2 * M, H + 2 * M);
     this.drawLanterns(mx + M, my + M);
-    if (g && g.groundFire > 0) this.drawGroundFire(g, true);
+    if (g && (g.groundFire > 0 || g.fireLine)) this.drawGroundFire(g, true);
 
     if (g) [...g.enemies].sort((a, b) => b.z - a.z).forEach(e => this.drawEnemy(e));
     // near flames of the blue inferno burn in front of the enemies standing in them
-    if (g && g.groundFire > 0) this.drawGroundFire(g, false);
+    if (g && (g.groundFire > 0 || g.fireLine)) this.drawGroundFire(g, false);
     if (g) {
       g.walls.forEach(w => this.drawWall(w));
       // far pillars first, so nearer ones glow over them
@@ -1101,29 +1117,55 @@ export class Renderer {
    * behind the enemies; otherwise the near ones in front of them.
    */
   private drawGroundFire(g: Game, far: boolean): void {
-    const c = this.ctx, hz = this.VP.y, u = this.u;
-    const fade = Math.min(1, g.groundFire / 0.8), rise = Math.min(1, (TUNE.infernoS - g.groundFire) / 0.35);
+    const c = this.ctx, hz = this.VP.y;
     const flick = 0.85 + 0.15 * Math.sin(this.t * 17) * Math.sin(this.t * 7.3);
     c.globalCompositeOperation = 'lighter';
-    if (far) {
-      const gr = c.createLinearGradient(0, hz, 0, this.H);
-      gr.addColorStop(0, `rgba(60,110,255,${0.2 * fade})`);
-      gr.addColorStop(0.4, `rgba(70,130,255,${0.3 * fade * flick})`);
-      gr.addColorStop(1, `rgba(120,190,255,${0.4 * fade * flick})`);
-      c.fillStyle = gr;
-      c.fillRect(0, hz, this.W, this.H - hz);
+    // the line: lighting up from your feet down the field, then dying down if not spread
+    if (g.fireLine) {
+      const fade = Math.min(1, g.fireLine.life / 0.6), reach = (this.t - this.lineStart) * 45;
+      if (far) {
+        const zs = [0.2, 4, 8, 16], half = TUNE.slamLineHalfW * 1.6;
+        const L = zs.map(z => this.project(g.fireLine!.x - half, FLOOR_Y, Math.min(z, reach))), R = zs.map(z => this.project(g.fireLine!.x + half, FLOOR_Y, Math.min(z, reach)));
+        c.fillStyle = `rgba(80,140,255,${0.2 * fade * flick})`;
+        c.beginPath();
+        L.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+        [...R].reverse().forEach(p => c.lineTo(p.x, p.y));
+        c.closePath();
+        c.fill();
+      }
+      this.drawFlames(c, this.lineFlames, far, fade, 0.7, f => Math.min(1, (reach - f.d) / 1.5));
     }
-    for (const f of this.infernoFlames) {
-      if ((f.z > INFERNO_NEAR_Z) !== far) continue;
-      const p = this.project(g.cam.x + f.x, FLOOR_Y, f.z);
-      if (p.x < -60 || p.x > this.W + 60) continue;
-      const k = u * p.s, t = this.t * f.speed + f.phase;
-      const h = f.h * k * fade * rise * (0.75 + 0.25 * Math.sin(t * 2.3) + 0.12 * Math.sin(t * 5.1));
-      if (h < 2) continue;
-      const w = f.w * k, sway = Math.sin(t * 1.7) * w * 0.9 + Math.sin(t * 4.3) * w * 0.25;
-      this.flameTongue(c, p.x, p.y, w, h, sway, fade);
+    // the spread: a glow over the whole floor, and flames lighting outward from the line
+    if (g.groundFire > 0) {
+      const fade = Math.min(1, g.groundFire / 0.8), spread = (this.t - this.spreadStart) * 380;
+      if (far) {
+        const k = Math.min(1, (this.t - this.spreadStart) / 0.6), gr = c.createLinearGradient(0, hz, 0, this.H);
+        gr.addColorStop(0, `rgba(60,110,255,${0.2 * fade * k})`);
+        gr.addColorStop(0.4, `rgba(70,130,255,${0.3 * fade * flick * k})`);
+        gr.addColorStop(1, `rgba(120,190,255,${0.4 * fade * flick * k})`);
+        c.fillStyle = gr;
+        c.fillRect(0, hz, this.W, this.H - hz);
+      }
+      this.drawFlames(c, this.infernoFlames, far, fade, 0.8, f => Math.min(1, (spread - f.d) / 40));
+      this.drawFlames(c, this.lineFlames, far, fade, 0.7, () => 1);
     }
     c.globalCompositeOperation = 'source-over';
+  }
+
+  /** Flames standing on the ground, far ones (behind the enemies) or near ones; lit(f) 0 → 1 as each one catches. */
+  private drawFlames(c: CanvasRenderingContext2D, flames: Flame[], far: boolean, fade: number, alpha: number, lit: (f: Flame) => number): void {
+    for (const f of flames) {
+      if ((f.z > INFERNO_NEAR_Z) !== far) continue;
+      const on = lit(f);
+      if (on <= 0) continue;
+      const p = this.project(f.x, FLOOR_Y, f.z);
+      if (p.x < -80 || p.x > this.W + 80) continue;
+      const k = this.u * p.s, t = this.t * f.speed + f.phase;
+      const h = f.h * k * fade * on * (0.75 + 0.25 * Math.sin(t * 2.3) + 0.12 * Math.sin(t * 5.1));
+      if (h < 2) continue;
+      const w = f.w * k, sway = Math.sin(t * 1.7) * w * 0.9 + Math.sin(t * 4.3) * w * 0.25;
+      this.flameTongue(c, p.x, p.y, w, h, sway, fade * alpha);
+    }
   }
 
   /** One flame standing at (x, y): a curling tongue, blue at the edges, white-blue at its base. */
@@ -1421,6 +1463,12 @@ export class Renderer {
       }
     }
     // the blue inferno: flames licking up all over the ground while it burns
+    if (g.fireLine) {
+      for (let i = nOf(160, dt); i > 0; i--) {
+        const z = Math.random() * 14;
+        this.emit(g.fireLine.x + rnd(-1, 1) * TUNE.slamLineHalfW, FLOOR_Y - rnd(10, 40), z, rnd(-3, 3), rnd(-60, -30), 0, rnd(0.3, 0.6), rnd(1.5, 3), 'blue', 1);
+      }
+    }
     if (g.groundFire > 0) {
       const k = Math.min(1, g.groundFire / 0.8) * Math.min(1, (TUNE.infernoS - g.groundFire) / 0.3 + 0.3);
       // a few sparks rising off the flames
