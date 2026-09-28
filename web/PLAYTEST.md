@@ -54,3 +54,4 @@ Tuning knobs: `TUNING` in `src/intent/interpret.ts` (tracking feel), `TUNE` in `
 - [ ] Vitality reads as health (green); Breath (orange, top centre) is the first thing you look at; the finisher icon beside it is clear when ready.
 - [ ] Blue inferno: both fists held up by the head turn blue with the prompt; slamming them down sets the ground ablaze and burns everything; it never fires from ordinary punching or charged punches.
 - [ ] The title and menu look like a finished game; keyboard and mouse both work; the camera is only asked for when you start a mode.
+- [ ] Sound: jabs feel punchy and vary; big moves feel big; nothing is too loud or grating over a long session. Volume in Settings works.

@@ -10,12 +10,14 @@ export interface SettingsData {
   sensitivity: number;
   /** Best Waves score. */
   best: number;
+  /** Sound effects volume, 0 … 1. */
+  volume: number;
 }
 
 export const SETTINGS_KEY = 'flowbound.settings.v1';
 export const SENSITIVITY_MIN = 0.5, SENSITIVITY_MAX = 2.5;
 
-const fresh = (): SettingsData => ({ version: 1, input: 'camera', sensitivity: 1.4, best: 0 });
+const fresh = (): SettingsData => ({ version: 1, input: 'camera', sensitivity: 1.4, best: 0, volume: 0.7 });
 
 /** Player settings, kept on this device. Storage failing never breaks the game. */
 export class Settings {

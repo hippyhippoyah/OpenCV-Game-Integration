@@ -15,6 +15,7 @@ import { Calibrator, type Calibration } from './intent/calibration';
 import { initialState, interpret, TUNING, type Cast, type Intent, type InterpretState, type Palm, type Punch } from './intent/interpret';
 import { DebugView } from './render/debug';
 import { Hud } from './render/hud';
+import { Sfx } from './audio/sfx';
 import { Menu } from './ui/menu';
 import { Settings, type InputKind } from './ui/settings';
 import { LessonDemo } from './render/lessonDemo';
@@ -80,7 +81,14 @@ let mockTracker: MockTracker | null = null;
 let camCalibration: Calibration | null = null;
 /** What to start once the camera is set up. */
 let pendingPlay: { mode: Mode; lesson: number } | null = null;
+const sfx = new Sfx();
+sfx.setVolume(settings.data.volume);
+/** Last frame's charge and gather, so their "ready" sounds play once. */
+const wasCharged = { l: false, r: false };
+let wasGathered = false;
 const menu = new Menu(settings, progress, {
+  sound: s => sfx.ui(s),
+  onVolume: v => sfx.setVolume(v),
   onPlay: (m, lesson) => play(m, lesson ?? 0),
   onInput: () => { /* takes effect at the next play */ },
   onSensitivity: v => { TUNING.punchSensitivity = v; },
@@ -275,6 +283,7 @@ function stepGame(dt: number): void {
     acc -= STEP;
   }
   const events = game.drainEvents();
+  cueSounds(game, events);
   for (const e of events) {
     renderer.onEvent(e);
     hud.onEvent(e);
@@ -292,6 +301,18 @@ function stepGame(dt: number): void {
     drawLesson(tutorial);
   }
   hud.update(game, intent.hands);
+}
+
+/** Play the game's sounds, and cue a hand charging blue or the finisher's gather catching fire. */
+function cueSounds(g: Game, events: GameEvent[]): void {
+  for (const e of events) sfx.onEvent(e, g.cam.x);
+  for (const side of ['l', 'r'] as const) {
+    const full = (g.hands[side]?.charge ?? 0) >= 1;
+    if (full && !wasCharged[side]) sfx.ui('charged');
+    wasCharged[side] = full;
+  }
+  if (g.gather >= 1 && !wasGathered) sfx.ui('gathered');
+  wasGathered = g.gather >= 1;
 }
 
 function stepCampaign(dt: number, now: number): void {
@@ -312,11 +333,20 @@ function stepCampaign(dt: number, now: number): void {
       while (acc >= STEP) { game.step(STEP, { ...intent, punches: pendingPunches, casts: pendingCasts, palms: pendingPalms }); pendingPunches = []; pendingCasts = []; pendingPalms = []; acc -= STEP; }
       events = game.drainEvents();
       for (const e of events) { renderer.onEvent(e); hud.onEvent(e); }
+      cueSounds(game, events);
       hud.update(game, intent.hands);
     }
+    const before = r.state, count = Math.ceil(r.countdown);
     if (!campUI!.overlayOpen) r.update(dt, check.seen && check.handsUp && check.distance === 'ok', events);
+    // countdown ticks, then a rush of fire as the fight starts; a chime per scroll and per flame won
+    if (r.state === 'countdown' && (before !== 'countdown' || Math.ceil(r.countdown) !== count)) sfx.ui('tick');
+    if (before === 'countdown' && r.state !== 'countdown' && r.state !== 'arena') sfx.ui('go');
+    if (r.notes.some(n => n.kind === 'scroll')) sfx.ui('scroll');
+    if (before !== 'result' && r.state === 'result' && r.result) {
+      for (let i = 0; i < r.result.flames; i++) setTimeout(() => sfx.ui('flame'), 250 + i * 280);
+    }
   }
-  if (prevCampaignState === 'practice' && r.state === 'fight') hud.toast('NOW FOR REAL');
+  if (prevCampaignState === 'practice' && r.state === 'fight') { hud.toast('NOW FOR REAL'); sfx.ui('go'); }
   prevCampaignState = r.state;
   // the lesson card, shared with the tutorial's own: shown only while practising a campaign lesson
   const practice = r.state === 'practice' ? r.practice : null;
@@ -485,6 +515,7 @@ addEventListener('keydown', e => {
           progress.reset();
           campaign = new CampaignRunner(progress, () => new Game(Math.random, renderer.viewHalfW, true));
           campaign.notes.push({ kind: 'info', text: 'Campaign progress reset — Chapter 1 starts fresh' });
+          sfx.ui('reset');
         } else {
           resetAskedAt = performance.now();
           r.notes.push({ kind: 'info', text: 'Press R again to erase all scrolls, stops and flames' });

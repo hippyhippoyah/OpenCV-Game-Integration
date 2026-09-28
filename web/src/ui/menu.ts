@@ -1,6 +1,7 @@
 import { STOPS } from '../campaign/chapter1';
 import type { Progress } from '../campaign/progress';
 import { LESSONS } from '../game/tutorial';
+import type { UiSound } from '../audio/sfx';
 import { clampSensitivity, SENSITIVITY_MAX, SENSITIVITY_MIN, type InputKind, type Settings } from './settings';
 
 export type PlayMode = 'campaign' | 'tutorial' | 'waves' | 'training';
@@ -28,6 +29,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''):
 
 export interface MenuHandlers {
   onPlay(mode: PlayMode, lesson?: number): void;
+  onVolume(v: number): void;
+  sound(s: UiSound): void;
   onInput(kind: InputKind): void;
   onSensitivity(v: number): void;
   onResetCampaign(): void;
@@ -50,8 +53,8 @@ export class Menu {
       b.addEventListener('click', () => this.activate(i));
       list.append(b);
     });
-    $('title').addEventListener('click', () => this.showMenu());
-    $('setBack').addEventListener('click', () => this.showMenu());
+    $('title').addEventListener('click', () => { this.h.sound('select'); this.showMenu(); });
+    $('setBack').addEventListener('click', () => { this.h.sound('back'); this.showMenu(); });
     for (const b of document.querySelectorAll<HTMLButtonElement>('#setInput button')) {
       b.addEventListener('click', () => this.setInput(b.dataset.input as InputKind));
     }
@@ -60,6 +63,14 @@ export class Menu {
     range.max = String(SENSITIVITY_MAX);
     range.step = '0.1';
     range.addEventListener('input', () => this.setSensitivity(Number(range.value)));
+    const vol = $('setVol') as HTMLInputElement;
+    vol.addEventListener('input', () => {
+      this.settings.data.volume = Math.min(1, Math.max(0, Number(vol.value) / 100));
+      this.settings.save();
+      this.h.onVolume(this.settings.data.volume);
+      $('setVolVal').textContent = `${Math.round(this.settings.data.volume * 100)}%`;
+    });
+    vol.addEventListener('change', () => this.h.sound('select'));
     $('setReset').addEventListener('click', () => this.reset());
   }
 
@@ -88,17 +99,18 @@ export class Menu {
     if (this.screen === 'title') {
       if (k === 'Tab' || k === 'Shift' || k === 'Meta' || k === 'Alt' || k === 'Control') return false;
       e.preventDefault();
+      this.h.sound('select');
       this.showMenu();
       return true;
     }
     if (this.screen === 'settings') {
-      if (k === 'Escape') { this.showMenu(); return true; }
+      if (k === 'Escape') { this.h.sound('back'); this.showMenu(); return true; }
       return false;
     }
     if (k === 'ArrowDown' || k === 's' || k === 'S') { e.preventDefault(); this.select((this.sel + 1) % ITEMS.length); return true; }
     if (k === 'ArrowUp' || k === 'w' || k === 'W') { e.preventDefault(); this.select((this.sel + ITEMS.length - 1) % ITEMS.length); return true; }
     if (k === 'Enter' || k === ' ') { e.preventDefault(); this.activate(this.sel); return true; }
-    if (k === 'Escape') { this.showTitle(); return true; }
+    if (k === 'Escape') { this.h.sound('back'); this.showTitle(); return true; }
     return false;
   }
 
@@ -121,6 +133,7 @@ export class Menu {
   }
 
   private select(i: number): void {
+    if (i !== this.sel && this.screen === 'menu') this.h.sound('hover');
     this.sel = i;
     $('menuList').querySelectorAll('.item').forEach((b, j) => b.classList.toggle('on', j === i));
     this.renderDetail(ITEMS[i].id);
@@ -128,6 +141,7 @@ export class Menu {
 
   private activate(i: number): void {
     const id = ITEMS[i].id;
+    this.h.sound('select');
     if (id === 'settings') this.showSettings();
     else this.h.onPlay(id);
   }
@@ -188,12 +202,15 @@ export class Menu {
     const range = $('setSens') as HTMLInputElement;
     range.value = String(this.settings.data.sensitivity);
     $('setSensVal').textContent = `×${this.settings.data.sensitivity.toFixed(1)}`;
+    ($('setVol') as HTMLInputElement).value = String(Math.round(this.settings.data.volume * 100));
+    $('setVolVal').textContent = `${Math.round(this.settings.data.volume * 100)}%`;
     $('setReset').textContent = this.started ? 'Reset campaign progress' : 'No campaign progress yet';
     ($('setReset') as HTMLButtonElement).disabled = !this.started;
     $('setReset').classList.remove('confirm');
   }
 
   private setInput(kind: InputKind): void {
+    this.h.sound('select');
     this.settings.data.input = kind;
     this.settings.save();
     this.h.onInput(kind);
@@ -216,6 +233,7 @@ export class Menu {
       return;
     }
     this.resetArmed = false;
+    this.h.sound('reset');
     this.h.onResetCampaign();
     this.renderSettings();
     $('setReset').textContent = 'Campaign progress reset';

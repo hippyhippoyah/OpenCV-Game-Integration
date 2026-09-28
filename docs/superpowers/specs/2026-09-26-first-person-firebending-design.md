@@ -436,3 +436,14 @@ sensitivity, reset campaign progress; saved on the device. The camera is set up 
 start a mode with it ("Waking the camera", then "Step into the light" to calibrate); if it can't
 start you can switch to mouse and keys or go back. `?mode=…` still skips straight into play and
 `?input=mock` plays with mouse and keys.
+
+## Sound
+
+Every sound is synthesised in the browser with Web Audio (`src/audio/sfx.ts`), no audio files:
+filtered noise for fire, air, rumble and hiss; swept tones for impacts, thumps and chimes. Each
+play is varied — pitch, filter, length, stereo position (from where it happened) — so spammed jabs
+never sound alike, and bursts of the same sound are spaced so they don't pile into a roar. Sounds
+for every attack, combo, hit, kill, block, clash, dodge, getting hit, running out of breath, the
+earthbenders' pillars and the spirits' waves, both ultimates; a cue when a fist charges blue or the
+finisher's gather catches fire; the countdown, the start of a fight, scrolls and flames in the
+campaign; and the menus. Volume is in Settings. The audio starts on the first key press or click.
