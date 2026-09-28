@@ -244,6 +244,13 @@ export const TUNING = {
    */
   slamWindowS: 0.45, slamHighBelowHead: 10, slamDrop: 22, slamSpeed: 60,
   /**
+   * Fists held up high (charging a slam, or just resting up there) overlap the face, and their
+   * depth reading jumps about wildly: a fist more than aboveHead view units above the centre of the
+   * head (over the top of it) is never punching, nor is one moving down faster than slamSpeed
+   * (dropping the hands). A guard at chin height, and the charge pose by the ear, are below this.
+   */
+  aboveHead: 13,
+  /**
    * Palm push (fist-punch mode only; the open-hand punch style already uses opening hands): one hand
    * open, shoved toward the camera — it may open on the way. The other hand is a fist, or open but
    * held still (it came forward less than palmOtherStill as far; both pushing is a wall push). With
@@ -497,8 +504,6 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     s.palmPending = [];
   } else if (extendMode) {
     // A quick jolt of a fist toward the camera (more than the other fist moved); re-arms on a short pull-back.
-    // (with both fists charged, a fist coming down hard is a slam on its way, not a punch)
-    const primed = !!s.l && !!s.r && s.l.charge >= 1 && s.r.charge >= 1;
     for (const side of SIDES) {
       const tr = s[side], o = s[other(side)];
       if (!tr) continue;
@@ -530,7 +535,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
         fire = tr.armed && tr.extension >= TUNING.extendFireAbove && extensionRise(tr) >= TUNING.punchExtendRise;
       }
-      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !(primed && tr.vel.y > TUNING.slamSpeed)) {
+      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView)) {
         tr.armed = false;
         tr.lastPunchT = f.t;
         s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t, charged: tr.charge >= 1 });
@@ -680,6 +685,15 @@ function updateCharge(tr: Track, side: Side, shoulder: Vec2, head: Vec2, t: numb
   const kept = tr.chargedAt !== null && t - tr.chargedAt <= TUNING.chargeKeepS && fist;
   if (kept) tr.charge = 1;
   else { tr.charge = 0; tr.chargedAt = null; }
+}
+
+/**
+ * Not a punch, whatever the depth reading says: the fist is dropping (moving down hard — lowering
+ * the hands, or a slam), or it's up over the top of the head (its depth jumps about up there,
+ * overlapping the face).
+ */
+function droppingOrHigh(tr: Track, head: Vec2): boolean {
+  return (tr.vel.y > TUNING.slamSpeed && tr.vel.y > 2 * Math.abs(tr.vel.x)) || tr.pos.y < head.y - TUNING.aboveHead;
 }
 
 /** This charged fist was up by the head within slamWindowS and has since come down slamDrop. */

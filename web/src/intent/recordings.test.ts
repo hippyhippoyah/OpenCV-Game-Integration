@@ -4,6 +4,8 @@ import punches2Raw from '../../recordings/punches-2.json?raw';
 import punches3Raw from '../../recordings/punches-3.json?raw';
 import leaningRaw from '../../recordings/leaning.json?raw';
 import swayingRaw from '../../recordings/swaying.json?raw';
+import raised1Raw from '../../recordings/raised-hands-1.json?raw';
+import raised2Raw from '../../recordings/raised-hands-2.json?raw';
 import { initialState, interpret, TUNING, type Intent } from './interpret';
 import type { TrackingFrame } from '../input/types';
 import type { Calibration } from './calibration';
@@ -48,6 +50,13 @@ describe('real-camera recordings', () => {
     const p3 = punchTimes(replay(punches3Raw));
     expect(p3.length).toBeGreaterThanOrEqual(17);
     expect(new Set(p3.map(x => x.hand))).toEqual(new Set(['l', 'r']));
+  });
+
+  it('does not punch with the fists held up by or over the head, raised and lowered', () => {
+    // no punches thrown: fists raised high (charging, trying the slam) and dropped again. Up there
+    // the hand overlaps the face and its depth jumps 10–30 cm a frame; 22 and 13 punches fired.
+    const p = [...punchTimes(replay(raised1Raw)), ...punchTimes(replay(raised2Raw))];
+    expect(p.length).toBeLessThanOrEqual(2);
   });
 
   it('does not punch while leaning quickly', () => {

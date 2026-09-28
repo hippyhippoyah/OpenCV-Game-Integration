@@ -10,3 +10,6 @@ the tracking frames (no raw landmarks) plus what fired at the time:
   mistake (P), where only 7 fired. The fist detector finds 19.
 - `leaning.json` — leaning and ducking at about 1.3 m; fast leans used to fire punches.
 - `swaying.json` — only swaying side to side; it fired 9 punches at the sway turnarounds.
+- `raised-hands-1.json`, `raised-hands-2.json` — no punches: fists held up by and over the head
+  (charging, trying the slam) and lowered again. Face overlap made the depth jump; 22 and 13 punches
+  fired. Now at most 2.
