@@ -1,0 +1,223 @@
+import { STOPS } from '../campaign/chapter1';
+import type { Progress } from '../campaign/progress';
+import { LESSONS } from '../game/tutorial';
+import { clampSensitivity, SENSITIVITY_MAX, SENSITIVITY_MIN, type InputKind, type Settings } from './settings';
+
+export type PlayMode = 'campaign' | 'tutorial' | 'waves' | 'training';
+type ItemId = PlayMode | 'settings';
+export type Screen = 'title' | 'menu' | 'settings';
+
+interface Item { id: ItemId; title: string; blurb: string }
+
+const ITEMS: Item[] = [
+  { id: 'campaign', title: 'Campaign', blurb: 'Chapter 1 · The Ember Path' },
+  { id: 'tutorial', title: 'Tutorial', blurb: 'Learn every move' },
+  { id: 'waves', title: 'Waves', blurb: 'Endless survival' },
+  { id: 'training', title: 'Training', blurb: 'Dummies that never fight back' },
+  { id: 'settings', title: 'Settings', blurb: 'Input, sensitivity, progress' },
+];
+
+const $ = (id: string) => document.getElementById(id)!;
+const show = (id: string, on = true) => $(id).classList.toggle('hidden', !on);
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text) e.textContent = text;
+  return e;
+};
+
+export interface MenuHandlers {
+  onPlay(mode: PlayMode, lesson?: number): void;
+  onInput(kind: InputKind): void;
+  onSensitivity(v: number): void;
+  onResetCampaign(): void;
+}
+
+/** The front of the game: title screen, main menu (with a detail panel per mode) and settings. */
+export class Menu {
+  screen: Screen | null = null;
+  private sel = 0;
+  private resetArmed = false;
+
+  constructor(private settings: Settings, private progress: Progress, private h: MenuHandlers) {
+    const list = $('menuList');
+    ITEMS.forEach((it, i) => {
+      const b = el('button', 'item');
+      b.dataset.id = it.id;
+      b.append(el('b', '', it.title), el('span', '', it.blurb));
+      b.addEventListener('mouseenter', () => this.select(i));
+      b.addEventListener('focus', () => this.select(i));
+      b.addEventListener('click', () => this.activate(i));
+      list.append(b);
+    });
+    $('title').addEventListener('click', () => this.showMenu());
+    $('setBack').addEventListener('click', () => this.showMenu());
+    for (const b of document.querySelectorAll<HTMLButtonElement>('#setInput button')) {
+      b.addEventListener('click', () => this.setInput(b.dataset.input as InputKind));
+    }
+    const range = $('setSens') as HTMLInputElement;
+    range.min = String(SENSITIVITY_MIN);
+    range.max = String(SENSITIVITY_MAX);
+    range.step = '0.1';
+    range.addEventListener('input', () => this.setSensitivity(Number(range.value)));
+    $('setReset').addEventListener('click', () => this.reset());
+  }
+
+  showTitle(): void { this.go('title'); }
+
+  showMenu(note = ''): void {
+    this.go('menu');
+    $('menuNote').textContent = note;
+    show('menuNote', !!note);
+    this.renderList();
+    this.select(this.sel);
+  }
+
+  showSettings(): void {
+    this.go('settings');
+    this.resetArmed = false;
+    this.renderSettings();
+  }
+
+  hide(): void { this.go(null); }
+
+  /** Keyboard on the front screens; returns true if the key was used. */
+  key(e: KeyboardEvent): boolean {
+    if (!this.screen) return false;
+    const k = e.key;
+    if (this.screen === 'title') {
+      if (k === 'Tab' || k === 'Shift' || k === 'Meta' || k === 'Alt' || k === 'Control') return false;
+      e.preventDefault();
+      this.showMenu();
+      return true;
+    }
+    if (this.screen === 'settings') {
+      if (k === 'Escape') { this.showMenu(); return true; }
+      return false;
+    }
+    if (k === 'ArrowDown' || k === 's' || k === 'S') { e.preventDefault(); this.select((this.sel + 1) % ITEMS.length); return true; }
+    if (k === 'ArrowUp' || k === 'w' || k === 'W') { e.preventDefault(); this.select((this.sel + ITEMS.length - 1) % ITEMS.length); return true; }
+    if (k === 'Enter' || k === ' ') { e.preventDefault(); this.activate(this.sel); return true; }
+    if (k === 'Escape') { this.showTitle(); return true; }
+    return false;
+  }
+
+  private go(s: Screen | null): void {
+    this.screen = s;
+    show('title', s === 'title');
+    show('menu', s === 'menu');
+    show('settings', s === 'settings');
+    document.body.classList.toggle('front', s !== null);
+  }
+
+  private get started(): boolean {
+    return Object.keys(this.progress.data.stops).length > 0 || this.progress.data.scrolls.length > 0;
+  }
+
+  private renderList(): void {
+    const camp = $('menuList').querySelector<HTMLElement>('[data-id="campaign"] b')!;
+    camp.textContent = this.started ? 'Continue' : 'Campaign';
+    $('menuInput').textContent = this.settings.data.input === 'camera' ? 'Camera' : 'Mouse & keys';
+  }
+
+  private select(i: number): void {
+    this.sel = i;
+    $('menuList').querySelectorAll('.item').forEach((b, j) => b.classList.toggle('on', j === i));
+    this.renderDetail(ITEMS[i].id);
+  }
+
+  private activate(i: number): void {
+    const id = ITEMS[i].id;
+    if (id === 'settings') this.showSettings();
+    else this.h.onPlay(id);
+  }
+
+  private renderDetail(id: ItemId): void {
+    const d = $('menuDetail');
+    d.replaceChildren();
+    const head = (kicker: string, title: string) => d.append(el('div', 'kicker', kicker), el('h2', '', title));
+    const para = (t: string) => d.append(el('p', '', t));
+    const stat = (rows: [string, string][]) => {
+      const s = el('div', 'stats');
+      for (const [v, l] of rows) { const c = el('div'); c.append(el('b', '', v), el('span', '', l)); s.append(c); }
+      d.append(s);
+    };
+    switch (id) {
+      case 'campaign': {
+        const done = STOPS.filter(s => this.progress.isDone(s.id)).length;
+        const flames = STOPS.reduce((n, s) => n + this.progress.flames(s.id), 0);
+        head('Chapter 1', 'The Ember Path');
+        para('Master Ren is away and the Spirit Moon is rising. Walk down the mountain from the Ember Temple, find Ren\'s scrolls, learn their moves — and stop Daro Stonefist at the village gate.');
+        stat([[`${done} / ${STOPS.length}`, 'Stops cleared'], [`${this.progress.data.scrolls.length}`, 'Scrolls found'], [`${flames} / ${STOPS.length * 3}`, 'Flames']]);
+        d.append(el('div', 'cta', this.started ? 'Enter — continue your journey' : 'Enter — begin'));
+        break;
+      }
+      case 'tutorial': {
+        head('Learn', 'Tutorial');
+        para('Every move, one lesson at a time, with nothing that can hurt you. Start from the top, or jump to a lesson:');
+        const chips = el('div', 'lessons');
+        LESSONS.forEach((l, i) => {
+          const b = el('button', '', `${i + 1}. ${l.title}`);
+          b.addEventListener('click', e => { e.stopPropagation(); this.h.onPlay('tutorial', i); });
+          chips.append(b);
+        });
+        d.append(chips);
+        break;
+      }
+      case 'waves':
+        head('Survive', 'Waves');
+        para('Water spirits and earthbenders, wave after wave, faster and fiercer. Lean out of their lanes, duck their waves, and see how long your flame holds.');
+        stat([[String(this.settings.data.best), 'Best score']]);
+        d.append(el('div', 'cta', 'Enter — start'));
+        break;
+      case 'training':
+        head('Practice', 'Training');
+        para('A quiet yard of straw dummies that never fight back. Try any move, combo or ultimate as often as you like.');
+        d.append(el('div', 'cta', 'Enter — start'));
+        break;
+      case 'settings':
+        head('Options', 'Settings');
+        para('Choose how you play — your webcam, or mouse and keys — tune how easily punches trigger, or start the campaign over.');
+        break;
+    }
+  }
+
+  private renderSettings(): void {
+    const input = this.settings.data.input;
+    for (const b of document.querySelectorAll<HTMLButtonElement>('#setInput button')) b.classList.toggle('on', b.dataset.input === input);
+    const range = $('setSens') as HTMLInputElement;
+    range.value = String(this.settings.data.sensitivity);
+    $('setSensVal').textContent = `×${this.settings.data.sensitivity.toFixed(1)}`;
+    $('setReset').textContent = this.started ? 'Reset campaign progress' : 'No campaign progress yet';
+    ($('setReset') as HTMLButtonElement).disabled = !this.started;
+    $('setReset').classList.remove('confirm');
+  }
+
+  private setInput(kind: InputKind): void {
+    this.settings.data.input = kind;
+    this.settings.save();
+    this.h.onInput(kind);
+    this.renderSettings();
+  }
+
+  private setSensitivity(v: number): void {
+    this.settings.data.sensitivity = clampSensitivity(v);
+    this.settings.save();
+    this.h.onSensitivity(this.settings.data.sensitivity);
+    $('setSensVal').textContent = `×${this.settings.data.sensitivity.toFixed(1)}`;
+  }
+
+  /** Reset asks twice: the first click arms it, the second wipes scrolls, stops and flames. */
+  private reset(): void {
+    if (!this.resetArmed) {
+      this.resetArmed = true;
+      $('setReset').textContent = 'Click again to erase all scrolls, stops and flames';
+      $('setReset').classList.add('confirm');
+      return;
+    }
+    this.resetArmed = false;
+    this.h.onResetCampaign();
+    this.renderSettings();
+    $('setReset').textContent = 'Campaign progress reset';
+  }
+}

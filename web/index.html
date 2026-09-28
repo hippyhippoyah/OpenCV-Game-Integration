@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Firebending</title>
+  <title>Flowbound</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <script type="module" src="/src/main.ts"></script>
@@ -90,41 +90,58 @@
     <div class="card hidden" id="campEnd"><h1>Chapter 1 complete</h1><p>Daro falls back down the valley. Kuzan will come himself now.</p><div class="actions"><button id="campMenu">Menu</button></div></div>
   </div>
 
-  <div class="card" id="start">
-    <h1>Firebending</h1>
-    <p>Bend fire with your hands in front of your webcam, seen through your own eyes. Punch, push and sweep fire at water spirits and earthbenders; lean and duck to dodge.</p>
-    <p>New here? Pick the <b>Tutorial</b> after calibrating: it teaches every move, one lesson at a time. Or go straight to endless <b>Waves</b>, or <b>Training</b> on dummies.</p>
-    <p class="muted">Stand about 1.5 m back so your head, shoulders and hands are all in view. In game: <kbd>Esc</kbd> menu, <kbd>[</kbd> / <kbd>]</kbd> punch sensitivity, <kbd>K</kbd> record tracking for debugging.</p>
-    <div class="actions">
-      <button id="camBtn">Play with camera</button>
-      <button id="mockBtn" class="secondary">Mouse &amp; keys</button>
+  <div id="title" class="screen title hidden">
+    <div class="logo">
+      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".55"/><path d="M33 7c11 9 15 17 6 25s-5 17 5 25c-15-2-25-11-25-25S25 12 33 7z" fill="currentColor"/></svg>
+      <h1>Flowbound</h1>
+      <p class="tagline">Bend energy with your body</p>
     </div>
+    <div class="press">Press any key</div>
+    <div class="foot">A webcam game · Stand back, raise your fists, and bend</div>
   </div>
 
-  <div class="card hidden" id="status">
+  <div id="menu" class="screen menu hidden">
+    <div class="menuHead"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".55"/><path d="M33 7c11 9 15 17 6 25s-5 17 5 25c-15-2-25-11-25-25S25 12 33 7z" fill="currentColor"/></svg><span>Flowbound</span></div>
+    <nav id="menuList" class="menuList"></nav>
+    <aside id="menuDetail" class="menuDetail"></aside>
+    <div id="menuNote" class="menuNote hidden"></div>
+    <div class="menuFoot"><span><kbd>↑</kbd><kbd>↓</kbd> select</span><span><kbd>Enter</kbd> play</span><span><kbd>Esc</kbd> title</span><span class="spacer"></span><span>Input: <b id="menuInput">Camera</b></span></div>
+  </div>
+
+  <div id="settings" class="screen settings hidden">
+    <div class="menuHead"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".55"/><path d="M33 7c11 9 15 17 6 25s-5 17 5 25c-15-2-25-11-25-25S25 12 33 7z" fill="currentColor"/></svg><span>Settings</span></div>
+    <div class="setPanel">
+      <div class="setRow">
+        <div><b>Input</b><span>Your webcam, or mouse and keys standing in for your hands.</span></div>
+        <div class="seg" id="setInput"><button data-input="camera">Camera</button><button data-input="mock">Mouse &amp; keys</button></div>
+      </div>
+      <div class="setRow">
+        <div><b>Punch sensitivity</b><span>Higher fires punches from smaller movements. Also <kbd>[</kbd> <kbd>]</kbd> in game.</span></div>
+        <div class="range"><input type="range" id="setSens"><em id="setSensVal"></em></div>
+      </div>
+      <div class="setRow">
+        <div><b>Campaign</b><span>Erase every scroll, stop and flame and start Chapter 1 over.</span></div>
+        <button id="setReset" class="danger">Reset campaign progress</button>
+      </div>
+      <div class="setRow">
+        <div><b>Playing with the camera</b><span>Stand about 1.5 m back so your head, shoulders and both hands are in view, in an even light.</span></div>
+      </div>
+    </div>
+    <div class="menuFoot"><button id="setBack" class="secondary">Back</button><span><kbd>Esc</kbd> back</span></div>
+  </div>
+
+  <div class="card setup hidden" id="status">
+    <div class="kicker">Camera</div>
+    <h1>Waking the camera</h1>
     <p id="statusText">Loading…</p>
-    <div class="actions"><button id="statusFallback" class="hidden">Play with mouse &amp; keys</button></div>
+    <div class="actions"><button id="statusFallback" class="hidden">Play with mouse &amp; keys</button><button id="statusBack" class="secondary hidden">Back to menu</button></div>
   </div>
 
-  <div class="card hidden" id="calib">
-    <h1>Calibrating</h1>
-    <p>Stand where you'll play, face the screen with your arms relaxed, and hold still.</p>
+  <div class="card setup hidden" id="calib">
+    <div class="kicker">Before you begin</div>
+    <h1>Step into the light</h1>
+    <p>Stand where you'll play, about 1.5 m back, facing the screen with your arms relaxed. Hold still for a moment.</p>
     <div class="bar wide"><i id="calibFill"></i></div>
-  </div>
-
-  <div class="card hidden" id="modes">
-    <h1>Choose your path</h1>
-    <p id="modesNote" class="hidden"></p>
-    <div class="modes">
-      <button class="mode" data-mode="campaign"><b id="campaignLabel">Campaign</b><span>Chapter 1: The Ember Path. Walk down the mountain, find Ren's scrolls, and face Daro Stonefist.</span></button>
-      <button id="campReset" class="linkish hidden">Reset campaign progress</button>
-      <button class="mode" data-mode="tutorial"><b>Tutorial</b><span>Learn each move, one lesson at a time. Nothing can hurt you here.</span></button>
-      <button class="mode" data-mode="waves"><b>Waves</b><span>Endless water spirits and earthbenders. How long can you last?</span></button>
-      <button class="mode" data-mode="training"><b>Training</b><span>Practice dummies that never fight back. Try anything.</span></button>
-    </div>
-    <div class="label" style="margin-top:18px">Or jump to a lesson</div>
-    <div class="chips" id="lessonChips"></div>
-    <p class="muted" style="margin:14px 0 0"><kbd>Esc</kbd> in game brings you back here.</p>
   </div>
 
   <div class="card hidden" id="mockHelp">
@@ -153,6 +170,7 @@
   <div class="card hidden" id="over">
     <h1>Extinguished</h1>
     <p>The spirits got through. Final score: <b id="overScore">0</b></p>
+    <p id="overBest" class="muted hidden"></p>
     <div class="actions"><button id="againBtn">Rekindle</button><button id="menuBtn" class="secondary">Menu</button><span class="muted"><kbd>R</kbd> restart · <kbd>C</kbd> recalibrate</span></div>
   </div>
 </body>

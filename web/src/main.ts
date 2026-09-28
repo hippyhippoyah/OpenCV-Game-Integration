@@ -7,7 +7,7 @@ import { STOPS } from './campaign/chapter1';
 import { downloadRecording, Recorder } from './debug/recorder';
 import { PathMap } from './explore/map2d';
 import { Game, type GameEvent } from './game/game';
-import { LESSONS, Tutorial } from './game/tutorial';
+import { Tutorial } from './game/tutorial';
 import { CameraError, CameraTracker } from './input/camera';
 import { bindMockControls, MOCK_CALIBRATION, MockTracker } from './input/mock';
 import type { Tracker, TrackingFrame } from './input/types';
@@ -15,6 +15,8 @@ import { Calibrator, type Calibration } from './intent/calibration';
 import { initialState, interpret, TUNING, type Cast, type Intent, type InterpretState, type Palm, type Punch } from './intent/interpret';
 import { DebugView } from './render/debug';
 import { Hud } from './render/hud';
+import { Menu } from './ui/menu';
+import { Settings, type InputKind } from './ui/settings';
 import { LessonDemo } from './render/lessonDemo';
 import { Renderer } from './render/renderer';
 
@@ -28,7 +30,8 @@ const debug = new DebugView($('pip') as HTMLCanvasElement, $('debugText'));
 const lessonDemo = new LessonDemo($('lessonDemo') as HTMLCanvasElement);
 
 type Mode = 'tutorial' | 'waves' | 'training' | 'campaign';
-let phase: 'menu' | 'loading' | 'calibrating' | 'modes' | 'play' = 'menu';
+/** front: title, menu or settings (see ui/menu.ts); loading/calibrating: camera setup before play. */
+let phase: 'front' | 'loading' | 'calibrating' | 'play' = 'front';
 let mode: Mode = 'waves';
 let tutorial: Tutorial | null = null;
 /** The mouse & keys help is shown once, the first time you play with them. */
@@ -60,14 +63,27 @@ let ghostAlphaNow = 1;
 let prevCampaignState: string | null = null;
 /** True while the campaign's practice/fight is paused via Esc (see stepCampaign & togglePause). */
 let campPaused = false;
-/** The campaign reset button's first click arms it (see #campReset). */
-let resetArmed = false;
 const params = new URLSearchParams(location.search);
 /** Skip the mode menu with ?mode=tutorial|waves|training|campaign (?dummies = training). */
 const startMode: Mode | null = params.has('dummies') ? 'training'
   : (['tutorial', 'waves', 'training', 'campaign'] as const).find(m => m === params.get('mode')) ?? null;
 /** Fist punches by arm extension (default); open-hand punches only with ?punch=open (no key switches it). */
 if (params.get('punch') === 'open') TUNING.punchTrigger = 'open';
+const settings = Settings.load(storage);
+/** ?input=mock plays with mouse and keys this time (not saved). */
+if (params.get('input') === 'mock') settings.data.input = 'mock';
+TUNING.punchSensitivity = settings.data.sensitivity;
+let mockTracker: MockTracker | null = null;
+/** The camera's own calibration (mouse & keys use MOCK_CALIBRATION). */
+let camCalibration: Calibration | null = null;
+/** What to start once the camera is set up. */
+let pendingPlay: { mode: Mode; lesson: number } | null = null;
+const menu = new Menu(settings, progress, {
+  onPlay: (m, lesson) => play(m, lesson ?? 0),
+  onInput: () => { /* takes effect at the next play */ },
+  onSensitivity: v => { TUNING.punchSensitivity = v; },
+  onResetCampaign: () => progress.reset(),
+});
 let acc = 0, last = performance.now(), fpsTime = 0, fpsFrames = 0;
 const RECORD_SECONDS = 10;
 /** K records RECORD_SECONDS of tracking numbers and downloads them, for debugging detection offline. */
@@ -77,23 +93,40 @@ const recorder = new Recorder(r => {
   show('recording', false);
 });
 
-function startMock(): void {
-  const mock = new MockTracker(renderer);
-  mock.setMouse(innerWidth / 2, innerHeight * 0.7);
-  bindMockControls(mock, $('game'));
-  tracker = mock;
-  calibration = MOCK_CALIBRATION;
-  show('start', false);
-  show('status', false);
-  if (startMode) beginPlay(startMode);
-  else showModes();
+/** Switch to an input; returns true if it's ready to play (the camera needs setting up first). */
+function useInput(kind: InputKind): boolean {
+  if (kind === 'mock') {
+    if (!mockTracker) {
+      mockTracker = new MockTracker(renderer);
+      mockTracker.setMouse(innerWidth / 2, innerHeight * 0.7);
+      bindMockControls(mockTracker, $('game'));
+    }
+    tracker = mockTracker;
+    calibration = MOCK_CALIBRATION;
+    return true;
+  }
+  if (!camera) return false;
+  tracker = camera;
+  calibration = camCalibration;
+  return calibration !== null;
+}
+
+/** Start a mode from the menu: straight in, or via camera setup the first time. */
+function play(m: Mode, lesson = 0): void {
+  if (useInput(settings.data.input)) { beginPlay(m, lesson); return; }
+  pendingPlay = { mode: m, lesson };
+  if (camera) beginCalibration();
+  else void startCamera();
 }
 
 async function startCamera(): Promise<void> {
   phase = 'loading';
-  show('start', false);
+  menu.hide();
+  document.body.classList.add('setup');
   show('status');
   show('statusFallback', false);
+  show('statusBack', false);
+  $('statusText').textContent = 'Allow camera access when your browser asks.';
   try {
     camera = await CameraTracker.create(message => { $('statusText').textContent = message; });
     tracker = camera;
@@ -103,13 +136,15 @@ async function startCamera(): Promise<void> {
     const why = e instanceof CameraError ? e.message : 'Something went wrong starting the camera.';
     $('statusText').textContent = `${why} You can still play with mouse and keys.`;
     show('statusFallback');
-    phase = 'menu';
+    show('statusBack');
   }
 }
 
 function beginCalibration(): void {
   calibrator = new Calibrator();
   phase = 'calibrating';
+  menu.hide();
+  document.body.classList.add('setup');
   game = null;
   show('over', false);
   show('away', false);
@@ -117,27 +152,21 @@ function beginCalibration(): void {
   $('calibFill').style.width = '0%';
 }
 
-/** The mode menu (after calibrating, or Esc in game). `note` is shown above the choices. */
-function showModes(note = ''): void {
-  phase = 'modes';
+/** Back to the main menu (Esc in game, or after a mode ends). `note` is shown above the choices. */
+function showMenu(note = ''): void {
+  phase = 'front';
   game = null;
   tutorial = null;
   campPaused = false;
+  pendingPlay = null;
   campUI?.hideAll();
   show('world', false);
+  show('status', false);
   renderer.ghost = null;
-  renderer.scene = 'night';
+  renderer.scene = 'courtyard';
   for (const id of ['calib', 'over', 'away', 'lesson', 'dodge', 'mockHelp']) show(id, false);
-  document.body.classList.remove('tutorial', 'exploring');
-  const started = Object.keys(progress.data.stops).length > 0 || progress.data.scrolls.length > 0;
-  $('campaignLabel').textContent = started ? 'Continue' : 'Campaign';
-  show('campReset', started);
-  resetArmed = false;
-  $('campReset').textContent = 'Reset campaign progress';
-  $('campReset').classList.remove('confirm');
-  $('modesNote').textContent = note;
-  show('modesNote', !!note);
-  show('modes');
+  document.body.classList.remove('tutorial', 'exploring', 'setup');
+  menu.showMenu(note);
 }
 
 function beginPlay(m: Mode = mode, lesson = 0): void {
@@ -149,7 +178,9 @@ function beginPlay(m: Mode = mode, lesson = 0): void {
   pendingPalms = [];
   acc = 0;
   phase = 'play';
-  for (const id of ['calib', 'over', 'modes']) show(id, false);
+  for (const id of ['calib', 'over', 'status']) show(id, false);
+  menu.hide();
+  document.body.classList.remove('setup');
   if (m === 'campaign') {
     pathMap ??= new PathMap($('world') as HTMLCanvasElement);
     campUI ??= new CampaignUI(progress);
@@ -213,9 +244,10 @@ function onFrame(f: TrackingFrame): void {
     $('calibFill').style.width = `${Math.round(calibrator.add(f) * 100)}%`;
     const result = calibrator.result();
     if (result) {
-      calibration = result;
-      if (startMode) beginPlay(startMode);
-      else showModes();
+      calibration = camCalibration = result;
+      const next = pendingPlay ?? { mode, lesson: 0 };
+      pendingPlay = null;
+      beginPlay(next.mode, next.lesson);
     }
   } else if (phase === 'play' && calibration) {
     intent = interpret(f, calibration, istate);
@@ -246,12 +278,15 @@ function stepGame(dt: number): void {
     hud.onEvent(e);
     if (e.type === 'gameOver') {
       $('overScore').textContent = String(game.score);
+      const best = mode === 'waves' && settings.recordScore(game.score);
+      $('overBest').textContent = best ? 'A new best!' : mode === 'waves' ? `Best: ${settings.data.best}` : '';
+      show('overBest', mode === 'waves');
       show('over');
     }
   }
   if (tutorial) {
     if (tutorial.update(dt, events)) hud.toast('✓ LESSON COMPLETE', 'good');
-    if (tutorial.finished) { showModes('Tutorial complete — you know every move. Try the waves!'); return; }
+    if (tutorial.finished) { showMenu('Tutorial complete — you know every move. Try the waves!'); return; }
     drawLesson(tutorial);
   }
   hud.update(game, intent.hands);
@@ -368,31 +403,17 @@ function loop(now: number): void {
   requestAnimationFrame(loop);
 }
 
-$('camBtn').addEventListener('click', () => void startCamera());
-$('mockBtn').addEventListener('click', startMock);
-$('statusFallback').addEventListener('click', startMock);
+$('statusFallback').addEventListener('click', () => {
+  settings.data.input = 'mock';
+  settings.save();
+  const next = pendingPlay ?? { mode, lesson: 0 };
+  pendingPlay = null;
+  show('status', false);
+  play(next.mode, next.lesson);
+});
+$('statusBack').addEventListener('click', () => showMenu());
 $('againBtn').addEventListener('click', () => beginPlay());
-$('menuBtn').addEventListener('click', () => showModes());
-for (const b of document.querySelectorAll<HTMLButtonElement>('button.mode')) {
-  b.addEventListener('click', () => beginPlay(b.dataset.mode as Mode));
-}
-LESSONS.forEach((l, i) => {
-  const b = document.createElement('button');
-  b.textContent = `${i + 1}. ${l.title}`;
-  b.addEventListener('click', () => beginPlay('tutorial', i));
-  $('lessonChips').appendChild(b);
-});
-/** Reset asks twice: the first click arms it, the second wipes scrolls, stops and flames. */
-$('campReset').addEventListener('click', () => {
-  if (!resetArmed) {
-    resetArmed = true;
-    $('campReset').textContent = 'Click again to erase all scrolls, stops and flames';
-    $('campReset').classList.add('confirm');
-    return;
-  }
-  progress.reset();
-  showModes('Campaign progress reset — Chapter 1 starts fresh.');
-});
+$('menuBtn').addEventListener('click', () => showMenu());
 $('mockHelpClose').addEventListener('click', () => show('mockHelp', false));
 $('campWalk').addEventListener('click', () => campaign?.walkOn());
 /** Fight the stop again from its result card (not saved as done) or after losing. */
@@ -402,9 +423,9 @@ function campaignTryAgain(): void {
 }
 $('campAgain').addEventListener('click', campaignTryAgain);
 $('campRetry').addEventListener('click', campaignTryAgain);
-$('campMenu').addEventListener('click', () => showModes());
+$('campMenu').addEventListener('click', () => showMenu());
 $('campResume').addEventListener('click', () => { campPaused = false; });
-$('campLeave').addEventListener('click', () => { campPaused = false; showModes(); });
+$('campLeave').addEventListener('click', () => { campPaused = false; showMenu(); });
 
 /** Is the campaign currently exploring the path map (walk/scroll/arena/end), where the map clicks & keys apply? */
 function exploringCampaign(): boolean {
@@ -426,6 +447,9 @@ addEventListener('resize', () => {
 });
 addEventListener('keydown', e => {
   if (e.repeat) return;
+  // the title, menu and settings take their own keys
+  if (phase === 'front' && menu.key(e)) return;
+  if (phase === 'loading' && e.key === 'Escape') { showMenu(); return; }
   const k = e.key.toLowerCase();
   if (k === '`') debug.toggle();
   if (k === 'k' && calibration && phase === 'play' && !recorder.active) {
@@ -436,6 +460,8 @@ addEventListener('keydown', e => {
     // live punch sensitivity: ] = easier to trigger, [ = stricter
     TUNING.punchSensitivity = Math.round(Math.min(2.5, Math.max(0.5, TUNING.punchSensitivity + (k === ']' ? 0.1 : -0.1))) * 10) / 10;
     hud.toast(`PUNCH SENSITIVITY ×${TUNING.punchSensitivity.toFixed(1)}`, 'cool');
+    settings.data.sensitivity = TUNING.punchSensitivity;
+    settings.save();
   }
   if (k === 't' && game?.state === 'play' && mode !== 'tutorial' && mode !== 'campaign') {
     game.setPractice(!game.practice);
@@ -456,20 +482,26 @@ addEventListener('keydown', e => {
       else if (campUI?.overlayOpen) campUI.toggleScrolls(false);
       else if (r.state === 'practice' || r.state === 'fight') campPaused = !campPaused;
       else if (r.state === 'lost' || r.state === 'result') { /* the cards' own buttons decide */ }
-      else showModes();
+      else showMenu();
       return;
     }
   }
-  if (k === 'escape' && phase === 'play' && mode !== 'campaign') showModes();
+  if (k === 'escape' && phase === 'play' && mode !== 'campaign') showMenu();
   if (tutorial && phase === 'play' && (k === 'n' || k === 'b')) {
     if (k === 'n') tutorial.next(); else tutorial.back();
-    if (tutorial.finished) showModes('Tutorial complete — you know every move. Try the waves!');
+    if (tutorial.finished) showMenu('Tutorial complete — you know every move. Try the waves!');
     else drawLesson(tutorial);
   }
   if (k === 'r' && game?.state === 'over' && mode !== 'campaign') beginPlay();
-  if (k === 'c' && camera && phase === 'play') beginCalibration();
+  if (k === 'c' && camera && tracker === camera && phase === 'play') {
+    pendingPlay = { mode, lesson: tutorial?.index ?? 0 };
+    beginCalibration();
+  }
   if ((k === '?' || k === '/') && tracker instanceof MockTracker) $('mockHelp').classList.toggle('hidden');
 });
 
-if (params.get('input') === 'mock') startMock();
+// ?mode=… goes straight into play; otherwise the title screen, over the courtyard at dawn
+renderer.scene = 'courtyard';
+if (startMode) play(startMode);
+else menu.showTitle();
 requestAnimationFrame(loop);

@@ -423,3 +423,16 @@ under Daro's stone wall). A 20 s cooldown, shown as a blue flame icon beside the
 both fists are charged, a fist moving down fast isn't taken for a punch, and the slam uses up both
 charges. It's a later unlock: in the Tutorial (last lesson), Training and Waves, not in Chapter 1.
 On mouse and keys: hold I, let go to slam.
+
+## Name and front screens
+
+The game is called **Flowbound** (bending energy with your body; room for water and other elements
+later). It opens on a **title screen** — the logo over the temple courtyard at dawn, the view
+drifting slowly with embers rising, "Press any key" — then the **main menu**: Campaign (Continue
+once started), Tutorial, Waves, Training, Settings, navigated with the arrow keys and Enter or the
+mouse, with a panel beside it for the highlighted choice (campaign progress, the tutorial's lessons
+to jump to, the best Waves score). **Settings**: input (camera or mouse and keys), punch
+sensitivity, reset campaign progress; saved on the device. The camera is set up only when you first
+start a mode with it ("Waking the camera", then "Step into the light" to calibrate); if it can't
+start you can switch to mouse and keys or go back. `?mode=…` still skips straight into play and
+`?input=mock` plays with mouse and keys.

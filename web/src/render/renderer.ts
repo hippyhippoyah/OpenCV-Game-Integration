@@ -204,7 +204,14 @@ export class Renderer {
 
   render(g: Game | null, dt: number): void {
     this.t += dt;
-    this.cam = g ? g.cam : { x: 0, y: 0 };
+    // with no fight (the title and menu) the view drifts slowly and embers rise across the scene
+    this.cam = g ? g.cam : { x: Math.sin(this.t * 0.07) * 22, y: Math.sin(this.t * 0.043) * 3 };
+    if (!g) {
+      for (let i = nOf(45, dt); i > 0; i--) {
+        const z = rnd(0.5, 12);
+        this.emit(this.cam.x + rnd(-1, 1) * (70 + z * 25), FLOOR_Y - rnd(0, 6), z, rnd(-4, 4), rnd(-16, -6), 0, rnd(2.5, 4.5), rnd(1.2, 2.6), 'fire', 0.3);
+      }
+    }
     if (g) this.emitFromState(g, dt);
     this.updateParticles(dt);
     this.shake = Math.max(0, this.shake - dt * 2.5);
