@@ -393,7 +393,8 @@ charge tests use a shoulder-height guard.
 
 ## Breath
 
-Fire comes from your breath. A **Breath** bar (pale blue, under the green Vitality bar) is spent
+Fire comes from your breath. The **Breath** bar — orange, the body's fuel, big and centred at
+the top of the screen, the thing to watch — is spent
 by every attack: a jab 6, a charged punch 16, a palm pillar 12, a fire wall 25, a wall push 10 (the
 finisher uses the ultimate bar instead). It refills 12/s, or 30/s once you haven't attacked for
 0.8 s, so steady jabbing (two a second) never runs dry but spamming walls or a long flurry does.
@@ -404,3 +405,10 @@ An attack you haven't the breath for fizzles into a puff of smoke, with an "out 
 A fist resting in guard is drawn low and a little bigger — close to you, as your own fists look
 from your eyes — and rises to where it's aimed only as it punches out. Open hands (shield, casts)
 are drawn where they are.
+
+## A simpler HUD
+
+Vitality (green, top left), Breath (orange, top centre) and the score. The shield has no meter:
+it's up whenever you hold it and never breaks. The finisher is a plain cooldown move (7 s), shown
+as a small flame icon beside the breath bar — a ring that fills as it recharges and glows when
+ready — only once you have it.

@@ -83,11 +83,10 @@ describe('Game', () => {
       expect(g.shield.on).toBe(false);
     });
 
-    it('never runs out while testing', () => {
+    it('never runs out or breaks', () => {
       const g = quietGame();
-      run(g, 10, shieldUp());
+      run(g, 30, shieldUp());
       expect(g.shield.on).toBe(true);
-      expect(g.shield.energy).toBe(1);
     });
 
     it('blocks an attack it covers', () => {

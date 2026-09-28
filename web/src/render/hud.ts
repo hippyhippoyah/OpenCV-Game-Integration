@@ -48,14 +48,12 @@ export class Hud {
         : next.kind === 'slab' ? '↓ DUCK' : next.away < 0 ? '← MOVE LEFT' : 'MOVE RIGHT →';
       $('dodgeBar').style.transform = `scaleX(${next.closeness.toFixed(3)})`;
     }
-    $('shieldFill').style.width = `${Math.round(g.shield.energy * 100)}%`;
-    $('shieldBar').classList.toggle('broken', g.shield.broken > 0);
-    const ready = g.ultimateCharge >= 1;
-    $('ultFill').style.width = `${Math.round(g.ultimateCharge * 100)}%`;
-    $('ultBar').classList.toggle('ready', ready);
-    $('ultState').textContent = ready ? 'ready' : `${Math.ceil(g.ultimateIn)}s`;
-    $('shieldState').textContent = g.shield.broken > 0 ? 'broken' : g.shield.on ? (TUNE.shieldInfinite ? 'holding · unlimited' : 'holding')
-      : g.shield.energy < 1 ? 'recharging' : 'ready';
+    // the finisher: a small cooldown icon beside the breath bar, once you have it
+    const ult = $('ult'), ready = g.ultimateCharge >= 1;
+    ult.classList.toggle('hidden', !g.has('finisher'));
+    ult.classList.toggle('ready', ready);
+    ult.style.setProperty('--p', g.ultimateCharge.toFixed(3));
+    $('ultNum').textContent = ready ? '' : String(Math.ceil(g.ultimateIn));
   }
 
   onEvent(e: GameEvent): void {
@@ -64,7 +62,6 @@ export class Hud {
       case 'dodged': this.toast('✓ DODGED', 'good'); break;
       case 'clash': this.toast('CLASH', 'cool'); break;
       case 'playerHit': this.toast('HIT', 'bad'); break;
-      case 'shieldBroken': this.toast('SHIELD BROKEN', 'bad'); break;
       case 'killEnemy': this.toast('+100'); break;
       case 'wall': this.toast('FIRE WALL'); break;
       case 'pillar': this.toast('PILLAR'); break;

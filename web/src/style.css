@@ -21,12 +21,11 @@ canvas#world { position: fixed; inset: 0; width: 100vw; height: 100vh; display: 
   background: rgba(255,255,255,.07); border: 1px solid var(--line); overflow: hidden; }
 .bar > i { display: block; height: 100%; width: 100%; transition: width .12s;
   background: linear-gradient(90deg, #ff4b2b, #ff9a3d 70%, #ffd27a); }
-.bar.wide, .bl .bar { width: 100%; }
-.score { font-family: Cinzel, serif; font-size: 34px; font-weight: 700; line-height: 1.1;
+.bar.wide, .score { font-family: Cinzel, serif; font-size: 34px; font-weight: 700; line-height: 1.1;
   text-shadow: 0 0 18px rgba(255,140,60,.45); }
 .wave { margin-top: 10px; font-family: Cinzel, serif; font-size: 15px; color: var(--accent-2); }
 
-.pill { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center;
+.pill { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); text-align: center;
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 8px 18px;
   backdrop-filter: blur(6px); white-space: nowrap; }
 .pill b { font-family: Cinzel, serif; font-size: 15px; letter-spacing: .08em; color: var(--accent-2); }
@@ -34,12 +33,6 @@ canvas#world { position: fixed; inset: 0; width: 100vw; height: 100vh; display: 
 .pill.off b { color: var(--muted); }
 .pill.shield b { color: #ffe08a; }
 
-.bl { position: absolute; left: 16px; bottom: 16px; width: min(230px, 42vw); padding: 12px 14px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(6px); }
-#shieldBar > i { background: linear-gradient(90deg, #ff8a3d, #ffe08a); }
-#shieldBar.broken > i { background: #6b4a3a; }
-#ultBar > i { background: linear-gradient(90deg, #b8325a, #ff6a3d 60%, #ffd27a); }
-#ultBar.ready { box-shadow: 0 0 12px rgba(255,140,60,.6); }
 .state { float: right; letter-spacing: .1em; }
 
 .br { position: absolute; right: 16px; bottom: 16px; width: min(220px, 40vw); padding: 8px;
@@ -161,18 +154,28 @@ body.tutorial #pill { display: none; }
 .camp .scroll canvas { width: 100%; height: 90px; }
 .camp .scroll.locked { opacity: .35; }
 body.campaign #pill, body.campaign .tr .wave { display: none; }
-body.exploring .hud .tl, body.exploring .hud .tr, body.exploring .hud .bl, body.exploring .hud .br, body.exploring #pill, body.exploring #dodge, body.exploring #away { display: none; }
+body.exploring .hud .tl, body.exploring .hud .tr, body.exploring #breath, body.exploring .hud .br, body.exploring #pill, body.exploring #dodge, body.exploring #away { display: none; }
 button.linkish { justify-self: end; margin-top: -4px; padding: 2px 4px; background: none; border: none; box-shadow: none; color: var(--muted); font-size: 12px; text-decoration: underline; cursor: pointer; }
 button.linkish.confirm { color: #ff9a7a; }
 button kbd { margin-left: 6px; vertical-align: 1px; }
-/* vitality is health: green (amber, pulsing, when low); breath is air: pale blue */
-#hpBar { height: 12px; }
+/* vitality is health: green (red, pulsing, when low) */
+#hpBar { height: 12px; width: min(260px, 26vw); }
 #hpBar > i { background: linear-gradient(90deg, #1f9e5a, #4fd67e 70%, #a8f0b0); }
 #hpBar.low > i { background: linear-gradient(90deg, #c0392b, #f0a040); animation: lowpulse 0.9s ease-in-out infinite; }
-#breathBar > i { background: linear-gradient(90deg, #4a8fd0, #8fd0ff 70%, #e6f6ff); transition: width .08s; }
-#breathBar.low { box-shadow: 0 0 10px rgba(140,200,255,.6); animation: lowpulse 0.6s ease-in-out infinite; }
 @keyframes lowpulse { 50% { opacity: .55; } }
-/* shield and ultimate: bigger, easier to read mid-fight */
-.bl { width: min(310px, 46vw); padding: 14px 18px; }
-.bl .label { font-size: 13px; }
 .bl .bar { height: 15px; margin-top: 8px; border-radius: 8px; }
+/* breath: the body's fuel, front and centre, in fire orange */
+.breath { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); width: min(480px, calc(100vw - 600px)); min-width: 200px; text-align: center; }
+.breathRow { display: flex; align-items: center; gap: 12px; }
+.breathBar { flex: 1; height: 20px; border-radius: 12px; background: rgba(20,10,8,.55); border: 1px solid rgba(255,160,90,.45); overflow: hidden; box-shadow: 0 0 18px rgba(255,120,40,.25); }
+.breathBar > i { display: block; height: 100%; width: 100%; transition: width .08s; background: linear-gradient(90deg, #d6391c, #ff7a2a 55%, #ffc15a); box-shadow: 0 0 14px rgba(255,140,50,.8) inset; }
+.breathBar.low { animation: lowpulse 0.6s ease-in-out infinite; border-color: #ff5a3a; }
+.breath > .label { margin-top: 4px; color: #ffb27a; letter-spacing: .3em; }
+/* the finisher's cooldown: a small ring that fills, then glows when ready */
+.ult { position: relative; flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(#ff8a3d calc(var(--p, 1) * 1turn), rgba(255,255,255,.08) 0); }
+.ult::before { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: #1a0f0c; }
+.ult svg { position: relative; width: 20px; height: 20px; fill: #6a4a3a; }
+.ult b { position: absolute; font-size: 11px; color: #fff4e4; text-shadow: 0 1px 3px #000; }
+.ult.ready svg { fill: #ffb347; filter: drop-shadow(0 0 6px rgba(255,140,50,.9)); }
+.ult.ready { box-shadow: 0 0 14px rgba(255,140,60,.7); animation: lowpulse 1.6s ease-in-out infinite; }

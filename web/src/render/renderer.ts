@@ -765,7 +765,7 @@ export class Renderer {
       }
     }
     if (g.shield.on && l && r) {
-      const a = this.viewToScreen(l.pos), b = this.viewToScreen(r.pos), e = g.shield.energy, hgt = (14 + e * 10) * u;
+      const a = this.viewToScreen(l.pos), b = this.viewToScreen(r.pos), e = 1, hgt = (14 + e * 10) * u;
       const sg = c.createLinearGradient(0, a.y, 0, a.y - hgt);
       sg.addColorStop(0, `rgba(255,150,60,${0.35 * e + 0.1})`); sg.addColorStop(1, 'rgba(255,90,30,0)');
       c.fillStyle = sg;
@@ -1265,7 +1265,7 @@ export class Renderer {
     }
     const { l, r } = g.hands;
     if (g.shield.on && l && r) {
-      const a = g.handWorld(l.pos), b = g.handWorld(r.pos), e = g.shield.energy;
+      const a = g.handWorld(l.pos), b = g.handWorld(r.pos), e = 1;
       for (let i = nOf(260, dt); i > 0; i--) {
         const k = Math.random();
         this.emit(lerp(a.x, b.x, k) + rnd(-1, 1), lerp(a.y, b.y, k) + rnd(-2, 3), 0,

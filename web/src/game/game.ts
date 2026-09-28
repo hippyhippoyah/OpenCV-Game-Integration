@@ -37,7 +37,7 @@ export const TUNE = {
    */
   breathMax: 100, breathRegen: 12, breathRestRegen: 30, breathRestS: 0.8,
   breathPunch: 6, breathCharged: 16, breathPalm: 12, breathWall: 25, breathWallPush: 10,
-  ultimateCooldownS: 12, bladeSpeed: 16, bladeWidthPerDepth: 30, bladeMaxR: 18,
+  ultimateCooldownS: 7, bladeSpeed: 16, bladeWidthPerDepth: 30, bladeMaxR: 18,
   /**
    * How far below the hands the blade sweeps, as a fraction of the way to the floor. At hand height
    * the disc would be almost at eye level and look like a thin line; lower, you see it as a layer.
@@ -89,8 +89,7 @@ export const TUNE = {
   oneTwoWindowS: 1.2, oneTwoGapS: 0.8, oneTwoWidth: 2, oneTwoDamage: 3,
   volleyWindowS: 0.6, volleyWidth: 3, volleyDamage: 3,
   /** Testing: the shield never drains or breaks. */
-  shieldInfinite: true,
-  shieldDrainPerS: 0.33, shieldRegenPerS: 0.22, shieldBlockCost: 0.18, shieldBrokenS: 1.2, shieldReach: 8,
+  shieldReach: 8,
   enemyHp: 2, enemyProjRadius: 4.2, windupS: 1, waveBreakS: 2.2,
 };
 
@@ -143,7 +142,7 @@ export type GameEvent =
   | { type: 'combo'; name: ComboName; x: number; y: number; z: number; side?: Side }
   /** A move that didn't go off, and what it needs (e.g. the wall push needs a wall). */
   | { type: 'hint'; text: string }
-  | { type: 'shieldBroken' | 'gameOver' }
+  | { type: 'gameOver' }
   | { type: 'wave'; wave: number };
 
 export type Rand = () => number;
@@ -203,7 +202,7 @@ export class Game {
   wave = 0;
   cam: Vec2 = { x: 0, y: 0 };
   hands: Intent['hands'] = { l: null, r: null };
-  shield = { on: false, energy: 1, broken: 0 };
+  shield = { on: false };
   inv = 0;
   enemies: Enemy[] = [];
   projs: Proj[] = [];
@@ -352,7 +351,7 @@ export class Game {
     this.ultimateIn = Math.max(0, this.ultimateIn - dt);
     const rested = this.time - this.breathSpentT >= TUNE.breathRestS;
     this.breath = Math.min(TUNE.breathMax, this.breath + (rested ? TUNE.breathRestRegen : TUNE.breathRegen) * dt);
-    this.updateShield(dt, intent.shield && this.has('shield'));
+    this.updateShield(intent.shield && this.has('shield'));
     this.gather = this.has('finisher') ? intent.gather ?? 0 : 0;
     if (this.state !== 'play') return;
     if (this.has('punch')) for (const p of intent.punches) this.punch(this.has('charge') ? p : { ...p, charged: false });
@@ -401,20 +400,9 @@ export class Game {
     return this.shield.on && !!l && !!rh && distToSeg(v, l.pos, rh.pos) < TUNE.shieldReach + r;
   }
 
-  private updateShield(dt: number, wanted: boolean): void {
-    const sh = this.shield;
-    sh.broken = Math.max(0, sh.broken - dt);
-    sh.on = wanted && !!this.hands.l && !!this.hands.r && sh.energy > 0 && sh.broken <= 0;
-    if (!sh.on) {
-      sh.energy = Math.min(1, sh.energy + dt * TUNE.shieldRegenPerS);
-    } else if (!TUNE.shieldInfinite) {
-      sh.energy = Math.max(0, sh.energy - dt * TUNE.shieldDrainPerS);
-      if (sh.energy <= 0) {
-        sh.on = false;
-        sh.broken = TUNE.shieldBrokenS;
-        this.events.push({ type: 'shieldBroken' });
-      }
-    }
+  /** The shield is up whenever both open hands are held up for it: no meter, it never breaks. */
+  private updateShield(wanted: boolean): void {
+    this.shield.on = wanted && !!this.hands.l && !!this.hands.r;
   }
 
   /** Fire leaves the opened hand toward where it points: its screen position, bent further along shoulder → hand. */
@@ -958,7 +946,6 @@ export class Game {
     }
     if (this.shieldCovers(v, q.r)) {
       this.lastShieldBlockT = this.time;
-      this.shield.energy = Math.max(0, this.shield.energy - TUNE.shieldBlockCost);
       this.score += 15;
       this.emit('blocked', q.x, q.y, 0);
       return true;
