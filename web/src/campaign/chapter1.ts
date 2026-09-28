@@ -111,5 +111,5 @@ export const STOPS: StopDef[] = [
 /** After Daro falls: the Final Flame scroll and a first try of the finisher. */
 export const EPILOGUE = {
   lessonId: 'ultimate',
-  ren: ['He falls back — but Kuzan will come himself now.', 'Take my last scroll. Jab, jab… then gather the fire, and let it fly.'],
+  ren: ['He falls back — but Kuzan will come himself now.', 'Take my last scroll. Bring your hands together and hold the fire between them… then let it fly.'],
 };

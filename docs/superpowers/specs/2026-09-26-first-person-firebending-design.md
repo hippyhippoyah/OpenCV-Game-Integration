@@ -359,7 +359,7 @@ Combos are sequences of moves already detected; the game (`Game`) recognises the
 | Pillar volley | palm push with one hand, then the other within 0.6 s | the two merge into one wave 3× wide, 3 damage |
 | Wall breaker | both palms pushed while your fire wall stands | the wall rolls forward as a firestorm |
 | Shield burst | both palms pushed after holding the shield ≥ 1 s | a short blast (to depth 6) that clears every attack coming at you |
-| Finisher | ultimate bar full, 2 punches within 2 s, then gather & fling | the ultimate's blade of fire |
+| Finisher | ultimate bar full; open hands held together (≤ 0.65 shoulder widths apart, as if about to catch a ball) for 0.4 s until they catch fire, then spread ≥ 24 units wider within 1.2 s (slow is fine) | the ultimate's blade of fire. The shield needs the open hands ≥ 0.75 shoulder widths apart (and not just after a cast), so a gather never raises it |
 
 The two-palm push alone no longer does anything (it was overpowered): it's the Wall breaker or
 Shield burst, and says "raise a fire wall first" otherwise; the ultimate without the jabs says how.

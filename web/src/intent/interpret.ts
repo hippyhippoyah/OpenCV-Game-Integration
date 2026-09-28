@@ -73,8 +73,9 @@ export interface Palm {
 export type CastKind = 'wall' | 'ultimate' | 'push';
 
 /**
- * A two-hand move: fire wall (open hands sweep up), ultimate (open hands start together and fly
- * apart) or wall push (both open palms shoved toward the camera: a fire wall rolls forward).
+ * A two-hand move: fire wall (open hands sweep up), ultimate (open hands held together, as if
+ * about to catch a ball, until they catch fire, then spread wide) or wall push (both open palms
+ * shoved toward the camera: a fire wall rolls forward).
  */
 export interface Cast {
   kind: CastKind;
@@ -93,6 +94,8 @@ export interface Intent {
   palms: Palm[];
   /** Both hands held open. */
   shield: boolean;
+  /** Finisher: 0 → 1 while open hands are held together; 1 = gathered, spread them to cast. */
+  gather?: number;
   /** Forearms crossed in front of the chest. */
   xBlock: boolean;
   casts: Cast[];
@@ -214,21 +217,25 @@ export const TUNING = {
   punchWindowS: 0.35, punchSpeed: 60, punchGrowth: 1.12, punchExtendRise: 0.3,
   /** Wait this long before firing, so opening both hands for a shield doesn't also punch. */
   punchConfirmS: 0.08,
-  /** Shield: both hands open and held (nearly) still for shieldHoldS; then it stays up while both are open. */
-  shieldHoldS: 0.15, shieldMaxSpeed: 35,
+  /**
+   * Shield: both hands open, at least shieldMinGap view units apart (hands held close together are
+   * the finisher's gather, not a shield), and held (nearly) still for shieldHoldS; then it stays up
+   * while both are open.
+   */
+  shieldHoldS: 0.15, shieldMaxSpeed: 35, shieldMinGap: 30,
   /**
    * Two-hand casts, judged on movement since both hands opened (at most castWindowS ago):
-   * rising by wallRise view units = fire wall; spreading apart by ultimateSpread = ultimate.
+   * rising by wallRise view units = fire wall. The wall push is checked first: both palms' pushes
+   * reach twoPushShare of a single push's threshold at sensitivity 1.
    */
-  castWindowS: 0.4, wallRise: 14, ultimateSpread: 24, castRefractoryS: 0.6,
+  castWindowS: 0.4, wallRise: 14, castRefractoryS: 0.6, twoPushShare: 0.8,
   /**
-   * Ultimate vs wall push: pushing both palms at the camera also makes them look further apart
-   * (they get closer to it), so the ultimate is judged in 3D where known — the hands start at most
-   * ultimateStartM apart (gathered together) and spread ultimateSpreadM — or on screen without 3D
-   * data, starting at most ultimateStartSw shoulder widths apart. The push is checked first: both
-   * palms' pushes reach twoPushShare of a single push's threshold at sensitivity 1.
+   * Finisher (the ultimate): open hands held within gatherGap view units of each other (a ball's
+   * width; shoulder width is handScaleX) for gatherHoldS catch fire — gathered. Then spreading them
+   * ultimateSpread further apart than they were, within spreadWindowS of leaving the gather, casts.
+   * Slow is fine: it's the pose, not the speed, that makes it.
    */
-  ultimateStartM: 0.4, ultimateSpreadM: 0.3, ultimateStartSw: 0.9, twoPushShare: 0.8,
+  gatherGap: 26, gatherHoldS: 0.4, ultimateSpread: 24, spreadWindowS: 1.2,
   /**
    * Palm push (fist-punch mode only; the open-hand punch style already uses opening hands): one hand
    * open, shoved toward the camera — it may open on the way. The other hand is a fist, or open but
@@ -306,6 +313,12 @@ export interface InterpretState {
   /** When both open hands have been still since, working toward the shield. */
   stillSince: number | null;
   shieldOn: boolean;
+  /** Finisher: since when the open hands have been held together; gathered once held long enough. */
+  gatherSince: number | null;
+  gathered: boolean;
+  /** How far apart the hands were while gathered, and when they last were (the spread counts from there). */
+  gatherGapNow: number;
+  gatherLastT: number;
   castReadyAt: number;
   /** When the last two-hand cast went off (movement before it doesn't count toward the next). */
   lastCastT: number;
@@ -322,6 +335,7 @@ export interface InterpretState {
 
 export const initialState = (): InterpretState => ({
   head: null, l: null, r: null, lastT: null, pending: [], palmPending: [], bothOpenAt: null, stillSince: null, shieldOn: false,
+  gatherSince: null, gathered: false, gatherGapNow: 0, gatherLastT: -Infinity,
   castReadyAt: -Infinity, lastCastT: -Infinity, crossedSince: null,
   shoulderSpan: null, bodyDist: new OneEuro(TUNING.bodyDepthMinCutoff, TUNING.bodyDepthBeta), noiseCoef: TUNING.noiseCoefStart,
   headSpeed: 0, headSpeeds: [],
@@ -353,6 +367,8 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     s.palmPending = [];
     s.bothOpenAt = s.stillSince = null;
     s.shieldOn = false;
+    s.gatherSince = null;
+    s.gathered = false;
     s.crossedSince = null;
     return {
       present: false, head: s.head ? { ...s.head } : { x: 0, y: 0 }, hands: { l: null, r: null },
@@ -553,35 +569,61 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     return false;
   });
 
-  // Two open hands: a quick sweep up is a fire wall, a quick spread is the ultimate, held still is the shield.
+  // Two open hands: held together they gather the finisher, which spreading casts; a quick sweep
+  // up is a fire wall, a shove both palms forward a wall push; held still (apart) is the shield.
   const casts: Cast[] = [];
   const l = s.l, r = s.r;
   const bothOpen = !xBlock && !!l && !!r && l.inView && r.inView && l.open && r.open;
   if (!bothOpen) {
     s.bothOpenAt = s.stillSince = null;
     s.shieldOn = false;
+    s.gatherSince = null;
+    s.gathered = false;
   } else {
     if (s.bothOpenAt === null) s.bothOpenAt = f.t;
-    const kind = f.t >= s.castReadyAt ? twoHandGesture(l, r, Math.max(s.bothOpenAt, f.t - TUNING.castWindowS), s.lastCastT) : null;
-    if (kind) {
-      casts.push({ kind, at: { x: (l.pos.x + r.pos.x) / 2, y: (l.pos.y + r.pos.y) / 2 } });
+    const gap = dist(l.pos, r.pos), mid = { x: (l.pos.x + r.pos.x) / 2, y: (l.pos.y + r.pos.y) / 2 };
+    const together = gap <= TUNING.gatherGap;
+    if (together) {
+      s.gatherSince ??= f.t;
+      if (f.t - s.gatherSince >= TUNING.gatherHoldS) s.gathered = true;
+      if (s.gathered) { s.gatherGapNow = gap; s.gatherLastT = f.t; }
+    } else {
+      s.gatherSince = null;
+      if (s.gathered && f.t - s.gatherLastT > TUNING.spreadWindowS) s.gathered = false; // spread too slowly: let go
+    }
+    const cast = (kind: CastKind, at: Vec2) => {
+      casts.push({ kind, at });
       if (kind === 'push') s.palmPending = []; // it was both palms, not one
       s.castReadyAt = f.t + TUNING.castRefractoryS;
       s.lastCastT = f.t;
       s.shieldOn = false;
       s.stillSince = null;
-    } else if (!s.shieldOn) {
-      const edgeOn = (t: Track) => !TUNING.shieldNeedsEdgeOnPalms || t.facing < TUNING.edgeOnBelow;
-      const still = (t: Track) => Math.hypot(t.vel.x, t.vel.y) < TUNING.shieldMaxSpeed;
-      if (!still(l) || !still(r) || !edgeOn(l) || !edgeOn(r)) s.stillSince = null;
-      else if (s.stillSince === null) s.stillSince = f.t;
-      else if (f.t - s.stillSince >= TUNING.shieldHoldS) s.shieldOn = true;
+      s.gathered = false;
+      s.gatherSince = null;
+    };
+    if (s.gathered) {
+      // gathered: the only move now is the spread (no wall, push or shield to steal it)
+      s.shieldOn = false;
+      s.stillSince = null;
+      if (!together && gap - s.gatherGapNow >= TUNING.ultimateSpread && f.t >= s.castReadyAt) cast('ultimate', mid);
+    } else {
+      const kind = f.t >= s.castReadyAt ? twoHandGesture(l, r, Math.max(s.bothOpenAt, f.t - TUNING.castWindowS), s.lastCastT) : null;
+      if (kind) cast(kind, mid);
+      else if (!s.shieldOn) {
+        const edgeOn = (t: Track) => !TUNING.shieldNeedsEdgeOnPalms || t.facing < TUNING.edgeOnBelow;
+        const still = (t: Track) => Math.hypot(t.vel.x, t.vel.y) < TUNING.shieldMaxSpeed;
+        // (not straight after a cast either: hands left spread wide after a finisher aren't a shield)
+        if (!still(l) || !still(r) || !edgeOn(l) || !edgeOn(r) || gap < TUNING.shieldMinGap || f.t < s.castReadyAt) s.stillSince = null;
+        else if (s.stillSince === null) s.stillSince = f.t;
+        else if (f.t - s.stillSince >= TUNING.shieldHoldS) s.shieldOn = true;
+      } else if (gap < TUNING.gatherGap) s.shieldOn = false; // hands brought together: that's a gather now
     }
   }
+  const gather = s.gathered ? 1 : s.gatherSince !== null ? Math.min(1, (f.t - s.gatherSince) / TUNING.gatherHoldS) : 0;
   const shield = s.shieldOn;
 
   return {
-    present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, palms, shield, xBlock, casts,
+    present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, palms, shield, gather, xBlock, casts,
     face: f.face, bodyTilt: Math.atan2(f.shoulderR.y - f.shoulderL.y, f.shoulderR.x - f.shoulderL.x),
   };
 }
@@ -638,30 +680,16 @@ export function pushThreshold(noise: number): number {
   return Math.min(TUNING.palmPushCap, Math.max(TUNING.palmPushRise, TUNING.palmNoise * noise)) / TUNING.punchSensitivity;
 }
 
-/**
- * How the two open hands moved: both shoved toward the camera → wall push (checked first);
- * mostly up since `from` → wall; gathered together, then flung apart → ultimate.
- */
+/** How the two open hands moved: both shoved toward the camera → wall push (checked first); mostly up since `from` → wall. */
 function twoHandGesture(l: Track, r: Track, from: number, lastCastT: number): CastKind | null {
   // palm pushes may start just before both hands read open, so they look back their own window
-  // (not scaled by punch sensitivity: stealing a wall or the ultimate costs more than a stray punch)
+  // (not scaled by punch sensitivity: stealing a wall costs more than a stray punch)
   const need = TUNING.twoPushShare * TUNING.punchSensitivity * pushThreshold(Math.max(l.reachNoise ?? 0, r.reachNoise ?? 0));
   if (Math.min(palmPushRise(l.hist, TUNING.palmPushWindowS, lastCastT), palmPushRise(r.hist, TUNING.palmPushWindowS, lastCastT)) >= need) return 'push';
   const l0 = l.hist.find(h => h.t >= from), r0 = r.hist.find(h => h.t >= from);
   if (!l0 || !r0) return null;
   const rise = Math.min(l0.y - l.pos.y, r0.y - r.pos.y);
-  const screenSpread = Math.hypot(l.pos.x - r.pos.x, l.pos.y - r.pos.y) - Math.hypot(l0.x - r0.x, l0.y - r0.y);
-  let ultimate: boolean;
-  if (l0.bx !== null && r0.bx !== null && l.body3 && r.body3) {
-    // in metres, unaffected by how close the hands are to the camera
-    const start = Math.abs(r0.bx - l0.bx);
-    ultimate = start <= TUNING.ultimateStartM && Math.abs(r.body3.x - l.body3.x) - start >= TUNING.ultimateSpreadM;
-  } else {
-    ultimate = Math.abs(r0.x - l0.x) <= TUNING.ultimateStartSw * TUNING.handScaleX && screenSpread >= TUNING.ultimateSpread;
-  }
-  if (rise >= TUNING.wallRise && rise > screenSpread) return 'wall';
-  if (ultimate && screenSpread > rise) return 'ultimate';
-  return null;
+  return rise >= TUNING.wallRise ? 'wall' : null;
 }
 
 /**

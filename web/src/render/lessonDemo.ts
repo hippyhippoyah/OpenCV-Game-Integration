@@ -162,18 +162,14 @@ export class LessonDemo {
         break;
       }
       case 'ultimate': {
-        // jab, jab, then gather both open hands and fling them apart: the blade of fire
-        const u = t % 3.4, a = hit(u, 0, 0.35), b = hit(u, 0.35, 0.35);
-        if (u < 0.8) {
-          this.fist(cx - 34 + a * 20, H * 0.62 - a * 22, 1 + a * 0.45);
-          this.fist(cx + 34 - b * 20, H * 0.62 - b * 22, 1 + b * 0.45);
-        } else {
-          const d = 14 + 22 * (1 - ramp(u, 0.9, 0.5)) + 44 * ramp(u, 1.9, 0.25);
-          this.palm(cx - d, H * 0.58, 0.9);
-          this.palm(cx + d, H * 0.58, 0.9, true);
-          if (u > 2.0) this.disc(cx, H * 0.72, 30 + 40 * ramp(u, 2.0, 0.6));
-          if (u > 1.9) { this.arrow(cx - 14, H * 0.3, cx - 50, H * 0.3, 0.8); this.arrow(cx + 14, H * 0.3, cx + 50, H * 0.3, 0.8); }
-        }
+        // open hands brought together and held until they catch fire, then spread: the blade of fire
+        const u = t % 3.4, d = 14 + 22 * (1 - ramp(u, 0.1, 0.4)) + 44 * ramp(u, 1.9, 0.25);
+        const fire = u > 0.6 && u < 2.0 ? ramp(u, 0.6, 1.1) : 0;
+        if (fire > 0) this.disc(cx, H * 0.58, 8 + 10 * fire);
+        this.palm(cx - d, H * 0.58, 0.9);
+        this.palm(cx + d, H * 0.58, 0.9, true);
+        if (u > 2.0) this.disc(cx, H * 0.72, 30 + 40 * ramp(u, 2.0, 0.6));
+        if (u > 1.9) { this.arrow(cx - 14, H * 0.3, cx - 50, H * 0.3, 0.8); this.arrow(cx + 14, H * 0.3, cx + 50, H * 0.3, 0.8); }
         break;
       }
     }

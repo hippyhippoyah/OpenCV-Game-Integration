@@ -263,19 +263,24 @@ describe('Game', () => {
       expect(combos(g)).toEqual(['volley']);
     });
 
-    it('the ultimate is a finisher: without two jabs first it does nothing and says how', () => {
+    it('the finisher needs no jabs, only a full ultimate bar; recharging, it says how long', () => {
       const g = quietGame();
-      g.step(1 / 60, intent({ casts: [{ kind: 'ultimate', at: { x: 0, y: 10 } }] }));
-      expect(g.blades).toHaveLength(0);
-      expect(g.ultimateCharge).toBe(1);
-      expect(g.drainEvents()).toContainEqual({ type: 'hint', text: expect.stringContaining('JAB, JAB') });
-      g.step(1 / 60, jab('l'));
-      run(g, 0.3, intent());
-      g.step(1 / 60, jab('r'));
-      run(g, 0.5, intent());
       g.step(1 / 60, intent({ casts: [{ kind: 'ultimate', at: { x: 0, y: 10 } }] }));
       expect(g.blades).toHaveLength(1);
       expect(combos(g)).toContain('finisher');
+      run(g, 3, intent());
+      g.step(1 / 60, intent({ casts: [{ kind: 'ultimate', at: { x: 0, y: 10 } }] }));
+      expect(g.blades).toHaveLength(0);
+      expect(g.drainEvents()).toContainEqual({ type: 'hint', text: expect.stringContaining('RECHARGING') });
+    });
+
+    it('the gather shows only once the finisher is learned', () => {
+      const g = quietGame();
+      g.step(1 / 60, intent({ gather: 0.5 }));
+      expect(g.gather).toBe(0.5);
+      g.allowed = new Set(['punch']);
+      g.step(1 / 60, intent({ gather: 0.5 }));
+      expect(g.gather).toBe(0);
     });
   });
 
@@ -457,7 +462,6 @@ describe('Game', () => {
   });
 
   describe('ultimate', () => {
-    // a finisher: two jabs, then gather & fling
     const ultimate = intent({ punches: [punch('l', -10, 5), punch('r', 10, 5)], casts: [{ kind: 'ultimate', at: { x: 0, y: 10 } }] });
     const enemyAt = (id: number, z: number, x = 0) =>
       ({ id, x, y: 33, z, hp: 2, t: 0, appear: 1, dying: 0, flash: 0, cd: 99, winding: false, wind: 0, side: 1 as const, phase: 0 });

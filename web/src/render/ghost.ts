@@ -19,7 +19,8 @@ const KEYS: Record<string, Key[]> = {
   palm: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.2, ...G.l, false, 1, ...G.r, true, 1], [0.45, ...G.l, false, 1, 6, 10, true, 1.6], [0.7, ...G.l, false, 1, ...G.r, true, 1], [0.85, ...G.l, false, 1, ...G.r, false, 1], [1, ...G.l, false, 1, ...G.r, false, 1]],
   charge: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.2, ...G.l, false, 1, 20, 58, false, 0.9], [0.6, ...G.l, false, 1, 20, 58, false, 0.9], [0.75, ...G.l, false, 1, 4, 8, false, 1.7], [0.9, ...G.l, false, 1, ...G.r, false, 1], [1, ...G.l, false, 1, ...G.r, false, 1]],
   wall: [[0, -14, 44, true, 1, 14, 44, true, 1], [0.35, -14, 4, true, 1.1, 14, 4, true, 1.1], [0.7, -14, 4, true, 1.1, 14, 4, true, 1.1], [1, -14, 44, true, 1, 14, 44, true, 1]],
-  ultimate: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.1, ...G.l, false, 1, 4, 8, false, 1.6], [0.2, -4, 8, false, 1.6, ...G.r, false, 1], [0.35, -4, 16, true, 1, 4, 16, true, 1], [0.55, -4, 16, true, 1, 4, 16, true, 1], [0.7, -36, 16, true, 1.1, 36, 16, true, 1.1], [0.85, -36, 16, true, 1.1, 36, 16, true, 1.1], [1, ...G.l, false, 1, ...G.r, false, 1]],
+  // hands together as if to catch a ball, held (they catch fire), then spread wide
+  ultimate: [[0, ...G.l, false, 1, ...G.r, false, 1], [0.15, -8, 18, true, 1, 8, 18, true, 1], [0.55, -8, 18, true, 1.05, 8, 18, true, 1.05], [0.7, -40, 16, true, 1.1, 40, 16, true, 1.1], [0.88, -40, 16, true, 1.1, 40, 16, true, 1.1], [1, ...G.l, false, 1, ...G.r, false, 1]],
 };
 
 const ease = (k: number) => k * k * (3 - 2 * k);

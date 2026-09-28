@@ -742,6 +742,24 @@ export class Renderer {
       c.fillRect(C.x - r, C.y - r, r * 2, r * 2);
     }
     const { l, r } = g.hands;
+    // finisher gather: a ball of fire growing between the hands; gathered (and charged), it blazes
+    if (g.gather > 0 && l?.inView && r?.inView) {
+      const a = this.viewToScreen(l.pos), b = this.viewToScreen(r.pos), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const ready = g.ultimateIn <= 0, full = g.gather >= 1, pulse = full ? 0.85 + 0.15 * Math.sin(this.t * 12) : 1;
+      const rr = (6 + 12 * g.gather) * u * pulse;
+      const glow = c.createRadialGradient(m.x, m.y, 0, m.x, m.y, rr * 2.2);
+      glow.addColorStop(0, ready ? `rgba(255,200,110,${0.25 + 0.45 * g.gather})` : 'rgba(170,150,140,.25)');
+      glow.addColorStop(1, 'rgba(255,120,40,0)');
+      c.fillStyle = glow;
+      c.fillRect(m.x - rr * 2.2, m.y - rr * 2.2, rr * 4.4, rr * 4.4);
+      if (ready) c.drawImage(SPR.fire[0], m.x - rr * 0.6, m.y - rr * 0.6, rr * 1.2, rr * 1.2);
+      if (full && ready) {
+        // a ring closing in: spread now
+        c.strokeStyle = `rgba(255,220,150,${0.5 + 0.3 * Math.sin(this.t * 8)})`;
+        c.lineWidth = 3;
+        c.beginPath(); c.arc(m.x, m.y, rr * 1.6, 0, 7); c.stroke();
+      }
+    }
     if (g.shield.on && l && r) {
       const a = this.viewToScreen(l.pos), b = this.viewToScreen(r.pos), e = g.shield.energy, hgt = (14 + e * 10) * u;
       const sg = c.createLinearGradient(0, a.y, 0, a.y - hgt);
@@ -1165,6 +1183,18 @@ export class Renderer {
         const a = Math.random() * 6.283, d = Math.sqrt(Math.random()) * 1.8;
         this.emit(w.x + Math.cos(a) * d, w.y - 2 + Math.sin(a) * d, 0, rnd(-5, 5) + vx0, rnd(-18, -6) + vy0, 0, rnd(0.3, 0.55), rnd(2.2, 3.6));
       }
+    }
+    // finisher gather: fire swirls into the space between your hands, then both hands blaze
+    const { l: gl, r: gr } = g.hands;
+    if (g.gather > 0 && gl?.inView && gr?.inView) {
+      const ready = g.ultimateIn <= 0, m = g.handWorld({ x: (gl.pos.x + gr.pos.x) / 2, y: (gl.pos.y + gr.pos.y) / 2 });
+      const rate = (ready ? 90 : 25) + (g.gather >= 1 && ready ? 220 : 0);
+      for (let i = nOf(rate * g.gather, dt); i > 0; i--) {
+        const a = Math.random() * 6.283, d = rnd(3, 7);
+        // sucked in toward the middle
+        this.emit(m.x + Math.cos(a) * d, m.y + Math.sin(a) * d, 0, -Math.cos(a) * d * 3, -Math.sin(a) * d * 3 - 6, 0, rnd(0.2, 0.4), rnd(2, 3.4), ready ? 'fire' : 'earth', 0.3);
+      }
+      if (g.gather >= 1 && ready) this.flare = { l: Math.max(this.flare.l, FLARE_S * 0.6), r: Math.max(this.flare.r, FLARE_S * 0.6) };
     }
     // sparks flung off the ultimate's spinning rim
     for (const b of g.blades) {

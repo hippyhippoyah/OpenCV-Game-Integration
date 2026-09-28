@@ -193,13 +193,42 @@ describe('interpret', () => {
       expect(Math.abs(wall.at.x)).toBeLessThan(2);
     });
 
-    it('open hands spreading apart quickly make the ultimate', () => {
-      expect(kinds(cast(spread, 6))).toEqual(['ultimate']);
+    /** Open hands held together (a ball's width apart) for `hold` frames, then spread wide over `frames`. */
+    function gatherThenSpread(hold: number, frames: number): Intent[] {
+      const together: [HandSpec, HandSpec] = [{ x: -0.2, y: -0.3, open: OPEN }, { x: 0.2, y: -0.3, open: OPEN }];
+      return play([
+        ...repeat(8, () => [GUARD_L, GUARD_R]),
+        ...repeat(hold, () => together),
+        ...repeat(frames, i => spread((i + 1) / frames).map(h => ({ ...h, x: h.x * 1.4, open: OPEN }))),
+        ...repeat(10, () => spread(1).map(h => ({ ...h, x: h.x * 1.4, open: OPEN }))),
+      ]);
+    }
+
+    it('finisher: open hands held together catch fire (gather), then spreading them casts it', () => {
+      const out = gatherThenSpread(18, 10);
+      expect(kinds(out)).toEqual(['ultimate']);
+      expect(out[8 + 17].gather).toBe(1);
+      expect(out[8 + 5].gather).toBeGreaterThan(0);
+      expect(out[8 + 5].gather).toBeLessThan(1);
+      expect(out.at(-1)!.gather).toBe(0); // spent
+    });
+
+    it('finisher: a slow spread still counts once gathered', () => {
+      expect(kinds(gatherThenSpread(18, 25))).toEqual(['ultimate']);
+    });
+
+    it('finisher: spreading without holding the hands together first casts nothing', () => {
+      expect(kinds(cast(spread, 6))).toEqual([]);
+      expect(kinds(gatherThenSpread(3, 6))).toEqual([]);
+    });
+
+    it('hands held together never raise the shield', () => {
+      const out = gatherThenSpread(30, 0).slice(0, 8 + 30);
+      expect(out.some(o => o.shield)).toBe(false);
     });
 
     it('slow movements cast nothing', () => {
       expect(kinds(cast(sweepUp, 60))).toEqual([]);
-      expect(kinds(cast(spread, 60))).toEqual([]);
     });
 
     it('casting neither punches nor raises the shield mid-gesture', () => {

@@ -69,7 +69,7 @@ it, and its animation (the lesson card's), so you can check any move you've lear
 | Rising Pillar | Palm push | Stop 3 |
 | Held Breath | Charged punch (fist at the hip or at head level) | Stop 4 |
 | Burning Wall | Fire wall | Stop 5 |
-| Final Flame | Finisher (jab, jab, gather & fling) | Boss reward |
+| Final Flame | Finisher (open hands held together until they catch fire, then spread) | Boss reward |
 | — | One-two push, pillar volley, wall breaker | Later chapters |
 
 Not in the campaign at all: the X block and the shield counter.

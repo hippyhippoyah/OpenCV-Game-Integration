@@ -27,7 +27,8 @@ Run `npm run dev`, play with the camera in Chrome. Note the result of each item.
 - [ ] Three quick punches make a flurry; jab-jab-push makes a wide pillar; push-push (one hand each) makes a pillar volley.
 - [ ] Raising a wall then pushing both palms breaks it forward; pushing both palms otherwise does nothing (with a hint).
 - [ ] Blocking with the shield then punching throws a counter that homes in.
-- [ ] Jab, jab, gather & fling fires the finisher when the ultimate bar is full; the fling alone says how.
+- [ ] Finisher: open hands held together (like catching a football) catch fire in about half a second, then spreading them wide casts it — reliably, even slowly. While recharging it says how long.
+- [ ] Hands held close together never raise the shield; the shield still comes up with hands about shoulder width apart.
 - [ ] Enemies stay near the middle of the screen, where they're easy to aim at.
 - [ ] A high sweep: a small duck gets under it.
 - [ ] The view's lean and tilt feel big enough to play with, but not nauseating.

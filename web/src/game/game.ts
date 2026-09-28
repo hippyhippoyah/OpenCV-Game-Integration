@@ -73,15 +73,14 @@ export const TUNE = {
    *   a wave volleyWidth× a pillar's width doing volleyDamage.
    * - Wall breaker: pushing both palms while your own fire wall stands sends it rolling forward.
    *   (Pushing both palms does nothing otherwise.)
-   * - Finisher: the ultimate (gather & fling) needs the ultimate bar full and finisherPunches
-   *   punches within finisherWindowS before it.
+   * - Finisher: the ultimate — open hands held together until they catch fire, then spread — when
+   *   the ultimate bar is full.
    */
   chargedSpeed: 1.3, chargedRadius: 1.6, chargedDamage: 2,
   flurryCount: 3, flurryWindowS: 1, flurryRadius: 1.8, flurryDamage: 2, flurrySplash: 25,
   counterWindowS: 0.6, counterSpeed: 1.5, counterDamage: 2,
   oneTwoWindowS: 1.2, oneTwoGapS: 0.8, oneTwoWidth: 2, oneTwoDamage: 3,
   volleyWindowS: 0.6, volleyWidth: 3, volleyDamage: 3,
-  finisherPunches: 2, finisherWindowS: 2,
   /** Testing: the shield never drains or breaks. */
   shieldInfinite: true,
   shieldDrainPerS: 0.33, shieldRegenPerS: 0.22, shieldBlockCost: 0.18, shieldBrokenS: 1.2, shieldReach: 8,
@@ -211,6 +210,8 @@ export class Game {
   shoulders: Record<Side, Vec2> = { l: { x: -20, y: 20 }, r: { x: 20, y: 20 } };
   /** Seconds until the ultimate is ready again. */
   ultimateIn = 0;
+  /** Finisher: how gathered your open hands are, 0 → 1 (1 = spread them to cast). */
+  gather = 0;
   /** Tests turn this off to control enemies by hand. */
   spawning = true;
   /** Dummies instead of attacking spirits. */
@@ -339,6 +340,7 @@ export class Game {
     this.palmCool = { l: Math.max(0, this.palmCool.l - dt), r: Math.max(0, this.palmCool.r - dt) };
     this.ultimateIn = Math.max(0, this.ultimateIn - dt);
     this.updateShield(dt, intent.shield && this.has('shield'));
+    this.gather = this.has('finisher') ? intent.gather ?? 0 : 0;
     if (this.state !== 'play') return;
     if (this.has('punch')) for (const p of intent.punches) this.punch(this.has('charge') ? p : { ...p, charged: false });
     for (const c of intent.casts) {
@@ -435,7 +437,7 @@ export class Game {
     if (this.punchCool[p.hand] > 0) return;
     this.punchCool[p.hand] = TUNE.punchCooldownS;
     const now = this.time;
-    this.recentPunches = [...this.recentPunches.filter(x => now - x.t <= Math.max(TUNE.flurryWindowS, TUNE.oneTwoWindowS, TUNE.finisherWindowS)), { t: now, hand: p.hand }];
+    this.recentPunches = [...this.recentPunches.filter(x => now - x.t <= Math.max(TUNE.flurryWindowS, TUNE.oneTwoWindowS)), { t: now, hand: p.hand }];
     const start = this.handWorld(p.at);
     let { point: target, depth } = this.aimFor(p.at, p.shoulder, p.dir);
     // what kind of shot: a charged fist, the end of a flurry, or a counter just after blocking
@@ -659,13 +661,10 @@ export class Game {
       this.events.push({ type: 'hint', text: 'WALL PUSH: RAISE A FIRE WALL FIRST' });
       return;
     }
-    if (this.ultimateIn > 0) return;
-    // the ultimate is a finisher: jab, jab, then gather & fling
-    if (this.recentPunches.filter(x => this.time - x.t <= TUNE.finisherWindowS).length < TUNE.finisherPunches) {
-      this.events.push({ type: 'hint', text: 'FINISHER: JAB, JAB, THEN GATHER & FLING' });
+    if (this.ultimateIn > 0) {
+      this.events.push({ type: 'hint', text: `FINISHER RECHARGING — ${Math.ceil(this.ultimateIn)}s` });
       return;
     }
-    this.recentPunches = [];
     this.ultimateIn = TUNE.ultimateCooldownS;
     const at = this.handWorld(c.at);
     const y = at.y + (FLOOR_Y - at.y) * TUNE.bladeDrop;

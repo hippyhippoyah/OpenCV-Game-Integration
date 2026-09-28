@@ -9,9 +9,9 @@ export const MOCK_CALIBRATION: Calibration = { head: { x: 0.5, y: 0.35 }, sw: 0.
 const MID = { x: 0.5, y: 0.5 }, SW = 0.2, HAND_SIZE = 0.08;
 /** Fists up at chest height, in view units. */
 const GUARD: Record<Side, Vec2> = { l: { x: -12, y: 22 }, r: { x: 12, y: 22 } };
-const EXTEND_S = 0.12, OPEN_HOLD_S = 0.25, SHIELD_HALF_WIDTH = 16;
+const EXTEND_S = 0.12, OPEN_HOLD_S = 0.25, SHIELD_HALF_WIDTH = 18;
 /** Two-hand casts: open hands move for CAST_MOVE_S, then stay open for CAST_HOLD_S. */
-const CAST_MOVE_S = 0.25, CAST_HOLD_S = 0.3;
+const CAST_MOVE_S = 0.25, CAST_HOLD_S = 0.3, GATHER_S = 0.6;
 /** Palm push (right hand): opens for PALM_OPEN_S, pushes for PALM_MOVE_S, stays open for PALM_HOLD_S. */
 const PALM_OPEN_S = 0.15, PALM_MOVE_S = 0.15, PALM_HOLD_S = 0.25;
 /** The mock body stands this far away (m) with shoulders this wide (m); fists rest this far in front (m). */
@@ -26,7 +26,7 @@ export interface ViewMapper { screenToView(x: number, y: number): Vec2 }
 /**
  * Pretends to be the camera. The mouse is where you aim; a punch drives that fist to the mouse
  * (opening it at the end in the open-hand punch style); holding Space opens both hands around the mouse (shield); A/D/S lean and duck;
- * W sweeps open hands up (fire wall); U spreads open hands apart (ultimate); F pushes both open
+ * W sweeps open hands up (fire wall); U holds open hands together, then spreads them (finisher); F pushes both open
  * palms forward (wall push); X crosses the arms; holding G holds the right fist at the hip to charge it;
  * E pushes an open right palm toward the mouse (pillar);
  * holding O swings the right hand out of the picture (only its arm is still tracked).
@@ -68,7 +68,7 @@ export class MockTracker implements Tracker {
     const shield = this.keys.has(' ');
     if (this.castReq && !this.casting) this.casting = { kind: this.castReq, t };
     this.castReq = null;
-    if (this.casting && t - this.casting.t > CAST_MOVE_S + CAST_HOLD_S) this.casting = null;
+    if (this.casting && t - this.casting.t > CAST_MOVE_S + CAST_HOLD_S + (this.casting.kind === 'ultimate' ? GATHER_S : 0)) this.casting = null;
     if (this.palmReq && !this.palming) this.palming = { kind: this.palmReq, t };
     this.palmReq = null;
     if (this.palming && t - this.palming.t > PALM_OPEN_S + PALM_MOVE_S + PALM_HOLD_S) this.palming = null;
@@ -86,11 +86,12 @@ export class MockTracker implements Tracker {
       const since = start === null ? null : t - start;
       if (since !== null && since > EXTEND_S + OPEN_HOLD_S) this.punchStart[side] = null;
       if (this.casting) {
-        const e = clamp((t - this.casting.t) / CAST_MOVE_S, 0, 1);
         const kind = this.casting.kind;
+        // the finisher first holds the hands together until they catch fire, then spreads them
+        const e = clamp((t - this.casting.t - (kind === 'ultimate' ? GATHER_S : 0)) / CAST_MOVE_S, 0, 1);
         pos = kind === 'wall' ? { x: aim.x + sign * 14, y: lerp(40, aim.y - 10, e) } // from low, sweeping up
           : kind === 'push' ? { x: aim.x + sign * SHIELD_HALF_WIDTH, y: aim.y }       // shoved toward the camera
-          : { x: aim.x + sign * lerp(4, 34, e), y: aim.y };                          // from together, flung apart
+          : { x: aim.x + sign * lerp(6, 34, e), y: aim.y };                          // held together, then spread
         open = 1;
         ext = 0.6;
         if (kind === 'push') reachM = 0.3 + (PUNCH_REACH_M - 0.3) * e;

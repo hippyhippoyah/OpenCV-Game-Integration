@@ -22,13 +22,15 @@ export class Hud {
     const noHands = !hands.l && !hands.r;
     pill.classList.toggle('off', noHands);
     pill.classList.toggle('shield', g.shield.on);
-    const [name, hint] = g.xBlock ? ['X BLOCK', 'arms crossed: blocks attacks (not pillars or sweeps: move!)']
+    const [name, hint] = g.gather >= 1 ? ['FINISHER', g.ultimateIn <= 0 ? 'hands ablaze — spread them wide!' : `recharging — ${Math.ceil(g.ultimateIn)}s`]
+      : g.gather > 0 ? ['GATHERING', 'hold your open hands together…']
+      : g.xBlock ? ['X BLOCK', 'arms crossed: blocks attacks (not pillars or sweeps: move!)']
       : g.shield.on ? ['FLAME SHIELD', 'cover the red rings with the fire between your hands']
       : noHands ? ['NO HANDS', 'raise your fists into view']
       : tooFar ? ['GUARD', 'step closer (about 1.5 m) so fist punches can see your fists clearly']
         : ['GUARD', TUNING.punchTrigger === 'extend'
-          ? 'fist: punch (pull back & hold: charge) · palm push: pillar · both palms: shield · sweep up: wall, then push · jab, jab, gather & fling: ultimate'
-          : 'punch & open: shoot · still open hands: shield · sweep up: wall · spread: ultimate'];
+          ? 'fist: punch (pull back & hold: charge) · palm push: pillar · both palms: shield · sweep up: wall, then push · hands together, then spread: finisher'
+          : 'punch & open: shoot · still open hands: shield · sweep up: wall · hands together, then spread: finisher'];
     const lost = (['l', 'r'] as const).filter(side => hands[side] && !hands[side]!.inView);
     $('modeName').textContent = name;
     $('modeHint').textContent = lost.length

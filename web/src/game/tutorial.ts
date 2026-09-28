@@ -128,7 +128,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'ultimate', title: 'Finisher',
-    how: 'When the ultimate bar is full: jab, jab, then bring both open hands together and fling them wide apart. A spinning blade of fire cuts down the whole field. It takes a while to recharge.',
+    how: 'When the ultimate bar is full: bring both open hands close together in front of you, as if about to catch a ball, and hold them there until they catch fire. Then spread them wide apart. A spinning blade of fire cuts down the whole field. It takes a while to recharge.',
     goal: 'Unleash the finisher', need: 1,
     cast: [{ tag: 'a', kind: 'dummy', x: -24, z: 6 }, { tag: 'b', kind: 'dummy', x: 0, z: 9 }, { tag: 'c', kind: 'dummy', x: 24, z: 7 }],
     setup: g => { g.ultimateIn = 0; },
