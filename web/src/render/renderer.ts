@@ -729,160 +729,75 @@ export class Renderer {
   }
 
   /**
-   * A charged shot: a dragon of blue fire — a horned head with open jaws leading, its body a
-   * sinuous ribbon of flame writhing along the path it has flown (screen space, drawn additively).
+   * A charged shot: a ball of blue fire with a writhing tail of flame behind it — a dragon only in
+   * its shape (two wisps flicking up off the front like horns, the tail snaking as it flies) —
+   * with a crackle of lightning around the core. Pure energy: everything is drawn additively.
    */
   private drawDragon(id: number, x: number, y: number, r0: number): void {
-    // drawn well bigger than the shot's hit size, so it reads as a dragon even far away
-    const c = this.ctx, trail = this.dragonTrails.get(id) ?? [], r = Math.max(r0 * 2, 2.2 * this.u);
+    const c = this.ctx, trail = this.dragonTrails.get(id) ?? [], r = Math.max(r0 * 1.6, 2 * this.u);
     const last = trail[trail.length - 1];
     if (!last || Math.hypot(last.x - x, last.y - y) > r * 0.25) trail.push({ x, y, r });
-    if (trail.length > 26) trail.shift();
+    if (trail.length > 22) trail.shift();
     this.dragonTrails.set(id, trail);
-    // heading: from a little way back along the trail
     const back = trail[Math.max(0, trail.length - 4)];
-    let ang = Math.atan2(y - back.y, x - back.x);
-    if (trail.length < 2) ang = -Math.PI / 2;
-    // the body: a ribbon through the trail, waving side to side, tapering to the tail
+    const ang = trail.length < 2 ? -Math.PI / 2 : Math.atan2(y - back.y, x - back.x);
+    // the tail: a tapering ribbon of flame snaking along where it has flown
     if (trail.length >= 2) {
       const L: { x: number; y: number }[] = [], R: { x: number; y: number }[] = [];
       for (let i = 0; i < trail.length; i++) {
         const a = trail[Math.max(0, i - 1)], b = trail[Math.min(trail.length - 1, i + 1)];
-        const dir = Math.atan2(b.y - a.y, b.x - a.x) + Math.PI / 2, k = i / (trail.length - 1);
-        const wave = Math.sin(this.t * 12 - i * 0.7) * trail[i].r * 0.7 * (0.3 + 0.7 * k);
-        const w = trail[i].r * (0.15 + 0.6 * k) * (1 + 0.15 * Math.sin(this.t * 20 + i * 2));
-        const cx = trail[i].x + Math.cos(dir) * wave, cy = trail[i].y + Math.sin(dir) * wave;
-        L.push({ x: cx + Math.cos(dir) * w, y: cy + Math.sin(dir) * w });
-        R.push({ x: cx - Math.cos(dir) * w, y: cy - Math.sin(dir) * w });
+        const n = Math.atan2(b.y - a.y, b.x - a.x) + Math.PI / 2, k = i / (trail.length - 1);
+        const wave = Math.sin(this.t * 12 - i * 0.75) * trail[i].r * 0.6 * (0.2 + 0.8 * k);
+        const w = trail[i].r * 0.85 * k ** 0.8 * (1 + 0.2 * Math.sin(this.t * 25 + i * 2.3));
+        const cx = trail[i].x + Math.cos(n) * wave, cy = trail[i].y + Math.sin(n) * wave;
+        L.push({ x: cx + Math.cos(n) * w, y: cy + Math.sin(n) * w });
+        R.push({ x: cx - Math.cos(n) * w, y: cy - Math.sin(n) * w });
       }
-      const tail = trail[0];
-      const gr = c.createLinearGradient(tail.x, tail.y, x, y);
-      gr.addColorStop(0, 'rgba(40,70,230,0)');
-      gr.addColorStop(0.45, 'rgba(50,95,240,.75)');
-      gr.addColorStop(1, 'rgba(90,150,255,.95)');
-      // the body in solid blue (so it stays blue on bright ground), a hot glow down its middle
-      c.globalCompositeOperation = 'source-over';
+      const tail = trail[0], gr = c.createLinearGradient(tail.x, tail.y, x, y);
+      gr.addColorStop(0, 'rgba(40,60,255,0)');
+      gr.addColorStop(0.6, 'rgba(60,110,255,.45)');
+      gr.addColorStop(1, 'rgba(140,195,255,.8)');
       c.fillStyle = gr;
       c.beginPath();
       L.forEach((q, i) => (i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)));
       for (let i = R.length - 1; i >= 0; i--) c.lineTo(R[i].x, R[i].y);
       c.closePath();
       c.fill();
-      c.globalCompositeOperation = 'lighter';
-      c.strokeStyle = 'rgba(160,210,255,.55)';
-      c.lineCap = 'round';
-      for (let i = 1; i < trail.length; i++) {
-        const a = L[i - 1], b = L[i], ra = R[i - 1], rb = R[i];
-        c.lineWidth = trail[i].r * 0.35 * (i / trail.length);
-        c.beginPath(); c.moveTo((a.x + ra.x) / 2, (a.y + ra.y) / 2); c.lineTo((b.x + rb.x) / 2, (b.y + rb.y) / 2); c.stroke();
-      }
-      // spines of flame along its back
-      c.fillStyle = 'rgba(120,180,255,.6)';
-      for (let i = 2; i < L.length - 1; i += 2) {
-        const q = L[i], n = trail[i], d = Math.atan2(q.y - n.y, q.x - n.x), h = n.r * 0.7 * (i / L.length);
-        c.beginPath();
-        c.moveTo(q.x + Math.cos(d + 1.2) * h * 0.4, q.y + Math.sin(d + 1.2) * h * 0.4);
-        c.lineTo(q.x + Math.cos(d) * h, q.y + Math.sin(d) * h);
-        c.lineTo(q.x + Math.cos(d - 1.2) * h * 0.4, q.y + Math.sin(d - 1.2) * h * 0.4);
-        c.fill();
-      }
     }
-    // a glow around the head
-    c.drawImage(SPR.blue[1], x - r * 2, y - r * 2, r * 4, r * 4);
-    // the head, solid so its shape reads: drawn pointing along +x then turned to its heading
-    c.save();
-    c.globalCompositeOperation = 'source-over';
-    // in profile, facing the way it's heading (left or right), tilted up or down at most ~40°
-    const dx = Math.cos(ang), dy = Math.sin(ang), face = dx < -0.05 ? -1 : 1;
-    const tilt = clamp(Math.atan2(dy, Math.abs(dx)), -0.7, 0.7);
-    c.translate(x, y);
-    c.scale(face, 1);
-    c.rotate(tilt);
-    c.strokeStyle = 'rgba(16,30,110,.85)';
-    c.lineWidth = Math.max(1, r * 0.08);
-    c.lineJoin = 'round';
-    const s = r * 1.4, bite = 0.12 + 0.12 * Math.sin(this.t * 10 + id);
-    // a mane of flame streaming back off the skull
-    c.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 6; i++) {
-      const bx = -s * (0.2 + i * 0.18), by = -s * (0.45 - i * 0.05), len = s * (0.8 + 0.3 * Math.sin(this.t * 11 + i * 1.7));
-      const g2 = c.createLinearGradient(bx, by, bx - len, by - len * 0.3);
-      g2.addColorStop(0, 'rgba(120,180,255,.9)'); g2.addColorStop(1, 'rgba(60,90,255,0)');
+    // two flame wisps flicking back off the front, like horns
+    for (const side of [-1, 1]) {
+      const a = ang + Math.PI + side * (0.55 + 0.12 * Math.sin(this.t * 13 + side));
+      const len = r * (1.5 + 0.3 * Math.sin(this.t * 17 + side * 2)), bx = x + Math.cos(ang) * r * 0.3, by = y + Math.sin(ang) * r * 0.3;
+      const tx = bx + Math.cos(a) * len, ty = by + Math.sin(a) * len;
+      const g2 = c.createLinearGradient(bx, by, tx, ty);
+      g2.addColorStop(0, 'rgba(150,200,255,.8)'); g2.addColorStop(1, 'rgba(60,100,255,0)');
       c.fillStyle = g2;
+      const nx = -Math.sin(a) * r * 0.3, ny = Math.cos(a) * r * 0.3;
       c.beginPath();
-      c.moveTo(bx + s * 0.1, by);
-      c.quadraticCurveTo(bx - len * 0.4, by - len * 0.45, bx - len, by - len * 0.25);
-      c.quadraticCurveTo(bx - len * 0.5, by + len * 0.05, bx - s * 0.1, by + s * 0.2);
+      c.moveTo(bx + nx, by + ny);
+      c.quadraticCurveTo((bx + tx) / 2 + nx * 0.4 - side * ny, (by + ty) / 2 + ny * 0.4 + side * nx, tx, ty);
+      c.lineTo(bx - nx, by - ny);
       c.fill();
     }
-    c.globalCompositeOperation = 'source-over';
-    // antler horns swept back from the crown
-    c.lineCap = 'round';
-    for (const [ox, oy, k] of [[-0.25, -0.5, 1], [-0.05, -0.52, 0.8]] as const) {
-      c.strokeStyle = '#10206a';
-      c.lineWidth = s * 0.16 * k + 2;
-      c.beginPath(); c.moveTo(s * ox, s * oy); c.quadraticCurveTo(s * (ox - 0.4), s * (oy - 0.45), s * (ox - 1.0 * k), s * (oy - 0.55 * k)); c.stroke();
-      c.strokeStyle = '#cfe4ff';
-      c.lineWidth = s * 0.16 * k;
-      c.beginPath(); c.moveTo(s * ox, s * oy); c.quadraticCurveTo(s * (ox - 0.4), s * (oy - 0.45), s * (ox - 1.0 * k), s * (oy - 0.55 * k)); c.stroke();
-      c.lineWidth = s * 0.09 * k;
-      c.beginPath(); c.moveTo(s * (ox - 0.45), s * (oy - 0.33)); c.lineTo(s * (ox - 0.5), s * (oy - 0.7 * k)); c.stroke();
-    }
-    const head = c.createLinearGradient(-s * 0.7, -s * 0.5, s * 1.1, 0);
-    head.addColorStop(0, '#2449d8');
-    head.addColorStop(0.55, '#5f98ff');
-    head.addColorStop(1, '#cfe6ff');
-    c.fillStyle = head;
-    c.strokeStyle = '#10206a';
-    c.lineWidth = Math.max(1, s * 0.06);
-    // skull and upper jaw: crown, brow, long snout, bulbous nose, lip back to the corner of the mouth
-    c.beginPath();
-    c.moveTo(-s * 0.7, s * 0.12);
-    c.quadraticCurveTo(-s * 0.65, -s * 0.5, -s * 0.2, -s * 0.55);
-    c.quadraticCurveTo(s * 0.1, -s * 0.62, s * 0.25, -s * 0.46);
-    c.quadraticCurveTo(s * 0.55, -s * 0.36, s * 0.88, -s * 0.36);
-    c.quadraticCurveTo(s * 1.15, -s * 0.34, s * 1.1, -s * 0.12);
-    c.quadraticCurveTo(s * 1.08, -s * 0.02, s * 0.95, -s * 0.02);
-    c.lineTo(s * 0.15, s * 0.02);
-    c.closePath();
-    c.fill(); c.stroke();
-    // lower jaw, opening and closing
-    c.beginPath();
-    c.moveTo(s * 0.12, s * 0.08);
-    c.lineTo(s * 0.9, s * (0.1 + bite));
-    c.quadraticCurveTo(s * 0.92, s * (0.24 + bite), s * 0.6, s * (0.26 + bite * 0.6));
-    c.quadraticCurveTo(s * 0.0, s * 0.42, -s * 0.55, s * 0.3);
-    c.lineTo(-s * 0.7, s * 0.12);
-    c.closePath();
-    c.fill(); c.stroke();
-    // teeth
-    c.fillStyle = '#f2f8ff';
-    for (let i = 0; i < 4; i++) {
-      const tx = s * (0.3 + i * 0.16);
-      c.beginPath(); c.moveTo(tx, s * 0.02); c.lineTo(tx + s * 0.05, s * 0.13); c.lineTo(tx + s * 0.1, s * 0.02); c.fill();
-    }
-    // fire in its mouth
-    c.globalCompositeOperation = 'lighter';
-    c.drawImage(SPR.blue[0], s * 0.75 - s * 0.35, s * (0.06 + bite / 2) - s * 0.35, s * 0.7, s * 0.7);
-    c.globalCompositeOperation = 'source-over';
-    // nostril, brow and a white-hot eye
-    c.fillStyle = '#10206a';
-    c.beginPath(); c.ellipse(s * 0.98, -s * 0.24, s * 0.05, s * 0.03, 0.3, 0, 7); c.fill();
-    c.beginPath(); c.moveTo(-s * 0.05, -s * 0.4); c.quadraticCurveTo(s * 0.2, -s * 0.52, s * 0.42, -s * 0.34); c.lineTo(s * 0.34, -s * 0.3); c.quadraticCurveTo(s * 0.18, -s * 0.42, -s * 0.03, -s * 0.33); c.fill();
-    c.fillStyle = '#ffffff';
-    c.beginPath(); c.ellipse(s * 0.2, -s * 0.28, s * 0.11, s * 0.07, -0.15, 0, 7); c.fill();
-    c.fillStyle = '#10206a';
-    c.beginPath(); c.ellipse(s * 0.23, -s * 0.28, s * 0.03, s * 0.065, -0.15, 0, 7); c.fill();
-    // long whiskers from the nose, streaming back
-    c.strokeStyle = 'rgba(170,210,255,.85)';
-    c.lineWidth = Math.max(1, s * 0.05);
-    for (const sgn of [0, 1]) {
-      c.beginPath();
-      c.moveTo(s * 1.0, -s * 0.12 + sgn * s * 0.1);
-      c.bezierCurveTo(s * 0.6, s * (0.5 + sgn * 0.2), -s * 0.3, s * (0.1 + 0.25 * Math.sin(this.t * 8 + sgn * 2)), -s * 1.3, s * (0.45 + sgn * 0.25));
+    // the fireball itself
+    c.drawImage(SPR.blue[1], x - r * 2.4, y - r * 2.4, r * 4.8, r * 4.8);
+    c.drawImage(SPR.blue[0], x - r * 1.2, y - r * 1.2, r * 2.4, r * 2.4);
+    // lightning crackling around the core, flickering on and off
+    c.strokeStyle = 'rgba(210,235,255,.9)';
+    c.lineWidth = Math.max(1, r * 0.08);
+    c.lineJoin = 'round';
+    for (let k = 0; k < 3; k++) {
+      if (Math.sin(this.t * 31 + k * 2.1 + id) < 0.2) continue;
+      let a = this.t * 7 + k * 2.1 + id, px = x + Math.cos(a) * r * 0.5, py = y + Math.sin(a) * r * 0.5;
+      c.beginPath(); c.moveTo(px, py);
+      for (let j = 0; j < 4; j++) {
+        a += rnd(-0.7, 0.7);
+        const d = r * (0.5 + (j + 1) * 0.35);
+        px = x + Math.cos(a) * d; py = y + Math.sin(a) * d;
+        c.lineTo(px, py);
+      }
       c.stroke();
     }
-    c.restore();
   }
 
   /** Where each incoming attack will land if you stay still; red = it would hit you. */
