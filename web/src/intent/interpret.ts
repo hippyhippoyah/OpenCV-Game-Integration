@@ -119,14 +119,14 @@ export const TUNING = {
    * the punch's peak, so short jabs can be fired rapidly; refireS apart at the least. See
    * fistThresholds(). reachRearm: a fist within this of its guard counts as resting.
    */
-  quickRise: 0.065, quickWindowS: 0.2, quickLead: 0.05, rearmDrop: 0.05, refireS: 0.12, reachRearm: 0.08, extendConfirmS: 0.05,
+  quickRise: 0.088, quickWindowS: 0.2, quickLead: 0.05, rearmDrop: 0.05, refireS: 0.12, reachRearm: 0.08, extendConfirmS: 0.05,
   /** A fist's reach reading settles for this long (s) after it appears before it can punch. */
   reachWarmupS: 0.6,
   /**
    * With a noisy camera the jolt needed rises with the reading's wobble (noiseQuick × wobble), but
    * never past quickRiseCap. Above reachNoiseMax the HUD suggests stepping closer.
    */
-  noiseQuick: 8, noiseLead: 5, noiseRearm: 4, quickRiseCap: 0.2, quickLeadCap: 0.1, reachNoiseMax: 0.017,
+  noiseQuick: 10.8, noiseLead: 5, noiseRearm: 4, quickRiseCap: 0.27, quickLeadCap: 0.1, reachNoiseMax: 0.017,
   /**
    * Leaning, stepping or ducking moves your fists too (a lean twists the torso), which the reach
    * reading can't tell from a punch. While the head moves faster than leanFreeSpeed (view
@@ -262,7 +262,7 @@ export const TUNING = {
    * It waits palmConfirmS (a second hand opening means shield or cast instead); the hand rests
    * palmRefractoryS afterwards. A fist punch whose hand opens while it is confirming becomes a push.
    */
-  palmPushRise: 0.08, palmPushWindowS: 0.35, palmNoise: 8.5, palmPushCap: 0.15, palmConfirmS: 0.08, palmRefractoryS: 0.5, palmOtherStill: 0.5, palmBothOpenConfirmS: 0.15,
+  palmPushRise: 0.108, palmPushWindowS: 0.35, palmNoise: 11.5, palmPushCap: 0.2, palmConfirmS: 0.08, palmRefractoryS: 0.5, palmOtherStill: 0.5, palmBothOpenConfirmS: 0.15,
   /** Experimental: only count palms facing each other (edge-on to the camera) as a shield. */
   shieldNeedsEdgeOnPalms: false, edgeOnBelow: 0.5,
   /** Pose wrists below this confidence are treated as guesses. */

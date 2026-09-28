@@ -60,12 +60,16 @@ describe('palm push on a simulated webcam', () => {
     });
   });
 
-  it('a short push (15 cm) counts up to 1.5 m; further back it takes a longer one (20 cm)', () => {
-    eachCase((d, seed) => expectPushes(perform(pushes(d, [2, 3], d > 1.5 ? 0.2 : 0.15, 0.12), 3.8, { seed }), 2, `${d} m seed ${seed}`));
+  it('a 20 cm push counts up to 1.5 m; further back it takes a longer one (25 cm)', () => {
+    eachCase((d, seed) => expectPushes(perform(pushes(d, [2, 3], d > 1.5 ? 0.25 : 0.2, 0.12), 3.8, { seed }), 2, `${d} m seed ${seed}`));
+  });
+
+  it('a small nudge of the palm (8 cm) is not a push', () => {
+    eachCase((d, seed) => expectPushes(perform(pushes(d, [2, 3], 0.08, 0.12), 3.8, { seed }), 0, `${d} m seed ${seed}`));
   });
 
   it('a slower push (0.3 s) counts', () => {
-    eachCase((d, seed) => expectPushes(perform(pushes(d, [2, 3], 0.22, 0.3), 3.8, { seed }), 2, `${d} m seed ${seed}`));
+    eachCase((d, seed) => expectPushes(perform(pushes(d, [2, 3], 0.27, 0.3), 3.8, { seed }), 2, `${d} m seed ${seed}`));
   });
 
   // opening mid-push loses a little of the push to the change of measurement; at 1.8 m, where the

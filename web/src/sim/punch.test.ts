@@ -52,10 +52,22 @@ describe('fist punches on a simulated webcam', () => {
     });
   });
 
-  it('catches rapid-fire short jabs, four a second, that only go partway out', () => {
-    // quick snaps: 0.07 s out, 0.06 s hold, 0.1 s back. Short ones (13 cm) read cleanly up close; a
-    // little further back the fist looks smaller, so the snap has to be a bit longer to stand out.
-    const snapLength: Record<number, number> = { 1.2: 0.13, 1.5: 0.18, 1.8: 0.24 };
+  it('a small twitch of the fist (5 cm) is not a punch', () => {
+    eachCase((distance, seed) => {
+      const snap = { ...POSES.guard, fwd: POSES.guard.fwd + 0.05 };
+      const at = [1.5, 2.2, 2.9];
+      const script = (t: number) => {
+        const t0 = at.filter(x => x <= t).at(-1);
+        return guardState(distance, { r: { reach: t0 === undefined ? POSES.guard : punchReach(t, t0, snap, 0.07, 0.06, 0.1) } });
+      };
+      expect(punchesIn(perform(script, 3.4, { seed })).length, `${distance} m seed ${seed}`).toBe(0);
+    });
+  });
+
+  it('catches rapid-fire jabs, four a second, that go most of the way out', () => {
+    // quick snaps: 0.07 s out, 0.06 s hold, 0.1 s back. 18 cm reads cleanly up close; a little
+    // further back the fist looks smaller, so the snap has to be longer to stand out.
+    const snapLength: Record<number, number> = { 1.2: 0.18, 1.5: 0.24, 1.8: 0.27 };
     eachCase((distance, seed) => {
       const snap = { ...POSES.guard, fwd: POSES.guard.fwd + snapLength[distance] };
       const at = [1.5, 1.75, 2.0, 2.25, 2.5, 2.75];

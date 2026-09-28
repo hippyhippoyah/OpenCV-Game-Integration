@@ -185,7 +185,7 @@ sensitivity live. Simulated: 100% of punches caught at 1.2–1.8 m with no misfi
 ## Revision 2026-09-27: fist punches are a quick jolt (rapid fire, partial punches)
 
 A punch is now any quick movement of a fist toward the camera, not reaching a set distance: the
-fist came ≥ max(0.065 m, 8 × wobble) closer within 0.2 s (capped at 0.2 m), more than the other
+fist came ≥ max(0.088 m, 10.8 × wobble) closer within 0.2 s (capped at 0.27 m), more than the other
 fist did by ≥ max(0.05 m, 4 × wobble). It re-arms once it comes back ≥ max(0.05 m, 4 × wobble)
 from the punch's peak (no need to return to guard), at most one punch per 0.12 s per fist; the
 game cooldown is 0.1 s. A fist's reach reading warms up 0.6 s before it can punch. The hand-depth
@@ -228,7 +228,7 @@ real pushes. Now:
 - Opening/closing no longer wipes the reach history: the history is shifted by the measurement
   jump, so the forward movement before the hand opened still counts.
 - Threshold (3-frame-averaged reach, within 0.35 s, counting only movement since the hand's last
-  attack): ≥ max(0.08 m, 8 × wobble), capped at 0.15 m, ÷ punch sensitivity (`[` / `]` adjust
+  attack): ≥ max(0.108 m, 11.5 × wobble), capped at 0.2 m, ÷ punch sensitivity (`[` / `]` adjust
   both). Frames lost to blur are skipped, and a push can continue on the pose wrist.
 
 Simulated: full, slow (0.3 s) and short (15 cm) pushes, and pushes that open mid-way, all caught at
