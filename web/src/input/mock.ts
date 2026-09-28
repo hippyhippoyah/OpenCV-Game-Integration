@@ -109,9 +109,9 @@ export class MockTracker implements Tracker {
         ext = 0.25 + 0.65 * e;
         reachM = GUARD_REACH_M + (PUNCH_REACH_M - GUARD_REACH_M) * e;
       } else if (raise || this.slamAt !== null) {
-        // both fists up by the head (charging blue), then brought down hard
+        // both fists together over the head (burning blue), then slammed down
         const e = this.slamAt === null ? 0 : clamp((t - this.slamAt) / 0.12, 0, 1);
-        pos = { x: sign * lerp(10, 16, e), y: lerp(-6, 42, e) };
+        pos = { x: sign * lerp(6, 16, e), y: lerp(-18, 42, e) };
       } else if (this.keys.has('g') && side === 'r' && (since === null || since > EXTEND_S + OPEN_HOLD_S)) {
         // down at the hip, elbow bent: charging
         pos = { x: 22, y: 58 };

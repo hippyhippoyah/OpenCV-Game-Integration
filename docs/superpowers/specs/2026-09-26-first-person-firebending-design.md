@@ -415,14 +415,15 @@ ready — only once you have it.
 
 ## Blue inferno (a second ultimate)
 
-Raise both fists up by your head and hold them still until both burn blue (the charged-punch
-charge, on both hands at once — the HUD says "BLUE INFERNO — bring them down hard!"). Then bring
-both down hard together (≥ 22 view units within 0.45 s of being at head level): the whole ground
-bursts into blue flame for 5 s, burning every enemy on the field 1 damage every 0.5 s (it reaches
-under Daro's stone wall). A 20 s cooldown, shown as a blue flame icon beside the finisher's. While
-both fists are charged, a fist moving down fast isn't taken for a punch, and the slam uses up both
-charges. It's a later unlock: in the Tutorial (last lesson), Training and Waves, not in Chapter 1.
-On mouse and keys: hold I, let go to slam.
+Raise both hands together over your head — fists or open palms, within 30 view units of each
+other, their midpoint more than 8 above the head's centre — and hold them there for 0.5 s: a blue
+fireball swells above them and they burn blue ("BLUE INFERNO — slam them down!"). Then bring them
+down together (the midpoint drops ≥ 22 view units within 0.45 s of leaving the pose): the whole
+ground bursts into blue flame for 5 s, burning every enemy on the field 1 damage every 0.5 s (it
+reaches under Daro's stone wall). A 20 s cooldown, shown as a blue flame icon beside the
+finisher's. Held up there the hands neither gather the finisher nor punch. It's a later unlock: in
+the Tutorial (last lesson), Training and Waves, not in Chapter 1. On mouse and keys: hold I, let go
+to slam.
 
 ## Name and front screens
 
@@ -446,4 +447,6 @@ never sound alike, and bursts of the same sound are spaced so they don't pile in
 for every attack, combo, hit, kill, block, clash, dodge, getting hit, running out of breath, the
 earthbenders' pillars and the spirits' waves, both ultimates; a cue when a fist charges blue or the
 finisher's gather catches fire; the countdown, the start of a fight, scrolls and flames in the
-campaign; and the menus. Volume is in Settings. The audio starts on the first key press or click.
+campaign; and the menus. Held moves have held sounds: the shield crackles with fire while it's up,
+and the finisher's gather and the blue inferno's charge warm up — a swell rising in pitch and
+loudness as each fills (faint while the move is still recharging). Volume is in Settings. The audio starts on the first key press or click.

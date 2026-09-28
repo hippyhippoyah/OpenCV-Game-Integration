@@ -7,7 +7,7 @@ import type { GameEvent } from '../game/game';
  * sounds the same twice. The audio context starts on the first key press or click (browsers
  * don't allow sound before that).
  */
-export type UiSound = 'hover' | 'select' | 'back' | 'tick' | 'go' | 'scroll' | 'flame' | 'charged' | 'gathered' | 'reset';
+export type UiSound = 'hover' | 'select' | 'back' | 'tick' | 'go' | 'scroll' | 'flame' | 'charged' | 'gathered' | 'blueReady' | 'reset';
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 /** Nudge a value by up to ±k (a fraction). */
@@ -30,6 +30,8 @@ export class Sfx {
   private volume = 0.7;
   /** Last time each sound played, to keep bursts from stacking into a roar. */
   private lastAt = new Map<string, number>();
+  /** Continuous sounds (see ambient): a noise bed and a tone each, faded in and out. */
+  private loops = new Map<string, { filter: BiquadFilterNode; ng: GainNode; osc: OscillatorNode; og: GainNode }>();
 
   constructor() {
     const wake = () => this.resume();
@@ -113,6 +115,49 @@ export class Sfx {
     osc.connect(g).connect(this.out(c, o.pan));
     osc.start(t);
     osc.stop(t + o.dur + 0.05);
+  }
+
+  /**
+   * The sounds that last as long as you hold something, set every frame: the shield's fire
+   * crackling while it's up; the finisher's gather and the blue inferno's charge warming up — a
+   * swell that rises in pitch and loudness as each fills. Pass null (menus, pauses) to fade all out.
+   */
+  ambient(g: { shield: { on: boolean }; gather: number; infernoPrep: number; ultimateIn: number; infernoIn: number } | null): void {
+    const c = this.ctx;
+    if (!c || c.state !== 'running') return;
+    const shield = g?.shield.on ? 1 : 0, p = g?.gather ?? 0, q = g?.infernoPrep ?? 0;
+    // (a move still recharging warms up only faintly)
+    const pk = g && g.ultimateIn > 0 ? 0.35 : 1, qk = g && g.infernoIn > 0 ? 0.35 : 1;
+    this.loop(c, 'shield', { type: 'lowpass', freq: rnd(900, 1300), noise: shield * rnd(0.35, 0.7), wave: 'sine', tone: 70, toneGain: shield * 0.06 });
+    this.loop(c, 'warm', { type: 'bandpass', freq: 300 + 900 * p, noise: p > 0 ? pk * (0.25 + 0.9 * p) * rnd(0.8, 1) : 0, wave: 'sine', tone: 110 + 220 * p, toneGain: p > 0 ? pk * (0.05 + 0.14 * p) : 0 });
+    this.loop(c, 'blue', { type: 'bandpass', freq: 600 + 1800 * q, noise: q > 0 ? qk * (0.2 + 0.8 * q) * rnd(0.8, 1) : 0, wave: 'triangle', tone: 220 + 440 * q, toneGain: q > 0 ? qk * (0.04 + 0.12 * q) : 0 });
+  }
+
+  private loop(c: AudioContext, id: string, o: { type: BiquadFilterType; freq: number; noise: number; wave: OscillatorType; tone: number; toneGain: number }): void {
+    let L = this.loops.get(id);
+    if (!L) {
+      if (o.noise <= 0 && o.toneGain <= 0) return;
+      const src = c.createBufferSource(), filter = c.createBiquadFilter(), ng = c.createGain(), osc = c.createOscillator(), og = c.createGain();
+      src.buffer = this.noise;
+      src.loop = true;
+      filter.type = o.type;
+      filter.Q.value = 0.9;
+      ng.gain.value = 0;
+      og.gain.value = 0;
+      osc.type = o.wave;
+      src.connect(filter).connect(ng).connect(this.comp!);
+      osc.connect(og).connect(this.comp!);
+      src.start();
+      osc.start();
+      L = { filter, ng, osc, og };
+      this.loops.set(id, L);
+    }
+    const now = c.currentTime;
+    L.filter.type = o.type;
+    L.filter.frequency.setTargetAtTime(o.freq, now, 0.05);
+    L.ng.gain.setTargetAtTime(o.noise, now, 0.06);
+    L.osc.frequency.setTargetAtTime(o.tone, now, 0.08);
+    L.og.gain.setTargetAtTime(o.toneGain, now, 0.08);
   }
 
   /** Stereo position of something at world x (the player is at camX). */
@@ -311,6 +356,7 @@ export class Sfx {
       case 'flame': this.chime(c, [vary(784, 0.02)], 0.1, 0.14); this.burst(c, { dur: 0.3, type: 'lowpass', f0: 400, f1: 1500, gain: 0.2 }); break;
       case 'charged': this.tone(c, { dur: 0.5, wave: 'triangle', f0: 1100, f1: 1600, gain: 0.08, attack: 0.05 }); this.burst(c, { dur: 0.3, type: 'highpass', f0: 3000, gain: 0.12, crackle: 0.9 }); break;
       case 'gathered': this.tone(c, { dur: 0.6, wave: 'sine', f0: 220, f1: 440, gain: 0.2, attack: 0.1 }); this.burst(c, { dur: 0.6, type: 'lowpass', f0: 300, f1: 1400, gain: 0.3, attack: 0.1, crackle: 0.5 }); break;
+      case 'blueReady': this.tone(c, { dur: 0.8, wave: 'triangle', f0: 440, f1: 880, gain: 0.14, attack: 0.1 }); this.burst(c, { dur: 0.7, type: 'bandpass', f0: 800, f1: 3000, gain: 0.6, attack: 0.1, crackle: 0.7 }); break;
       case 'reset': this.chime(c, [440, 330, 220], 0.08, 0.1); break;
     }
   }

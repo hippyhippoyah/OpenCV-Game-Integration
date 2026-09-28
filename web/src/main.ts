@@ -86,6 +86,7 @@ sfx.setVolume(settings.data.volume);
 /** Last frame's charge and gather, so their "ready" sounds play once. */
 const wasCharged = { l: false, r: false };
 let wasGathered = false;
+let wasPrimed = false;
 const menu = new Menu(settings, progress, {
   sound: s => sfx.ui(s),
   onVolume: v => sfx.setVolume(v),
@@ -313,6 +314,8 @@ function cueSounds(g: Game, events: GameEvent[]): void {
   }
   if (g.gather >= 1 && !wasGathered) sfx.ui('gathered');
   wasGathered = g.gather >= 1;
+  if (g.infernoPrep >= 1 && !wasPrimed) sfx.ui('blueReady');
+  wasPrimed = g.infernoPrep >= 1;
 }
 
 function stepCampaign(dt: number, now: number): void {
@@ -428,6 +431,9 @@ function loop(now: number): void {
     else stepGame(dt);
   }
   renderer.render(phase === 'play' ? game : null, dt);
+  // held sounds (shield fire, ultimates warming up) only while actually fighting
+  const helpOpen = !$('mockHelp').classList.contains('hidden');
+  sfx.ambient(phase === 'play' && game && game.state === 'play' && !campPaused && !helpOpen && intent?.present ? game : null);
   if (tutorial && phase === 'play') lessonDemo.draw(tutorial.lesson.id, now / 1000);
   debug.draw(lastFrame, intent, camera?.video ?? null);
   $('handsN').textContent = String(lastFrame?.hands.length ?? 0);

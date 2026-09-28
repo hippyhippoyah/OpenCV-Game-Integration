@@ -75,8 +75,8 @@ export type CastKind = 'wall' | 'ultimate' | 'push' | 'inferno';
 /**
  * A two-hand move: fire wall (open hands sweep up), ultimate (open hands held together, as if
  * about to catch a ball, until they catch fire, then spread wide) or wall push (both open palms
- * shoved toward the camera: a fire wall rolls forward). And the blue inferno: both fists charged up
- * by your head (blue), then brought down hard together — the ground bursts into blue flame.
+ * shoved toward the camera: a fire wall rolls forward). And the blue inferno: both hands held
+ * together over your head until they burn blue, then slammed down — the ground bursts into flame.
  */
 export interface Cast {
   kind: CastKind;
@@ -97,6 +97,8 @@ export interface Intent {
   shield: boolean;
   /** Finisher: 0 → 1 while open hands are held together; 1 = gathered, spread them to cast. */
   gather?: number;
+  /** Blue inferno: 0 → 1 while the hands are held together over the head; 1 = ready, slam them down. */
+  inferno?: number;
   /** Forearms crossed in front of the chest. */
   xBlock: boolean;
   casts: Cast[];
@@ -238,11 +240,13 @@ export const TUNING = {
    */
   gatherGap: 26, gatherHoldS: 0.4, ultimateSpread: 24, spreadWindowS: 1.2,
   /**
-   * Blue inferno: both fists charged (blue) and, within slamWindowS, up at head level (at most
-   * slamHighBelowHead below the head), then both brought down slamDrop view units. While both are
-   * charged, a fist moving down faster than slamSpeed isn't taken for a punch.
+   * Blue inferno: both hands (fists or open) held together — within infernoGap view units — over
+   * the head (their midpoint more than infernoAbove above the head's centre) for infernoHoldS burn
+   * blue; then bringing them down together slamDrop view units, within slamWindowS of leaving the
+   * pose, casts it. Held up there they neither gather the finisher nor punch. A fist moving down
+   * faster than slamSpeed is never taken for a punch.
    */
-  slamWindowS: 0.45, slamHighBelowHead: 10, slamDrop: 22, slamSpeed: 60,
+  infernoGap: 30, infernoAbove: 8, infernoHoldS: 0.5, slamWindowS: 0.45, slamDrop: 22, slamSpeed: 60,
   /**
    * Fists held up high (charging a slam, or just resting up there) overlap the face, and their
    * depth reading jumps about wildly: a fist more than aboveHead view units above the centre of the
@@ -328,6 +332,11 @@ export interface InterpretState {
   stillSince: number | null;
   shieldOn: boolean;
   /** Finisher: since when the open hands have been held together; gathered once held long enough. */
+  /** Blue inferno: since when the hands have been together over the head; ready once held long enough, and where/when they last were. */
+  infernoSince: number | null;
+  infernoReady: boolean;
+  infernoTopY: number;
+  infernoTopT: number;
   gatherSince: number | null;
   gathered: boolean;
   /** How far apart the hands were while gathered, and when they last were (the spread counts from there). */
@@ -349,6 +358,7 @@ export interface InterpretState {
 
 export const initialState = (): InterpretState => ({
   head: null, l: null, r: null, lastT: null, pending: [], palmPending: [], bothOpenAt: null, stillSince: null, shieldOn: false,
+  infernoSince: null, infernoReady: false, infernoTopY: 0, infernoTopT: -Infinity,
   gatherSince: null, gathered: false, gatherGapNow: 0, gatherLastT: -Infinity,
   castReadyAt: -Infinity, lastCastT: -Infinity, crossedSince: null,
   shoulderSpan: null, bodyDist: new OneEuro(TUNING.bodyDepthMinCutoff, TUNING.bodyDepthBeta), noiseCoef: TUNING.noiseCoefStart,
@@ -383,6 +393,8 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     s.shieldOn = false;
     s.gatherSince = null;
     s.gathered = false;
+    s.infernoSince = null;
+    s.infernoReady = false;
     s.crossedSince = null;
     return {
       present: false, head: s.head ? { ...s.head } : { x: 0, y: 0 }, hands: { l: null, r: null },
@@ -535,7 +547,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
         fire = tr.armed && tr.extension >= TUNING.extendFireAbove && extensionRise(tr) >= TUNING.punchExtendRise;
       }
-      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView)) {
+      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView) && s.infernoSince === null && !s.infernoReady) {
         tr.armed = false;
         tr.lastPunchT = f.t;
         s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t, charged: tr.charge >= 1 });
@@ -596,7 +608,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
   } else {
     if (s.bothOpenAt === null) s.bothOpenAt = f.t;
     const gap = dist(l.pos, r.pos), mid = { x: (l.pos.x + r.pos.x) / 2, y: (l.pos.y + r.pos.y) / 2 };
-    const together = gap <= TUNING.gatherGap;
+    // (over the head it's the blue inferno, and not on the way down from one or just after a cast)
+    const together = gap <= TUNING.gatherGap && mid.y >= headView.y - TUNING.infernoAbove
+      && s.infernoSince === null && !s.infernoReady && f.t >= s.castReadyAt;
     if (together) {
       s.gatherSince ??= f.t;
       if (f.t - s.gatherSince >= TUNING.gatherHoldS) s.gathered = true;
@@ -633,19 +647,33 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       } else if (gap < TUNING.gatherGap) s.shieldOn = false; // hands brought together: that's a gather now
     }
   }
-  // Blue inferno: both charged fists slammed down from by the head
-  if (extendMode && !xBlock && l && r && f.t >= s.castReadyAt && slammed(l, headView, f.t) && slammed(r, headView, f.t)) {
-    casts.push({ kind: 'inferno', at: { x: (l.pos.x + r.pos.x) / 2, y: (l.pos.y + r.pos.y) / 2 } });
-    s.castReadyAt = f.t + TUNING.castRefractoryS;
-    s.lastCastT = f.t;
+  // Blue inferno: hands together over the head until they burn blue, then slammed down together
+  const both = !xBlock && !!l && !!r && l.inView && r.inView;
+  const hmid = both ? { x: (l!.pos.x + r!.pos.x) / 2, y: (l!.pos.y + r!.pos.y) / 2 } : null;
+  const overhead = both && dist(l!.pos, r!.pos) <= TUNING.infernoGap && hmid!.y < headView.y - TUNING.infernoAbove;
+  if (overhead) {
+    s.infernoSince ??= f.t;
+    if (f.t - s.infernoSince >= TUNING.infernoHoldS) s.infernoReady = true;
+    if (s.infernoReady) { s.infernoTopY = hmid!.y; s.infernoTopT = f.t; }
     s.pending = [];
-    for (const tr of [l, r]) { tr.charge = 0; tr.chargedAt = null; tr.chamberSince = null; }
+  } else {
+    s.infernoSince = null;
+    if (s.infernoReady && f.t - s.infernoTopT > TUNING.slamWindowS) s.infernoReady = false; // let go without slamming
+    if (s.infernoReady && hmid && hmid.y - s.infernoTopY >= TUNING.slamDrop && f.t >= s.castReadyAt) {
+      casts.push({ kind: 'inferno', at: hmid });
+      s.infernoReady = false;
+      s.castReadyAt = f.t + TUNING.castRefractoryS;
+      s.lastCastT = f.t;
+      s.pending = [];
+      for (const tr of [l!, r!]) { tr.charge = 0; tr.chargedAt = null; tr.chamberSince = null; }
+    }
   }
+  const inferno = s.infernoReady ? 1 : s.infernoSince !== null ? Math.min(1, (f.t - s.infernoSince) / TUNING.infernoHoldS) : 0;
   const gather = s.gathered ? 1 : s.gatherSince !== null ? Math.min(1, (f.t - s.gatherSince) / TUNING.gatherHoldS) : 0;
   const shield = s.shieldOn;
 
   return {
-    present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, palms, shield, gather, xBlock, casts,
+    present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, palms, shield, gather, inferno, xBlock, casts,
     face: f.face, bodyTilt: Math.atan2(f.shoulderR.y - f.shoulderL.y, f.shoulderR.x - f.shoulderL.x),
   };
 }
@@ -694,14 +722,6 @@ function updateCharge(tr: Track, side: Side, shoulder: Vec2, head: Vec2, t: numb
  */
 function droppingOrHigh(tr: Track, head: Vec2): boolean {
   return (tr.vel.y > TUNING.slamSpeed && tr.vel.y > 2 * Math.abs(tr.vel.x)) || tr.pos.y < head.y - TUNING.aboveHead;
-}
-
-/** This charged fist was up by the head within slamWindowS and has since come down slamDrop. */
-function slammed(tr: Track, head: Vec2, t: number): boolean {
-  if (tr.charge < 1 || tr.openness >= TUNING.clearlyOpen) return false;
-  let top: number | null = null;
-  for (const h of tr.hist) if (h.t >= t - TUNING.slamWindowS && (top === null || h.y < top)) top = h.y;
-  return top !== null && top - head.y <= TUNING.slamHighBelowHead && tr.pos.y - top >= TUNING.slamDrop;
 }
 
 /** Queue a palm push from this hand (it confirms after palmConfirmS). */

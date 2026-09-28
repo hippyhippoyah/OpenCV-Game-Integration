@@ -224,6 +224,8 @@ export class Game {
   /** Blue inferno: seconds until it's ready again, and seconds the ground has left to burn. */
   infernoIn = 0;
   groundFire = 0;
+  /** Blue inferno: how long the hands have been held together over the head, 0 → 1 (1 = slam them down). */
+  infernoPrep = 0;
   private groundTick = 0;
   /** Finisher: how gathered your open hands are, 0 → 1 (1 = spread them to cast). */
   gather = 0;
@@ -363,6 +365,7 @@ export class Game {
     this.breath = Math.min(TUNE.breathMax, this.breath + (rested ? TUNE.breathRestRegen : TUNE.breathRegen) * dt);
     this.updateShield(intent.shield && this.has('shield'));
     this.gather = this.has('finisher') ? intent.gather ?? 0 : 0;
+    this.infernoPrep = this.has('inferno') ? intent.inferno ?? 0 : 0;
     if (this.state !== 'play') return;
     if (this.has('punch')) for (const p of intent.punches) this.punch(this.has('charge') ? p : { ...p, charged: false });
     for (const c of intent.casts) {

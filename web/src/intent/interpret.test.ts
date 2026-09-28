@@ -227,10 +227,10 @@ describe('interpret', () => {
       expect(out.some(o => o.shield)).toBe(false);
     });
 
-    /** Both fists up by the head, held `hold` frames, then (if `slam`) brought down hard over 4 frames. */
-    function inferno(hold: number, slam: [boolean, boolean] = [true, true]): Intent[] {
-      const HIGH_L: HandSpec = { x: -0.3, y: -0.8 }, HIGH_R: HandSpec = { x: 0.3, y: -0.8 };
-      const low = (h: HandSpec, k: number, on: boolean): HandSpec => (on ? { x: h.x * (1 + 0.2 * k), y: h.y + 1.1 * k } : h);
+    /** Both hands together over the head, held `hold` frames, then (if `slam`) brought down hard over 4 frames. */
+    function inferno(hold: number, slam: [boolean, boolean] = [true, true], open = 0): Intent[] {
+      const HIGH_L: HandSpec = { x: -0.25, y: -1.1, open }, HIGH_R: HandSpec = { x: 0.25, y: -1.1, open };
+      const low = (h: HandSpec, k: number, on: boolean): HandSpec => (on ? { ...h, x: h.x * (1 + 0.6 * k), y: h.y + 1.2 * k } : h);
       return play([
         ...repeat(8, () => [GUARD_L, GUARD_R]),
         ...repeat(hold, () => [HIGH_L, HIGH_R]),
@@ -239,8 +239,11 @@ describe('interpret', () => {
       ]);
     }
 
-    it('blue inferno: both fists charged up by the head, then brought down hard — and no punches', () => {
+    it('blue inferno: hands together over the head until they burn blue, then slammed down — and no punches', () => {
       const out = inferno(24);
+      expect(out[8 + 5].inferno).toBeGreaterThan(0);
+      expect(out[8 + 5].inferno).toBeLessThan(1);
+      expect(out[8 + 20].inferno).toBe(1);
       expect(kinds(out)).toEqual(['inferno']);
       expect(punchesIn(out)).toHaveLength(0);
       // spent: the fists aren't left charged for a blue punch
@@ -248,7 +251,15 @@ describe('interpret', () => {
       expect(out.at(-1)!.hands.r!.charge).toBe(0);
     });
 
-    it('blue inferno: not before both fists burn blue, and not with only one fist coming down', () => {
+    it('blue inferno: open palms together over the head work too, and never gather the finisher', () => {
+      const out = inferno(24, [true, true], 1);
+      expect(kinds(out)).toEqual(['inferno']);
+      // (raising open palms together passes the finisher's gather zone; it never fills or casts)
+      expect(out.some(o => (o.gather ?? 0) >= 1)).toBe(false);
+      expect(out.some(o => o.shield)).toBe(false);
+    });
+
+    it('blue inferno: not before they burn blue, and not with only one hand coming down', () => {
       expect(kinds(inferno(5))).toEqual([]);
       expect(kinds(inferno(24, [true, false]))).toEqual([]);
     });

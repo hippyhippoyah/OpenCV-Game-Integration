@@ -867,20 +867,41 @@ export class Renderer {
         c.beginPath(); c.arc(m.x, m.y, rr * 1.6, 0, 7); c.stroke();
       }
     }
+    // blue inferno: a blue fireball swelling between the hands held over the head
+    if (g.infernoPrep > 0 && l?.inView && r?.inView) {
+      // (just above the fists, so they don't hide it)
+      const a = this.viewToScreen(this.shownAt(l)), b = this.viewToScreen(this.shownAt(r)), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 7 * u };
+      const ready = g.infernoIn <= 0, full = g.infernoPrep >= 1, pulse = full ? 0.85 + 0.15 * Math.sin(this.t * 14) : 1;
+      const rr = (3 + 5 * g.infernoPrep) * u * pulse;
+      const glow = c.createRadialGradient(m.x, m.y, 0, m.x, m.y, rr * 2.4);
+      glow.addColorStop(0, ready ? `rgba(120,180,255,${0.3 + 0.45 * g.infernoPrep})` : 'rgba(150,160,180,.25)');
+      glow.addColorStop(1, 'rgba(60,110,255,0)');
+      c.fillStyle = glow;
+      c.fillRect(m.x - rr * 2.4, m.y - rr * 2.4, rr * 4.8, rr * 4.8);
+      if (ready) c.drawImage(SPR.blue[0], m.x - rr * 0.7, m.y - rr * 0.7, rr * 1.4, rr * 1.4);
+      if (full && ready) {
+        // arrows of light pointing down: slam now
+        c.strokeStyle = `rgba(190,220,255,${0.5 + 0.3 * Math.sin(this.t * 8)})`;
+        c.lineWidth = 3;
+        c.beginPath(); c.arc(m.x, m.y, rr * 1.8, 0, 7); c.stroke();
+      }
+    }
     if (g.shield.on && l && r) {
       const a = this.viewToScreen(l.pos), b = this.viewToScreen(r.pos), e = 1, hgt = (14 + e * 10) * u;
       const sg = c.createLinearGradient(0, a.y, 0, a.y - hgt);
-      sg.addColorStop(0, `rgba(255,150,60,${0.35 * e + 0.1})`); sg.addColorStop(1, 'rgba(255,90,30,0)');
+      // see-through: a faint glow along the hands and a row of separate flames standing on it, with
+      // gaps between them to see what's coming
+      sg.addColorStop(0, 'rgba(255,150,60,.16)'); sg.addColorStop(1, 'rgba(255,90,30,0)');
       c.fillStyle = sg;
       c.beginPath();
-      c.moveTo(a.x, a.y + 2 * u);
-      c.lineTo(b.x, b.y + 2 * u);
-      for (let i = 0; i <= 10; i++) {
-        const k = 1 - i / 10;
-        c.lineTo(lerp(a.x, b.x, k), lerp(a.y, b.y, k) - hgt * (0.75 + 0.25 * Math.sin(k * 14 + this.t * 12)));
+      c.moveTo(a.x, a.y + 2 * u); c.lineTo(b.x, b.y + 2 * u); c.lineTo(b.x, b.y - hgt * 0.35); c.lineTo(a.x, a.y - hgt * 0.35);
+      c.closePath(); c.fill();
+      const n = 7;
+      for (let i = 0; i < n; i++) {
+        const k = (i + 0.5) / n, x = lerp(a.x, b.x, k), y = lerp(a.y, b.y, k), ph = this.t * 9 + i * 1.9;
+        const h = hgt * (0.55 + 0.3 * Math.sin(ph) + 0.12 * Math.sin(ph * 2.7));
+        this.flameTongue(c, x, y, Math.abs(b.x - a.x) / n * 0.28, h, Math.sin(ph * 0.7) * u, 0.6, true);
       }
-      c.closePath();
-      c.fill();
     }
     c.globalCompositeOperation = 'source-over';
   }
@@ -936,7 +957,8 @@ export class Renderer {
    * hands and fists already low, e.g. at the hip, don't count).
    */
   private resting(h: NonNullable<Game['hands']['l']>): number {
-    return h.open ? 0 : (1 - this.punchOut(h)) * clamp((REST_LOW_Y - h.pos.y) / 24, 0, 1);
+    // (fists raised high, e.g. over the head, are drawn where they are)
+    return h.open ? 0 : (1 - this.punchOut(h)) * clamp((REST_LOW_Y - h.pos.y) / 24, 0, 1) * clamp((h.pos.y + 5) / 15, 0, 1);
   }
 
   /**
@@ -1099,12 +1121,12 @@ export class Renderer {
   }
 
   /** One flame standing at (x, y): a curling tongue, blue at the edges, white-blue at its base. */
-  private flameTongue(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, sway: number, a: number): void {
+  private flameTongue(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, sway: number, a: number, orange = false): void {
     const tip = { x: x + sway, y: y - h };
     const body = c.createLinearGradient(0, y, 0, tip.y);
-    body.addColorStop(0, `rgba(150,200,255,${0.75 * a})`);
-    body.addColorStop(0.45, `rgba(60,120,255,${0.55 * a})`);
-    body.addColorStop(1, 'rgba(40,60,220,0)');
+    body.addColorStop(0, orange ? `rgba(255,200,120,${0.75 * a})` : `rgba(150,200,255,${0.75 * a})`);
+    body.addColorStop(0.45, orange ? `rgba(255,110,40,${0.55 * a})` : `rgba(60,120,255,${0.55 * a})`);
+    body.addColorStop(1, orange ? 'rgba(220,60,20,0)' : 'rgba(40,60,220,0)');
     c.fillStyle = body;
     c.beginPath();
     c.moveTo(x - w, y);
@@ -1115,8 +1137,8 @@ export class Renderer {
     // the hot core
     const ch = h * 0.5, cw = w * 0.5, ct = { x: x + sway * 0.5, y: y - ch };
     const core = c.createLinearGradient(0, y, 0, ct.y);
-    core.addColorStop(0, `rgba(235,245,255,${0.85 * a})`);
-    core.addColorStop(1, 'rgba(150,200,255,0)');
+    core.addColorStop(0, orange ? `rgba(255,245,220,${0.85 * a})` : `rgba(235,245,255,${0.85 * a})`);
+    core.addColorStop(1, orange ? 'rgba(255,200,120,0)' : 'rgba(150,200,255,0)');
     c.fillStyle = core;
     c.beginPath();
     c.moveTo(x - cw, y);
@@ -1383,6 +1405,15 @@ export class Renderer {
       }
       if (g.gather >= 1 && ready) this.flare = { l: Math.max(this.flare.l, FLARE_S * 0.6), r: Math.max(this.flare.r, FLARE_S * 0.6) };
     }
+    // blue inferno charging: blue fire swirling into the hands held over the head
+    if (g.infernoPrep > 0 && gl?.inView && gr?.inView) {
+      const m = g.handWorld({ x: (this.shownAt(gl).x + this.shownAt(gr).x) / 2, y: (this.shownAt(gl).y + this.shownAt(gr).y) / 2 - 7 });
+      const ready = g.infernoIn <= 0;
+      for (let i = nOf((ready ? 120 : 30) * g.infernoPrep + (g.infernoPrep >= 1 && ready ? 200 : 0), dt); i > 0; i--) {
+        const a = Math.random() * 6.283, d = rnd(3, 7);
+        this.emit(m.x + Math.cos(a) * d, m.y + Math.sin(a) * d, 0, -Math.cos(a) * d * 3, -Math.sin(a) * d * 3 - 6, 0, rnd(0.2, 0.4), rnd(2, 3.4), ready ? 'blue' : 'earth', 0.3);
+      }
+    }
     // the blue inferno: flames licking up all over the ground while it burns
     if (g.groundFire > 0) {
       const k = Math.min(1, g.groundFire / 0.8) * Math.min(1, (TUNE.infernoS - g.groundFire) / 0.3 + 0.3);
@@ -1436,11 +1467,12 @@ export class Renderer {
     }
     const { l, r } = g.hands;
     if (g.shield.on && l && r) {
-      const a = g.handWorld(l.pos), b = g.handWorld(r.pos), e = 1;
-      for (let i = nOf(260, dt); i > 0; i--) {
+      // a thin stream of sparks, not a curtain: you need to see what's coming through it
+      const a = g.handWorld(l.pos), b = g.handWorld(r.pos);
+      for (let i = nOf(90, dt); i > 0; i--) {
         const k = Math.random();
         this.emit(lerp(a.x, b.x, k) + rnd(-1, 1), lerp(a.y, b.y, k) + rnd(-2, 3), 0,
-          rnd(-3, 3), rnd(-34, -14) * (0.6 + e * 0.6), 0, rnd(0.25, 0.5), (3 + e * 2) * rnd(0.7, 1.1));
+          rnd(-3, 3), rnd(-38, -18), 0, rnd(0.18, 0.35), rnd(1.6, 2.8));
       }
     }
     // a charged fist smoulders with blue flame

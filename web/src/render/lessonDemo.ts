@@ -162,11 +162,12 @@ export class LessonDemo {
         break;
       }
       case 'inferno': {
-        // both fists up by the head, held till they burn blue, then slammed down: blue fire everywhere
+        // hands together over the head, held till they burn blue, then slammed down: blue fire everywhere
         const u = t % 3.4, up = ramp(u, 0.1, 0.4), down = ramp(u, 1.6, 0.15), glow = ramp(u, 0.6, 0.8) * (1 - down);
-        const y = H * 0.62 - up * H * 0.4 + down * H * 0.62;
+        const y = H * 0.62 - up * H * 0.48 + down * H * 0.7;
+        if (glow > 0) this.glow(cx, y, 14 + glow * 20, `rgba(120,170,255,${0.35 + 0.5 * glow})`);
         for (const sx of [-1, 1]) {
-          const x = cx + sx * (28 - up * 8 + down * 10);
+          const x = cx + sx * (28 - up * 18 + down * 18);
           if (glow > 0) this.glow(x, y, 10 + glow * 14, `rgba(120,170,255,${0.3 + 0.5 * glow})`);
           this.fist(x, Math.min(y, H * 0.92), 1 + down * 0.2);
         }
