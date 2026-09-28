@@ -13,3 +13,5 @@ the tracking frames (no raw landmarks) plus what fired at the time:
 - `raised-hands-1.json`, `raised-hands-2.json` — no punches: fists held up by and over the head
   (charging, trying the slam) and lowered again. Face overlap made the depth jump; 22 and 13 punches
   fired. Now at most 2.
+- `charge-high.json` — about 11 right punches, most thrown from a fist cocked high by or over the
+  head (charging). Only the 4 near head height fired; now 8, 5 of them charged.

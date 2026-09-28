@@ -6,6 +6,7 @@ import leaningRaw from '../../recordings/leaning.json?raw';
 import swayingRaw from '../../recordings/swaying.json?raw';
 import raised1Raw from '../../recordings/raised-hands-1.json?raw';
 import raised2Raw from '../../recordings/raised-hands-2.json?raw';
+import chargeHighRaw from '../../recordings/charge-high.json?raw';
 import { initialState, interpret, TUNING, type Intent } from './interpret';
 import type { TrackingFrame } from '../input/types';
 import type { Calibration } from './calibration';
@@ -51,6 +52,13 @@ describe('real-camera recordings', () => {
     const p3 = punchTimes(replay(punches3Raw));
     expect(p3.length).toBeGreaterThanOrEqual(17);
     expect(new Set(p3.map(x => x.hand))).toEqual(new Set(['l', 'r']));
+  });
+
+  it('catches punches thrown from a fist cocked high, by or over the head (charged ones too)', () => {
+    // about 11 right-hand punches, most from 18–39 view units over the head's centre: 4 fired before
+    const out = replay(chargeHighRaw), p = punchTimes(out);
+    expect(p.length).toBeGreaterThanOrEqual(8);
+    expect(out.flatMap(o => o.intent.punches).filter(x => x.charged).length).toBeGreaterThanOrEqual(5);
   });
 
   it('does not punch with the fists held up by or over the head, raised and lowered', () => {

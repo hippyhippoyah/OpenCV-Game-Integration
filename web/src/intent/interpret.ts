@@ -248,12 +248,13 @@ export const TUNING = {
    */
   infernoGap: 30, infernoAbove: 8, infernoHoldS: 0.5, slamWindowS: 0.45, slamDrop: 22, slamSpeed: 60,
   /**
-   * Fists held up high (charging a slam, or just resting up there) overlap the face, and their
-   * depth reading jumps about wildly: a fist more than aboveHead view units above the centre of the
-   * head (over the top of it) is never punching, nor is one moving down faster than slamSpeed
-   * (dropping the hands). A guard at chin height, and the charge pose by the ear, are below this.
+   * Fists held up high (cocked by the ear, or just resting up there) overlap the face, and their
+   * depth reading jumps about: a fist more than aboveHead view units above the centre of the head
+   * only punches with a big, clean jolt of at least highFistRise metres (a real punch from up there
+   * easily makes it, face-overlap jitter mostly doesn't). A fist moving down faster than slamSpeed
+   * (dropping the hands) is never punching.
    */
-  aboveHead: 13,
+  aboveHead: 13, highFistRise: 0.4,
   /**
    * Palm push (fist-punch mode only; the open-hand punch style already uses opening hands): one hand
    * open, shoved toward the camera — it may open on the way. The other hand is a fist, or open but
@@ -541,15 +542,16 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         // with the other hand open too (shield territory) a stray push costs more: no sensitivity boost
         const pushNeed = pushThreshold(tr.reachNoise ?? 0) * (o?.open ? TUNING.punchSensitivity : 1) + leanExtra;
         shove = settled && tr.armed && f.t - tr.lastPunchT >= TUNING.refireS && push >= pushNeed && push - otherRise >= need.lead;
-        if (fire) { tr.peakReach = tr.reach; tr.peakT = f.t; }
       } else if (tr.extension !== null) {
         // no 3D hand data: fall back to the arm straightening
         if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
         fire = tr.armed && tr.extension >= TUNING.extendFireAbove && extensionRise(tr) >= TUNING.punchExtendRise;
       }
-      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView) && s.infernoSince === null && !s.infernoReady) {
+      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView, tr.reach !== null ? reachRise(tr, TUNING.quickWindowS) : 0) && s.infernoSince === null && !s.infernoReady) {
         tr.armed = false;
         tr.lastPunchT = f.t;
+        // (only a punch that fires starts a new peak: a jolt held back by a check above keeps building)
+        if (tr.reach !== null) { tr.peakReach = tr.reach; tr.peakT = f.t; }
         s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t, charged: tr.charge >= 1 });
         tr.charge = 0;
         tr.chargedAt = null;
@@ -718,10 +720,10 @@ function updateCharge(tr: Track, side: Side, shoulder: Vec2, head: Vec2, t: numb
 /**
  * Not a punch, whatever the depth reading says: the fist is dropping (moving down hard — lowering
  * the hands, or a slam), or it's up over the top of the head (its depth jumps about up there,
- * overlapping the face).
+ * overlapping the face) and came forward less than a real punch from there does (`rise`, m).
  */
-function droppingOrHigh(tr: Track, head: Vec2): boolean {
-  return (tr.vel.y > TUNING.slamSpeed && tr.vel.y > 2 * Math.abs(tr.vel.x)) || tr.pos.y < head.y - TUNING.aboveHead;
+function droppingOrHigh(tr: Track, head: Vec2, rise: number): boolean {
+  return (tr.vel.y > TUNING.slamSpeed && tr.vel.y > 2 * Math.abs(tr.vel.x)) || (tr.pos.y < head.y - TUNING.aboveHead && rise < TUNING.highFistRise);
 }
 
 /** Queue a palm push from this hand (it confirms after palmConfirmS). */
