@@ -66,6 +66,12 @@ export class Hud {
     inf.classList.toggle('ready', infReady);
     inf.style.setProperty('--p', (1 - g.infernoIn / TUNE.infernoCooldownS).toFixed(3));
     $('infernoNum').textContent = infReady ? '' : String(Math.ceil(g.infernoIn));
+    // lightning: its own recharge, beside the others
+    const bolt = $('lightning'), boltReady = g.lightningIn <= 0;
+    bolt.classList.toggle('hidden', !g.has('lightning'));
+    bolt.classList.toggle('ready', boltReady);
+    bolt.style.setProperty('--p', (1 - g.lightningIn / TUNE.lightningCooldownS).toFixed(3));
+    $('lightningNum').textContent = boltReady ? '' : String(Math.ceil(g.lightningIn));
   }
 
   onEvent(e: GameEvent): void {

@@ -147,7 +147,7 @@ button kbd { margin-left: 6px; vertical-align: 1px; }
 @keyframes lowpulse { 50% { opacity: .55; } }
 .bl .bar { height: 15px; margin-top: 8px; border-radius: 8px; }
 /* breath: the body's fuel, front and centre, in fire orange */
-.breath { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); width: min(480px, calc(100vw - 600px)); min-width: 200px; text-align: center; }
+.breath { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); width: min(520px, calc(100vw - 560px)); min-width: 300px; text-align: center; }
 .breathRow { display: flex; align-items: center; gap: 12px; }
 .breathBar { flex: 1; height: 20px; border-radius: 12px; background: rgba(20,10,8,.55); border: 1px solid rgba(255,160,90,.45); overflow: hidden; box-shadow: 0 0 18px rgba(255,120,40,.25); }
 .breathBar > i { display: block; height: 100%; width: 100%; transition: width .08s; background: linear-gradient(90deg, #d6391c, #ff7a2a 55%, #ffc15a); box-shadow: 0 0 14px rgba(255,140,50,.8) inset; }
@@ -164,6 +164,9 @@ button kbd { margin-left: 6px; vertical-align: 1px; }
 .ult.blue { background: conic-gradient(#5a9bff calc(var(--p, 1) * 1turn), rgba(255,255,255,.08) 0); }
 .ult.blue.ready svg { fill: #8fc4ff; filter: drop-shadow(0 0 6px rgba(90,150,255,.9)); }
 .ult.blue.ready { box-shadow: 0 0 14px rgba(90,150,255,.7); }
+.ult.bolt { background: conic-gradient(#dfe9ff calc(var(--p, 1) * 1turn), rgba(255,255,255,.08) 0); }
+.ult.bolt.ready svg { fill: #f2f6ff; filter: drop-shadow(0 0 6px rgba(170,200,255,.95)); }
+.ult.bolt.ready { box-shadow: 0 0 14px rgba(170,200,255,.75); }
 
 /* ---------- front screens: title, menu, settings ---------- */
 body.front .hud, body.front #mockHelp { display: none !important; }

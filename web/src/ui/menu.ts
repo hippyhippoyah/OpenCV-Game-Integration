@@ -3,6 +3,7 @@ import type { Progress } from '../campaign/progress';
 import { LESSONS } from '../game/tutorial';
 import type { UiSound } from '../audio/sfx';
 import { embersAvailable, templeOpen } from '../campaign/temple';
+import { FEATURES } from '../config';
 import { clampSensitivity, SENSITIVITY_MAX, SENSITIVITY_MIN, type InputKind, type Settings } from './settings';
 
 export type PlayMode = 'campaign' | 'tutorial' | 'training';
@@ -69,9 +70,9 @@ export class Menu {
 
   showTitle(): void { this.go('title'); }
 
-  /** What the menu offers: the temple only once Chapter 1 is done. */
+  /** What the menu offers: the temple only once Chapter 1 is done (and while it's switched on, see FEATURES). */
   private get items(): Item[] {
-    return ITEMS.filter(it => it.id !== 'temple' || templeOpen(this.progress));
+    return ITEMS.filter(it => it.id !== 'temple' || (FEATURES.temple && templeOpen(this.progress)));
   }
 
   showMenu(note = ''): void {
