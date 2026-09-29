@@ -15,7 +15,7 @@ export interface HandState {
   openness: number;
   /** Debounced open / closed. */
   open: boolean;
-  /** How straight each finger is (index, middle, ring, pinky), smoothed; missing when not measured. */
+  /** How far each fingertip reaches (index, middle, ring, pinky; ~1.7 out, under 1 curled), smoothed; missing when not measured. */
   fingers?: number[];
   /** Index and middle pointed, ring and pinky curled: the finger gun (lightning). */
   fingerGun?: boolean;

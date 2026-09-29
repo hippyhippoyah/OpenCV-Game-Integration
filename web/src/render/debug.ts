@@ -88,7 +88,7 @@ export class DebugView {
         c.fillStyle = '#fff';
         const gun = hand.fingers && isFingerGun(hand.fingers);
         c.fillText(gun ? 'FINGER GUN' : `${open ? 'OPEN' : 'FIST'} ${hand.open.toFixed(2)}`, x, p.y);
-        // each finger's straightness: index, middle, ring, pinky
+        // how far each fingertip reaches: index, middle, ring, pinky (~1.7 out, under 1 curled)
         if (hand.fingers) c.fillText(`fingers ${hand.fingers.map(v => v.toFixed(1)).join(' ')}`, x, p.y + (2 * h) / 12);
         const n = hand.normal && hand.side ? palmOf(hand.normal, hand.side) : null;
         c.fillText(n ? `palm ${n.x.toFixed(1)} ${n.y.toFixed(1)} ${n.z.toFixed(1)}` : `face ${hand.facing.toFixed(2)}`, x, p.y + h / 12);

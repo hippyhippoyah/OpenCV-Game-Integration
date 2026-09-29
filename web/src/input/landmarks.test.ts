@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fingerStraightness, isFingerGun, openness, palmFacing, palmNormal, palmOf, toFrame, type Landmark } from './landmarks';
+import { fingerReach, fingerStraightness, isFingerGun, openness, palmFacing, palmNormal, palmOf, toFrame, type Landmark } from './landmarks';
 
 const pose = (): Landmark[] => Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 1 }));
 
@@ -220,18 +220,33 @@ describe('each finger, and the finger gun', () => {
     expect(openness(worldHand(GUN))).toBeCloseTo(f.reduce((a, b) => a + b) / 4);
   });
 
+  it('measures how far each fingertip reaches: out beyond its knuckle, or curled back in', () => {
+    const r = fingerReach(worldHand(GUN));
+    expect(r[0]).toBeGreaterThan(1.3);
+    expect(r[1]).toBeGreaterThan(1.3);
+    expect(r[2]).toBeLessThan(1.25);
+    expect(r[3]).toBeLessThan(1.25);
+  });
+
   it('index and middle out, ring and pinky curled: a finger gun, whichever way it points', () => {
-    for (const plane of ['xy', 'zy', 'xz'] as const) expect(isFingerGun(fingerStraightness(worldHand(GUN, plane))), plane).toBe(true);
+    for (const plane of ['xy', 'zy', 'xz'] as const) expect(isFingerGun(fingerReach(worldHand(GUN, plane))), plane).toBe(true);
   });
 
   it('a fist, an open hand, or one pointing finger is not', () => {
-    expect(isFingerGun(fingerStraightness(worldHand(true)))).toBe(false);
-    expect(isFingerGun(fingerStraightness(worldHand(false)))).toBe(false);
-    expect(isFingerGun(fingerStraightness(worldHand([false, true, true, true])))).toBe(false);
+    expect(isFingerGun(fingerReach(worldHand(true)))).toBe(false);
+    expect(isFingerGun(fingerReach(worldHand(false)))).toBe(false);
+    expect(isFingerGun(fingerReach(worldHand([false, true, true, true])))).toBe(false);
+  });
+
+  it('a real finger gun, ring and pinky only half curled (as recorded), still counts', () => {
+    // typical readings from the recording: ring and pinky 0.9–1.0, not tucked as tight as a fist
+    expect(isFingerGun([1.68, 1.86, 0.9, 0.99])).toBe(true);
+    expect(isFingerGun([1.66, 1.81, 1.76, 1.7])).toBe(false); // an open hand
+    expect(isFingerGun([0.77, 0.76, 0.65, 0.75])).toBe(false); // a fist
   });
 
   it("doesn't flicker on the edge: once on, it takes a clearer change to turn off", () => {
-    const edge = [0.62, 0.65, 0.4, 0.3];
+    const edge = [1.2, 1.25, 1.3, 1.35];
     expect(isFingerGun(edge)).toBe(false);
     expect(isFingerGun(edge, true)).toBe(true);
   });

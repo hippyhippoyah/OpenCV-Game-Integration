@@ -60,15 +60,15 @@ describe('interpret', () => {
   });
 
   it('reads the finger gun (index and middle out) from each finger, without firing anything', () => {
-    const GUN = [1, 1, 0, 0];
+    const GUN = [1.7, 1.85, 0.9, 1.0], FIST = [0.77, 0.76, 0.65, 0.75];
     const out = play([
-      ...repeat(5, () => [GUARD_L, { ...GUARD_R, fingers: [0, 0, 0, 0] }]),
+      ...repeat(5, () => [GUARD_L, { ...GUARD_R, fingers: FIST }]),
       ...repeat(10, () => [GUARD_L, { ...GUARD_R, open: 0.5, fingers: GUN }]),
-      ...repeat(10, () => [GUARD_L, { ...GUARD_R, fingers: [0, 0, 0, 0] }]),
+      ...repeat(10, () => [GUARD_L, { ...GUARD_R, fingers: FIST }]),
     ]);
     expect(out[4].hands.r!.fingerGun).toBe(false);
     expect(out[14].hands.r!.fingerGun).toBe(true);
-    expect(out[14].hands.r!.fingers![0]).toBeGreaterThan(0.9);
+    expect(out[14].hands.r!.fingers![0]).toBeGreaterThan(1.5);
     expect(out[24].hands.r!.fingerGun).toBe(false);
     expect(out.flatMap(o => [...o.punches, ...o.palms, ...o.casts])).toHaveLength(0);
   });
