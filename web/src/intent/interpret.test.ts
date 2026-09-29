@@ -59,6 +59,20 @@ describe('interpret', () => {
     expect(out[17].hands.l!.facing).toBeCloseTo(0.2, 1);
   });
 
+  it('reads the finger gun (index and middle out) from each finger, without firing anything', () => {
+    const GUN = [1, 1, 0, 0];
+    const out = play([
+      ...repeat(5, () => [GUARD_L, { ...GUARD_R, fingers: [0, 0, 0, 0] }]),
+      ...repeat(10, () => [GUARD_L, { ...GUARD_R, open: 0.5, fingers: GUN }]),
+      ...repeat(10, () => [GUARD_L, { ...GUARD_R, fingers: [0, 0, 0, 0] }]),
+    ]);
+    expect(out[4].hands.r!.fingerGun).toBe(false);
+    expect(out[14].hands.r!.fingerGun).toBe(true);
+    expect(out[14].hands.r!.fingers![0]).toBeGreaterThan(0.9);
+    expect(out[24].hands.r!.fingerGun).toBe(false);
+    expect(out.flatMap(o => [...o.punches, ...o.palms, ...o.casts])).toHaveLength(0);
+  });
+
   it('fires one punch from the hand that opens at the end of a fast move, where it opened', () => {
     TUNING.punchTrigger = 'open';
     const to = { x: -0.1, y: -0.6 };

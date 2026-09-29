@@ -26,15 +26,34 @@ const visible = (p: Landmark | undefined): p is Landmark => !!p && (p.visibility
 const bodyPoint = (p: Landmark): BodyPoint => ({ ...mirror(p), vis: p.visibility ?? 1 });
 const d3 = (a: Landmark, b: Landmark) => Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
 
-/** 0 = fist … 1 = flat open hand. Uses 3D finger straightness, so it works whichever way the hand points. */
-export function openness(lm: Landmark[]): number {
-  let sum = 0;
-  for (const [k, p, d, t] of FINGERS) {
+/**
+ * How straight each finger is — index, middle, ring, pinky — 0 = curled … 1 = straight. Uses 3D
+ * knuckle-to-tip distance over the bones' length, so it works whichever way the hand points.
+ */
+export function fingerStraightness(lm: Landmark[]): number[] {
+  return FINGERS.map(([k, p, d, t]) => {
     const bones = d3(lm[k], lm[p]) + d3(lm[p], lm[d]) + d3(lm[d], lm[t]);
     const straight = bones > 0 ? d3(lm[k], lm[t]) / bones : 0;
-    sum += clamp((straight - CURLED) / (STRAIGHT - CURLED), 0, 1);
-  }
-  return sum / FINGERS.length;
+    return clamp((straight - CURLED) / (STRAIGHT - CURLED), 0, 1);
+  });
+}
+
+/** 0 = fist … 1 = flat open hand: how straight the four fingers are on average. */
+export function openness(lm: Landmark[]): number {
+  const f = fingerStraightness(lm);
+  return f.reduce((a, b) => a + b, 0) / f.length;
+}
+
+/**
+ * The finger gun (lightning): index and middle straight, ring and pinky curled (the thumb is left
+ * out). `was` adds hysteresis so it doesn't flicker on the edge: once on, it needs a clearer
+ * change to turn off.
+ */
+export const FINGER_GUN = { straightOn: 0.7, curledOn: 0.35, straightOff: 0.55, curledOff: 0.5 };
+export function isFingerGun(f: number[], was = false): boolean {
+  const [index, middle, ring, pinky] = f;
+  const g = FINGER_GUN, straight = was ? g.straightOff : g.straightOn, curled = was ? g.curledOff : g.curledOn;
+  return index >= straight && middle >= straight && ring <= curled && pinky <= curled;
 }
 
 /** 1 = palm (or back of the hand) faces the camera; 0 = edge-on, e.g. palms facing each other. */
@@ -257,7 +276,8 @@ function bodyDepth(pose: Landmark[], world: Landmark[], aspect: number): { dista
 function handObs(lm: Landmark[], world: Landmark[], depth: { body: { distance: number; mid: Vec2 }; aspect: number } | null, aspect: number): HandObs {
   const c = { x: 0, y: 0 };
   for (const i of PALM) { c.x += lm[i].x / PALM.length; c.y += lm[i].y / PALM.length; }
-  const open = openness(world);
+  const fingers = fingerStraightness(world);
+  const open = fingers.reduce((a, b) => a + b, 0) / fingers.length;
   let body3: HandObs['body3'] = null, handDepth: number | null = null;
   // a fist is a rigid 3D shape: fit all of it; a flat open hand is better measured by its palm
   const scale = depth && (open < 0.5
@@ -275,6 +295,7 @@ function handObs(lm: Landmark[], world: Landmark[], depth: { body: { distance: n
     center: mirror(c),
     size: dist(lm[WRIST], lm[MIDDLE_KNUCKLE]),
     open,
+    fingers,
     facing: palmFacing(world),
     normal: palmNormal(lm, aspect),
     body3,

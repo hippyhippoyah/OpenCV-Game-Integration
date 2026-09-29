@@ -2,7 +2,7 @@ import type { BodyPoint, HandObs, Side, TrackingFrame } from '../input/types';
 import type { Calibration } from './calibration';
 import { clamp, dist, lerp, type Vec2, type Vec3 } from '../math';
 import { OneEuro } from './oneEuro';
-import { FOCAL_H, palmOf } from '../input/landmarks';
+import { FOCAL_H, isFingerGun, palmOf } from '../input/landmarks';
 
 /**
  * View space: world units relative to the eyes, x right, y down.
@@ -15,6 +15,10 @@ export interface HandState {
   openness: number;
   /** Debounced open / closed. */
   open: boolean;
+  /** How straight each finger is (index, middle, ring, pinky), smoothed; missing when not measured. */
+  fingers?: number[];
+  /** Index and middle pointed, ring and pinky curled: the finger gun (lightning). */
+  fingerGun?: boolean;
   /** 1 = palm faces the camera, 0 = edge-on (palms facing each other). */
   facing: number;
   /**
@@ -410,7 +414,7 @@ const smooth = (prev: Vec2 | null, next: Vec2, k: number): Vec2 =>
 
 const snapshot = (t: Track | null): HandState | null =>
   t && {
-    pos: { ...t.pos }, vel: { ...t.vel }, openness: t.openness, open: t.open, facing: t.facing, palm: t.palm && { ...t.palm },
+    pos: { ...t.pos }, vel: { ...t.vel }, openness: t.openness, open: t.open, fingers: t.fingers && [...t.fingers], fingerGun: t.fingerGun, facing: t.facing, palm: t.palm && { ...t.palm },
     source: t.source, inView: t.inView, elbow: t.elbow && { ...t.elbow }, extension: t.extension,
     punchReady: t.armed, punchRise: t.reach === null ? null : reachRise(t, TUNING.quickWindowS),
     reach: t.reach, reachBase: t.reachBase, reachNoise: t.reach === null ? null : t.reachNoise,
@@ -918,7 +922,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     filters.x.filter(pos.x, 0); filters.y.filter(pos.y, 0);
     if (b3) { filters.bx.filter(b3.x, 0); filters.by.filter(b3.y, 0); }
     const track: Track = {
-      pos: { ...pos }, vel: { x: 0, y: 0 }, openness: open, open: open >= 0.5, facing: h ? h.facing : 1, palm: h?.normal ? palmOf(h.normal, side) : null,
+      pos: { ...pos }, vel: { x: 0, y: 0 }, openness: open, open: open >= 0.5, fingers: h?.fingers && [...h.fingers], fingerGun: h?.fingers ? isFingerGun(h.fingers) : undefined, facing: h ? h.facing : 1, palm: h?.normal ? palmOf(h.normal, side) : null,
       source: 'hand', inView: true, elbow: null, extension: ext, punchReady: true, armed: true, lastSeen: t,
       reach: null, reachBase: null, reachNoise: 0.02, reachDev: 0.02, rawDepths: [depth], lastPunchT: -Infinity, peakReach: -Infinity, peakT: -Infinity,
       reachSince: null,
@@ -975,6 +979,10 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
   let opened = false;
   if (h) {
     tr.openness = lerp(tr.openness, h.open, k);
+    if (h.fingers) {
+      tr.fingers = tr.fingers ? tr.fingers.map((v, i) => lerp(v, h.fingers![i], k)) : [...h.fingers];
+      tr.fingerGun = isFingerGun(tr.fingers, tr.fingerGun);
+    }
     tr.facing = lerp(tr.facing, h.facing, k);
     tr.palm = h.normal ? turnToward(tr.palm, palmOf(h.normal, side), k) : null;
     if (!tr.open && tr.openness > TUNING.openAbove) { tr.open = true; opened = true; }

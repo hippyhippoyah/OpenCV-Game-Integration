@@ -32,6 +32,8 @@ export interface HandObs {
   size: number;
   /** 0 = fist … 1 = open hand. */
   open: number;
+  /** How straight each finger is (index, middle, ring, pinky), 0 = curled … 1 = straight; missing from mock hands. */
+  fingers?: number[];
   /** 1 = palm faces the camera, 0 = palm edge-on (e.g. palms facing each other). */
   facing: number;
   /**

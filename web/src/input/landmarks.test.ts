@@ -1,19 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { openness, palmFacing, palmNormal, palmOf, toFrame, type Landmark } from './landmarks';
+import { fingerStraightness, isFingerGun, openness, palmFacing, palmNormal, palmOf, toFrame, type Landmark } from './landmarks';
 
 const pose = (): Landmark[] => Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 1 }));
 
-/** 3D hand in metres: wrist at the origin, fingers pointing up (−y). 'zy' turns the palm edge-on to the camera. */
-function worldHand(curled: boolean, plane: 'xy' | 'zy' = 'xy'): Landmark[] {
+/**
+ * 3D hand in metres: wrist at the origin, fingers pointing up (−y). 'zy' turns the palm edge-on to
+ * the camera. `curled` is every finger, or each one (index, middle, ring, pinky).
+ */
+function worldHand(curled: boolean | boolean[], plane: 'xy' | 'zy' | 'xz' = 'xy'): Landmark[] {
   const lm: Landmark[] = Array.from({ length: 21 }, () => ({ x: 0, y: 0, z: 0 }));
   const put = (i: number, across: number, y: number, depth: number) => {
-    lm[i] = plane === 'xy' ? { x: across, y, z: depth } : { x: depth, y, z: across };
+    // 'xz': the fingers point straight at the camera (−z) instead of up
+    lm[i] = plane === 'xy' ? { x: across, y, z: depth } : plane === 'zy' ? { x: depth, y, z: across } : { x: across, y: depth, z: y };
   };
   [-0.02, -0.007, 0.007, 0.02].forEach((across, f) => {
     const k = 5 + f * 4;
     put(k, across, -0.04, 0);
     put(k + 1, across, -0.065, 0);
-    if (curled) {
+    if (Array.isArray(curled) ? curled[f] : curled) {
       put(k + 2, across, -0.065, 0.02);
       put(k + 3, across, -0.045, 0.02);
     } else {
@@ -200,5 +204,35 @@ describe('palmNormal / palmOf', () => {
     // than the pinky's. The right palm then faces the middle — left of it in the mirrored view.
     expect(r(palmOf(palmNormal(hand([0, 0.03], [0, -0.03]))!, 'r'))).toEqual({ x: -1, y: 0, z: 0 });
     expect(r(palmOf(palmNormal(hand([0, 0.03], [0, -0.03]))!, 'l'))).toEqual({ x: 1, y: 0, z: 0 });
+  });
+});
+
+describe('each finger, and the finger gun', () => {
+  const GUN = [false, false, true, true];
+
+  it('measures each finger: straight ones near 1, curled ones near 0', () => {
+    const f = fingerStraightness(worldHand(GUN));
+    expect(f[0]).toBeGreaterThan(0.9);
+    expect(f[1]).toBeGreaterThan(0.9);
+    expect(f[2]).toBeLessThan(0.1);
+    expect(f[3]).toBeLessThan(0.1);
+    // openness is still their average
+    expect(openness(worldHand(GUN))).toBeCloseTo(f.reduce((a, b) => a + b) / 4);
+  });
+
+  it('index and middle out, ring and pinky curled: a finger gun, whichever way it points', () => {
+    for (const plane of ['xy', 'zy', 'xz'] as const) expect(isFingerGun(fingerStraightness(worldHand(GUN, plane))), plane).toBe(true);
+  });
+
+  it('a fist, an open hand, or one pointing finger is not', () => {
+    expect(isFingerGun(fingerStraightness(worldHand(true)))).toBe(false);
+    expect(isFingerGun(fingerStraightness(worldHand(false)))).toBe(false);
+    expect(isFingerGun(fingerStraightness(worldHand([false, true, true, true])))).toBe(false);
+  });
+
+  it("doesn't flicker on the edge: once on, it takes a clearer change to turn off", () => {
+    const edge = [0.62, 0.65, 0.4, 0.3];
+    expect(isFingerGun(edge)).toBe(false);
+    expect(isFingerGun(edge, true)).toBe(true);
   });
 });
