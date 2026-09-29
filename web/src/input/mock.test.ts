@@ -41,6 +41,15 @@ describe('MockTracker', () => {
     });
   }
 
+  it('Z plays out lightning: a half circle with each finger gun, then pointing strikes once', () => {
+    const m = new MockTracker(identity);
+    const out = run(m, 200, i => { if (i === 30) m.lightning(); });
+    expect(out.some(o => o.lightning?.stage === 1)).toBe(true);
+    expect(out.some(o => o.lightning?.stage === 2)).toBe(true);
+    expect(out.flatMap(o => o.casts.filter(c => c.kind === 'lightning'))).toHaveLength(1);
+    expect(out.flatMap(o => [...o.punches, ...o.palms])).toHaveLength(0);
+  });
+
   it('W sweeps open hands up into a fire wall, U spreads them into the ultimate, F pushes a wall', () => {
     for (const [key, kind] of [['w', 'wall'], ['u', 'ultimate'], ['f', 'push']] as const) {
       const m = new MockTracker(identity);

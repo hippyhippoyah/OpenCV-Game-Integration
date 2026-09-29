@@ -11,6 +11,10 @@ const MID = { x: 0.5, y: 0.5 }, SW = 0.2, HAND_SIZE = 0.08;
 const GUARD: Record<Side, Vec2> = { l: { x: -12, y: 22 }, r: { x: 12, y: 22 } };
 /** A palm facing the camera (at your enemies). */
 const FORWARD: Vec3 = { x: 0, y: 0, z: 1 };
+/** How the finger gun reads (fingertip reach: index, middle, ring, pinky). */
+const FINGER_GUN_READING = [1.7, 1.85, 0.9, 1.0];
+/** Lightning (Z): each half circle's length, and the whole move. */
+const ARC_S = 0.6, LIGHTNING_S = 2.2;
 const EXTEND_S = 0.12, OPEN_HOLD_S = 0.25, SHIELD_HALF_WIDTH = 18;
 /** Two-hand casts: open hands move for CAST_MOVE_S, then stay open for CAST_HOLD_S. */
 const CAST_MOVE_S = 0.25, CAST_HOLD_S = 0.3, GATHER_S = 0.6;
@@ -55,6 +59,10 @@ export class MockTracker implements Tracker {
   setKey(key: string, down: boolean): void { if (down) this.keys.add(key); else this.keys.delete(key); }
   punch(side: Side): void { this.requested.push(side); }
   cast(kind: CastKind): void { this.castReq = kind; }
+  /** Z: lightning, played out — a half circle with the right finger gun, one with the left, then the right points at the screen. */
+  lightning(): void { this.lightningReq = true; }
+  private lightningReq = false;
+  private lightningAt: number | null = null;
   palm(kind: PalmKind): void { this.palmReq = kind; }
 
   poll(now: number): TrackingFrame {
@@ -75,6 +83,9 @@ export class MockTracker implements Tracker {
     if (this.raised && !raise) this.slamAt = t;
     this.raised = raise;
     if (this.slamAt !== null && t - this.slamAt > 0.8) this.slamAt = null;
+    if (this.lightningReq && this.lightningAt === null) this.lightningAt = t;
+    this.lightningReq = false;
+    if (this.lightningAt !== null && t - this.lightningAt > LIGHTNING_S) this.lightningAt = null;
     if (this.castReq && !this.casting) this.casting = { kind: this.castReq, t };
     this.castReq = null;
     if (this.casting && t - this.casting.t > CAST_MOVE_S + CAST_HOLD_S + (this.casting.kind === 'ultimate' ? GATHER_S : 0)) this.casting = null;
@@ -142,6 +153,27 @@ export class MockTracker implements Tracker {
         ext = 0.25 + 0.65 * e;
         reachM = GUARD_REACH_M + (PUNCH_REACH_M - GUARD_REACH_M) * e;
       }
+      // L: the right hand makes a finger gun (index and middle out, ring and pinky curled)
+      let fingers = side === 'r' && this.keys.has('l') ? FINGER_GUN_READING : undefined;
+      // …pointing at the mouse (up when the mouse is right above the hand)
+      const to = { x: aim.x - pos.x, y: aim.y - pos.y }, n = Math.hypot(to.x, to.y) || 1;
+      let point = fingers ? { x: (to.x / n) * 0.9, y: (to.y / n) * 0.9, z: 0.44 } : undefined;
+      if (this.lightningAt !== null) {
+        // each hand in a finger gun sweeps a half circle out and up, the right first; then the right
+        // points at the screen
+        const e = t - this.lightningAt, start = side === 'r' ? 0 : ARC_S + 0.05;
+        if (e >= start) {
+          const k = clamp((e - start) / ARC_S, 0, 1), a = Math.PI / 2 - Math.PI * k, sign = side === 'l' ? -1 : 1;
+          pos = { x: sign * (20 + 22 * Math.cos(a)), y: 18 + 22 * Math.sin(a) };
+          open = 0;
+          fingers = FINGER_GUN_READING;
+          point = { x: 0, y: -1, z: 0 };
+          if (side === 'r' && e >= 2 * ARC_S + 0.15) {
+            pos = { x: 14, y: 8 };
+            point = { x: 0, y: -0.3, z: 0.95 };
+          }
+        }
+      }
       const away = side === 'r' && this.keys.has('o');
       if (away) pos = OUT_OF_VIEW;
       const palm = toNorm(pos), shoulder = { x: mid.x + (sign * SW) / 2, y: mid.y };
@@ -160,11 +192,6 @@ export class MockTracker implements Tracker {
       const body3 = { x: (pos.x / TUNING.handScaleX) * MOCK_SHOULDERS_M, y: ((pos.y - TUNING.handOffsetY) / TUNING.handScaleY) * MOCK_SHOULDERS_M, z: reachM };
       // (a hand's measured normal is its palm's direction as if it were a right hand)
       const normal = palmDir && palmOf(palmDir, side);
-      // L: the right hand makes a finger gun (index and middle out, ring and pinky curled)
-      const fingers = side === 'r' && this.keys.has('l') ? [1.7, 1.85, 0.9, 1.0] : undefined;
-      // …pointing at the mouse (up when the mouse is right above the hand)
-      const to = { x: aim.x - pos.x, y: aim.y - pos.y }, n = Math.hypot(to.x, to.y) || 1;
-      const point = fingers ? { x: (to.x / n) * 0.9, y: (to.y / n) * 0.9, z: 0.44 } : undefined;
       if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open: fingers ? 0.5 : open, fingers, point, facing, normal, side, body3, depth: MOCK_DISTANCE - reachM });
     }
     return {
@@ -194,6 +221,7 @@ export function bindMockControls(m: MockTracker, canvas: HTMLElement): () => voi
     const k = e.key.toLowerCase();
     if (!e.repeat && k === 'w') m.cast('wall');
     if (!e.repeat && k === 'u') m.cast('ultimate');
+    if (!e.repeat && k === 'z') m.lightning();
     if (!e.repeat && k === 'e') m.palm('push');
     if (!e.repeat && k === 'f') m.cast('push');
     m.setKey(k, true);

@@ -614,6 +614,61 @@ describe('Game', () => {
     });
   });
 
+  describe('lightning', () => {
+    const bolt = (x: number, dir = { x: 0, y: -1 }) => intent({ casts: [{ kind: 'lightning', at: { x, y: 20 }, dir }] });
+    const spirits = (g: Game) => [
+      g.addEnemy({ kind: 'spirit', x: -30, z: 8, hp: 20, cd: Infinity }),
+      g.addEnemy({ kind: 'spirit', x: 0, z: 8, hp: 20, cd: Infinity }),
+      g.addEnemy({ kind: 'spirit', x: 30, z: 8, hp: 20, cd: Infinity }),
+      g.addEnemy({ kind: 'spirit', x: 200, z: 8, hp: 20, cd: Infinity }),
+    ];
+
+    it('strikes the enemy pointed at hard, then jumps to others close by', () => {
+      const g = quietGame();
+      const [l, mid, r, far] = spirits(g);
+      run(g, 1, intent());
+      g.step(1 / 60, bolt(-12));
+      expect(l.hp).toBe(20 - TUNE.lightningDamage);
+      expect(mid.hp).toBe(20 - TUNE.lightningChainDamage);
+      expect(r.hp).toBe(20 - TUNE.lightningChainDamage);
+      expect(far.hp).toBe(20); // too far to jump to
+      const ev = g.drainEvents().find(e => e.type === 'lightning');
+      expect(ev && ev.type === 'lightning' && ev.hits.length).toBe(3);
+    });
+
+    it('recharges before it can strike again, and costs breath', () => {
+      const g = quietGame();
+      const [, mid] = spirits(g);
+      run(g, 1, intent());
+      g.step(1 / 60, bolt(0));
+      const after = mid.hp;
+      expect(g.breath).toBeLessThan(TUNE.breathMax);
+      g.step(1 / 60, bolt(0));
+      expect(mid.hp).toBe(after);
+      expect(g.drainEvents().some(e => e.type === 'hint')).toBe(true);
+    });
+
+    it("arcs over Daro's stone wall", () => {
+      const g = quietGame();
+      g.scripted(); g.noDamage = false;
+      const boss = g.addBoss(0, 9);
+      boss.boss!.wall = 3;
+      run(g, 2, intent());
+      const hp = boss.hp;
+      g.step(1 / 60, bolt(0));
+      expect(boss.hp).toBeLessThan(hp);
+    });
+
+    it("isn't a move you have in the campaign until it's given", () => {
+      const g = quietGame();
+      const [, mid] = spirits(g);
+      g.allowed = new Set(['punch']);
+      run(g, 1, intent());
+      g.step(1 / 60, bolt(0));
+      expect(mid.hp).toBe(20);
+    });
+  });
+
   describe('temple defenses (raids)', () => {
     const none = { braziers: [], blockChance: 0, damageMult: 1 };
     const hitBy = (temple: Game['temple']) => {

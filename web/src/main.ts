@@ -85,6 +85,7 @@ sfx.setVolume(settings.data.volume);
 const wasCharged = { l: false, r: false };
 let wasGathered = false;
 let wasPrimed = false;
+let wasLightning = 0;
 const menu = new Menu(settings, progress, {
   sound: s => sfx.ui(s),
   onVolume: v => sfx.setVolume(v),
@@ -355,6 +356,9 @@ function cueSounds(g: Game, events: GameEvent[]): void {
   wasGathered = g.gather >= 1;
   if (g.infernoPrep >= 1 && !wasPrimed) sfx.ui('blueReady');
   wasPrimed = g.infernoPrep >= 1;
+  // each half circle of lightning snaps as it's drawn
+  if (g.lightningStage > wasLightning) sfx.ui('arc');
+  wasLightning = g.lightningStage;
 }
 
 function stepCampaign(dt: number, now: number): void {

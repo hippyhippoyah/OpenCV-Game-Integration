@@ -127,6 +127,14 @@ export const LESSONS: Lesson[] = [
     setup: g => { g.infernoIn = 0; },
     progress: (_g, events) => count(events, e => e.type === 'inferno'),
   },
+  {
+    id: 'lightning', title: 'Lightning', need: 2,
+    cue: g => (g.lightningStage === 2 ? 'POINT AT A TARGET!' : g.lightningStage === 1 ? 'NOW THE OTHER HAND' : 'FINGER GUN · HALF CIRCLE'),
+    cast: [{ tag: 'a', kind: 'dummy', x: -24, z: 7 }, { tag: 'b', kind: 'dummy', x: 0, z: 9 }, { tag: 'c', kind: 'dummy', x: 24, z: 7 }],
+    setup: g => { g.lightningIn = 0; },
+    // (no waiting out the recharge in the lesson)
+    progress: (g, events) => { const n = count(events, e => e.type === 'lightning'); if (n) g.lightningIn = 0; return n; },
+  },
 ];
 
 /** Seconds to celebrate a finished lesson before moving on to the next. */

@@ -6,6 +6,8 @@ import { ghostPose } from './ghost';
 import { FLOORS, paintMid, paintSky, type Frame, type Glows, type Scene } from './scenes';
 
 type Pal = 'fire' | 'spirit' | 'earth' | 'blue';
+/** Seconds a lightning bolt lasts on screen, and a finger gun's trail. */
+const BOLT_S = 0.45, TRAIL_S = 0.5;
 /** A flame standing on the ground (world x, depth z), its size and flicker, and d: when it lights (see drawGroundFire). */
 interface Flame { x: number; z: number; w: number; h: number; phase: number; speed: number; d: number }
 interface Particle {
@@ -86,6 +88,10 @@ export class Renderer {
   private t = 0;
   private shake = 0;
   private flash = 0;
+  /** Lightning: where each finger gun's fingertips have been lately (screen, with the time), a bolt's glare, and the bolts. */
+  private trails: Record<Side, { x: number; y: number; t: number }[]> = { l: [], r: [] };
+  private boltFlash = 0;
+  private bolts: { from: Vec2; hits: { x: number; y: number; z: number }[]; end: { x: number; y: number; z: number } | null; life: number }[] = [];
   /** Seconds of fire left in each hand after it attacks (hands only burn while doing something). */
   private flare: Record<Side, number> = { l: 0, r: 0 };
 
@@ -226,6 +232,12 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.25);
         break;
       // felt, not startling: a small shake and a soft red edge
+      case 'lightning':
+        this.bolts.push({ from: e.from, hits: e.hits, end: e.end, life: BOLT_S });
+        this.boltFlash = 1;
+        this.shake = Math.max(this.shake, 0.35);
+        for (const h of e.hits) this.burst(h.x, h.y, h.z, 'blue', 34, 50);
+        break;
       case 'playerHit': this.burst(e.x, e.y, 0, 'spirit', 26, 36); this.shake = Math.max(this.shake, 0.3); this.flash = 0.45; break;
     }
   }
@@ -245,6 +257,14 @@ export class Renderer {
     this.shake = Math.max(0, this.shake - dt * 2.5);
     for (const [side, left] of this.brazierFlare) this.brazierFlare.set(side, Math.max(0, left - dt));
     this.flash = Math.max(0, this.flash - dt * 2);
+    this.boltFlash = Math.max(0, this.boltFlash - dt * 4);
+    this.bolts = this.bolts.filter(b => (b.life -= dt) > 0);
+    // the fingertips of each finger gun leave a trail of lightning as they move
+    for (const side of ['l', 'r'] as const) {
+      const h = g?.hands[side];
+      this.trails[side] = this.trails[side].filter(p => this.t - p.t < TRAIL_S);
+      if (h?.inView && h.fingerGun) this.trails[side].push({ ...this.fingertip(h), t: this.t });
+    }
     this.flare = { l: Math.max(0, this.flare.l - dt), r: Math.max(0, this.flare.r - dt) };
 
 
@@ -289,6 +309,7 @@ export class Renderer {
       if (g.xBlock) this.drawXBlock(g);
       this.drawHands(g);
       this.drawPalmFacing(g);
+      this.drawLightning(g);
       this.drawGhost();
       this.drawOffscreenHands(g);
     }
@@ -965,24 +986,25 @@ export class Renderer {
     line(shoulder.x, shoulder.y, elbow.x, elbow.y, 9 * k);
     line(elbow.x, elbow.y, h.x, h.y + 3.5 * k, 6.4 * k);
     if (gun) {
-      // finger gun: a fist whose index and middle (the thumb side) point up together; ring and
-      // pinky stay curled as knuckle bumps, the thumb tucked along the side
-      c.beginPath(); c.ellipse(h.x, h.y, 3.5 * k + g, 3.2 * k + g, 0, 0, 7); c.fill();
-      for (const i of [2, 3]) {
-        c.beginPath(); c.arc(h.x + side * (i - 1.5) * 1.55 * k, h.y - 2.5 * k, 1 * k + g, 0, 7); c.fill();
-      }
-      // the two fingers pressed together, pointing the way yours do: turned on screen, and
-      // foreshortened (with the fingertips showing) as they point toward or away from the camera
+      // finger gun: a fist whose index and middle (the thumb side) point out together; ring and
+      // pinky stay curled as knuckle bumps, the thumb tucked along the side. The whole hand turns
+      // the way your fingers point, and the fingers foreshorten (tips showing) toward the camera.
       const p = point ?? { x: 0, y: -1, z: 0 }, across = Math.hypot(p.x, p.y);
-      const ux = across > 0.05 ? p.x / across : 0, uy = across > 0.05 ? p.y / across : -1;
-      const len = 6.2 * k * Math.max(0.2, across), base = { x: h.x - side * 1 * k, y: h.y - 2.2 * k };
-      for (const i of [0, 1]) {
-        // side by side, across the pointing direction
-        const off = (i - 0.5) * 1.35 * k, bx = base.x - uy * off * side, by = base.y + ux * off * side;
-        line(bx, by, bx + ux * len, by + uy * len, 1.6 * k);
-        if (across < 0.6) { c.beginPath(); c.arc(bx + ux * len, by + uy * len, 1.05 * k + g, 0, 7); c.fill(); }
+      const angle = across > 0.05 ? Math.atan2(p.x, -p.y) : 0, len = 6.2 * k * Math.max(0.2, across);
+      c.save();
+      c.translate(h.x, h.y);
+      c.rotate(angle);
+      c.beginPath(); c.ellipse(0, 0, 3.5 * k + g, 3.2 * k + g, 0, 0, 7); c.fill();
+      for (const i of [2, 3]) {
+        c.beginPath(); c.arc(side * (i - 1.5) * 1.55 * k, -2.5 * k, 1 * k + g, 0, 7); c.fill();
       }
-      line(h.x - side * 3.2 * k, h.y + 0.4 * k, h.x - side * 3.4 * k, h.y - 2.4 * k, 1.8 * k);
+      for (const i of [0, 1]) {
+        const x = side * (-1.7 + i * 1.35) * k;
+        line(x, -2.2 * k, x, -2.2 * k - len, 1.6 * k);
+        if (across < 0.6) { c.beginPath(); c.arc(x, -2.2 * k - len, 1.05 * k + g, 0, 7); c.fill(); }
+      }
+      line(-side * 3.2 * k, 0.4 * k, -side * 3.4 * k, -2.4 * k, 1.8 * k);
+      c.restore();
       return;
     }
     if (!open) {
@@ -1163,6 +1185,99 @@ export class Renderer {
     c.restore();
   }
 
+  /** Where a finger gun's fingertips are on screen. */
+  private fingertip(h: NonNullable<Game['hands']['l']>): Vec2 {
+    const at = this.viewToScreen(this.shownAt(h)), p = h.point ?? { x: 0, y: -1, z: 0 }, across = Math.hypot(p.x, p.y);
+    const len = (2.2 + 6.2 * Math.max(0.2, across)) * 1.5 * this.u * this.shownScale(h);
+    return across > 0.05 ? { x: at.x + (p.x / across) * len, y: at.y + (p.y / across) * len } : { x: at.x, y: at.y - len };
+  }
+
+  /**
+   * Lightning: each finger gun's fingertips crackle (more as the half circles are drawn) and leave
+   * a trail of lightning where they move; a strike is a forked bolt from the hand through everyone
+   * it hits, with a blue-white glare.
+   */
+  private drawLightning(g: Game): void {
+    const c = this.ctx, u = this.u, stage = g.lightningStage;
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    for (const side of ['l', 'r'] as const) {
+      const pts = this.trails[side], h = g.hands[side];
+      // the trail: one jagged line along where the fingertips have been (kinked every few points,
+      // re-kinked every frame so it crackles), fading toward its old end
+      const path: Vec2[] = [];
+      for (let i = 0; i < pts.length; i += 3) {
+        const p = pts[i], q = pts[Math.min(pts.length - 1, i + 3)], dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+        const o = (Math.random() * 2 - 1) * 2.4 * u;
+        path.push({ x: p.x - (dy / len) * o, y: p.y + (dx / len) * o });
+      }
+      if (pts.length) path.push(pts.at(-1)!);
+      for (let i = 1; i < path.length; i++) {
+        const fade = i / path.length;
+        for (const [w, col] of [[3.4 * u, `rgba(90,150,255,${0.25 * fade})`], [1.1 * u, `rgba(215,235,255,${0.85 * fade})`]] as const) {
+          c.strokeStyle = col;
+          c.lineWidth = w;
+          c.beginPath(); c.moveTo(path[i - 1].x, path[i - 1].y); c.lineTo(path[i].x, path[i].y); c.stroke();
+        }
+      }
+      if (!h?.inView || !h.fingerGun) continue;
+      // crackling at the fingertips: a few short sparks, more and longer once charged
+      const tip = this.fingertip(h), n = 2 + stage * 3, reach = (5 + stage * 5) * u;
+      const glow = c.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, reach * 1.4);
+      glow.addColorStop(0, `rgba(170,210,255,${0.35 + 0.2 * stage})`); glow.addColorStop(1, 'rgba(60,110,255,0)');
+      c.fillStyle = glow;
+      c.fillRect(tip.x - reach * 1.4, tip.y - reach * 1.4, reach * 2.8, reach * 2.8);
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, r = reach * (0.4 + Math.random() * 0.6);
+        this.bolt(tip, { x: tip.x + Math.cos(a) * r, y: tip.y + Math.sin(a) * r }, 1.6 * u, 3, [[2 * u, 'rgba(110,160,255,.35)'], [0.7 * u, 'rgba(235,245,255,.9)']]);
+      }
+    }
+    // strikes: from the hand to each enemy hit in turn, forking as it goes
+    for (const b of this.bolts) {
+      const k = b.life / BOLT_S, start = this.viewToScreen(b.from);
+      const ends = [...b.hits, ...(b.end ? [b.end] : [])].map(p => this.project(p.x, p.y, p.z));
+      let from = start;
+      ends.forEach((to, i) => {
+        const w = (i === 0 ? 1 : 0.7) * u, len = Math.hypot(to.x - from.x, to.y - from.y);
+        this.bolt(from, to, len * 0.07, 14, [[7 * w, `rgba(70,120,255,${0.25 * k})`], [3.2 * w, `rgba(150,200,255,${0.6 * k})`], [1.4 * w, `rgba(255,255,255,${0.95 * k})`]]);
+        // a couple of forks off the main bolt
+        for (let f = 0; f < 2; f++) {
+          const t = 0.3 + Math.random() * 0.5, m = { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
+          const a = Math.atan2(to.y - from.y, to.x - from.x) + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.6);
+          const len = Math.hypot(to.x - from.x, to.y - from.y) * (0.15 + Math.random() * 0.2);
+          this.bolt(m, { x: m.x + Math.cos(a) * len, y: m.y + Math.sin(a) * len }, 3 * u, 5, [[3 * u, `rgba(110,160,255,${0.35 * k})`], [1 * u, `rgba(235,245,255,${0.8 * k})`]]);
+        }
+        from = to;
+      });
+    }
+    c.restore();
+    if (this.boltFlash > 0) {
+      c.fillStyle = `rgba(200,220,255,${0.4 * this.boltFlash})`;
+      c.fillRect(-this.M, -this.M, this.W + 2 * this.M, this.H + 2 * this.M);
+    }
+  }
+
+  /** One jagged stroke of lightning from a to b (screen), `segs` kinks up to `amp` off the line, in layers of [width, colour]. */
+  private bolt(a: Vec2, b: Vec2, amp: number, segs: number, layers: [number, string][]): void {
+    const c = this.ctx, dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;
+    const pts = [a];
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs, o = (Math.random() * 2 - 1) * amp;
+      pts.push({ x: a.x + dx * t + nx * o, y: a.y + dy * t + ny * o });
+    }
+    pts.push(b);
+    for (const [w, col] of layers) {
+      c.strokeStyle = col;
+      c.lineWidth = w;
+      c.beginPath();
+      c.moveTo(pts[0].x, pts[0].y);
+      for (const p of pts.slice(1)) c.lineTo(p.x, p.y);
+      c.stroke();
+    }
+  }
+
   /** Translucent hands demonstrating the move being learned, over your own. */
   private drawGhost(): void {
     if (!this.ghost) return;
@@ -1177,7 +1292,8 @@ export class Renderer {
       const h = pose[side];
       // the shield is taught with the palms facing each other (seen edge-on, so narrow)
       const palm = h.open && this.ghost.lessonId === 'shield' ? { x: -sign, y: 0, z: 0 } : null;
-      this.handShape(c, this.viewToScreen(h.pos), sign, 0.6 * this.u, h.open, null, h.scale, palm);
+      // lightning is taught with finger guns
+      this.handShape(c, this.viewToScreen(h.pos), sign, 0.6 * this.u, h.open, null, h.scale, palm, this.ghost.lessonId === 'lightning');
     }
     c.restore();
   }

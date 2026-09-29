@@ -3,7 +3,7 @@ import { GHOST_LOOP_S, ghostPose } from './ghost';
 
 describe('ghost hands', () => {
   it('loop smoothly for each move taught in the campaign', () => {
-    for (const id of ['move', 'punch', 'flurry', 'shield', 'pillar', 'palm', 'charge', 'wall', 'ultimate', 'xblock', 'onetwo', 'volley', 'wallbreaker', 'inferno']) {
+    for (const id of ['move', 'punch', 'flurry', 'shield', 'pillar', 'palm', 'charge', 'wall', 'ultimate', 'xblock', 'onetwo', 'volley', 'wallbreaker', 'inferno', 'lightning']) {
       const a = ghostPose(id, 0), b = ghostPose(id, GHOST_LOOP_S);
       expect(a, id).not.toBeNull();
       expect(b!.r.pos.x).toBeCloseTo(a!.r.pos.x, 5);

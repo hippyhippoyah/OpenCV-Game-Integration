@@ -32,7 +32,7 @@ export function arm(mid: Vec2, sw: number, side: Side, wrist: { x: number; y: nu
 }
 
 /** A hand relative to the shoulder centre, in shoulder widths (x right, y down). A fist facing the camera by default. */
-export interface HandSpec { x: number; y: number; open?: number; size?: number; facing?: number; side?: Side; fingers?: number[] }
+export interface HandSpec { x: number; y: number; open?: number; size?: number; facing?: number; side?: Side; fingers?: number[]; point?: { x: number; y: number; z: number } }
 
 export function hand(mid: Vec2, sw: number, p: HandSpec): HandObs {
   return {
@@ -42,5 +42,6 @@ export function hand(mid: Vec2, sw: number, p: HandSpec): HandObs {
     facing: p.facing ?? 1,
     ...(p.side ? { side: p.side } : {}),
     ...(p.fingers ? { fingers: p.fingers } : {}),
+    ...(p.point ? { point: p.point } : {}),
   };
 }

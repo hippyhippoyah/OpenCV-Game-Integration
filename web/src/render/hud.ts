@@ -28,7 +28,9 @@ export class Hud {
     pill.classList.toggle('off', noHands);
     pill.classList.toggle('shield', g.shield.on);
     // a word or two, never a paragraph: the name of what you're doing, and what to do next
-    const [name, hint] = g.infernoSpreadIn > 0 ? ['BLUE INFERNO', 'spread your hands!']
+    const [name, hint] = g.lightningStage === 2 ? ['LIGHTNING', 'point at a target!']
+      : g.lightningStage === 1 ? ['LIGHTNING', 'now the other hand']
+      : g.infernoSpreadIn > 0 ? ['BLUE INFERNO', 'spread your hands!']
       : g.infernoPrep >= 1 ? ['BLUE INFERNO', g.infernoIn <= 0 ? 'slam them down!' : `recharging ${Math.ceil(g.infernoIn)}s`]
       : g.infernoPrep > 0 ? ['BLUE INFERNO', 'hold them overhead…']
       : g.gather >= 1 ? ['FINISHER', g.ultimateIn <= 0 ? 'spread them wide!' : `recharging ${Math.ceil(g.ultimateIn)}s`]

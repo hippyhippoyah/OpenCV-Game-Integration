@@ -81,7 +81,7 @@ export interface Palm {
   dir: Vec2 | null;
 }
 
-export type CastKind = 'wall' | 'ultimate' | 'push' | 'slam' | 'inferno';
+export type CastKind = 'wall' | 'ultimate' | 'push' | 'slam' | 'inferno' | 'lightning';
 
 /**
  * A two-hand move: fire wall (open hands sweep up), ultimate (open hands held together, as if
@@ -91,8 +91,10 @@ export type CastKind = 'wall' | 'ultimate' | 'push' | 'slam' | 'inferno';
  */
 export interface Cast {
   kind: CastKind;
-  /** View-space point between the hands when it was cast. */
+  /** View-space point between the hands when it was cast (lightning: the pointing hand). */
   at: Vec2;
+  /** Lightning: which way the fingers point across the screen (unit, view space). */
+  dir?: Vec2;
 }
 
 export interface Intent {
@@ -110,6 +112,11 @@ export interface Intent {
   gather?: number;
   /** Blue inferno: 0 → 1 while the hands are held together over the head; 1 = ready, slam them down. */
   inferno?: number;
+  /**
+   * Lightning: how far along it is — 0 nothing, 1 one half circle drawn (which hand), 2 both drawn:
+   * point to strike.
+   */
+  lightning?: { stage: 0 | 1 | 2; hand: Side | null };
   /** Forearms crossed in front of the chest. */
   xBlock: boolean;
   casts: Cast[];
@@ -308,6 +315,17 @@ export const TUNING = {
    * (≈ within 60°) to go up; it drops once either turns below shieldFacingOff.
    */
   pushFacing: 0.5, shieldFacing: 0.5, shieldFacingOff: 0.25,
+  /**
+   * Lightning (like Azula's): a half circle drawn with one hand in a finger gun, then one with the
+   * other within arcGapS, then pointing a finger gun at the enemies strikes. A half circle: within
+   * the last arcWindowS, held in a finger gun the whole way, the hand travelled at least arcMinPath
+   * view units, its heading turned at least arcMinTurn radians the same way round, and it ended
+   * at least arcMinChord from where it started (not wobbling in place). Once both are drawn it
+   * stays ready for lightningReadyS; after lightningMinReadyS, a finger gun pointed toward the
+   * screen (its forward part at least lightningPointZ) for lightningPointHoldS strikes.
+   */
+  arcWindowS: 1.2, arcMinPath: 45, arcMinTurn: 2.0, arcMinChord: 18, arcStep: 3, arcGapS: 2,
+  lightningReadyS: 3, lightningMinReadyS: 0.2, lightningPointZ: 0.5, lightningPointHoldS: 0.1,
   /** Pose wrists below this confidence are treated as guesses. */
   minWristVis: 0.5,
   /** The palm sits this fraction of the forearm beyond the pose wrist. */
@@ -318,7 +336,7 @@ interface Track extends HandState {
   armed: boolean;
   lastSeen: number;
   /** bx: the hand's 3D sideways position (m), when known. */
-  hist: { t: number; x: number; y: number; speed: number; size: number | null; ext: number | null; reach: number | null; bx: number | null; open: number }[];
+  hist: { t: number; x: number; y: number; speed: number; size: number | null; ext: number | null; reach: number | null; bx: number | null; open: number; gun: boolean }[];
   filters: { x: OneEuro; y: OneEuro; depth: OneEuro; bx: OneEuro; by: OneEuro };
   /** Filtered 3D palm position (m, relative to the shoulder centre). */
   body3: { x: number; y: number; z: number } | null;
@@ -397,6 +415,8 @@ export interface InterpretState {
   /** How fast the head (your body) is moving, view units/s, smoothed; and its recent history. */
   headSpeed: number;
   headSpeeds: { t: number; v: number }[];
+  /** Lightning: the half circles drawn so far (by which hand, when), when it became ready, and since when a hand points. */
+  lightning: { arcs: { hand: Side; t: number }[]; lastArcT: number; readyAt: number | null; pointSince: number | null };
 }
 
 export const initialState = (): InterpretState => ({
@@ -406,6 +426,7 @@ export const initialState = (): InterpretState => ({
   castReadyAt: -Infinity, lastCastT: -Infinity, crossedSince: null,
   shoulderSpan: null, bodyDist: new OneEuro(TUNING.bodyDepthMinCutoff, TUNING.bodyDepthBeta), noiseCoef: TUNING.noiseCoefStart,
   headSpeed: 0, headSpeeds: [],
+  lightning: { arcs: [], lastArcT: -Infinity, readyAt: null, pointSince: null },
 });
 
 const SIDES = ['l', 'r'] as const;
@@ -590,7 +611,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
         fire = tr.armed && tr.extension >= TUNING.extendFireAbove && extensionRise(tr) >= TUNING.punchExtendRise;
       }
-      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView, tr.reach !== null ? reachRise(tr, TUNING.quickWindowS) : 0, tr.charge >= 1) && !startedOpen(tr, TUNING.startedOpenS) && s.infernoSince === null && !s.infernoReady) {
+      if (fire && !tr.fingerGun && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView, tr.reach !== null ? reachRise(tr, TUNING.quickWindowS) : 0, tr.charge >= 1) && !startedOpen(tr, TUNING.startedOpenS) && s.infernoSince === null && !s.infernoReady) {
         tr.armed = false;
         tr.lastPunchT = f.t;
         // (only a punch that fires starts a new peak: a jolt held back by a check above keeps building)
@@ -734,12 +755,13 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
       }
     }
   }
+  const lightning = updateLightning(s, f.t, xBlock, casts);
   const inferno = s.infernoReady ? 1 : s.infernoSince !== null ? Math.min(1, (f.t - s.infernoSince) / TUNING.infernoHoldS) : 0;
   const gather = s.gathered ? 1 : s.gatherSince !== null ? Math.min(1, (f.t - s.gatherSince) / TUNING.gatherHoldS) : 0;
   const shield = s.shieldOn;
 
   return {
-    present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, palms, shield, gather, inferno, xBlock, casts,
+    present: true, head: { ...s.head }, hands: { l: snapshot(s.l), r: snapshot(s.r) }, shoulders, punches, palms, shield, gather, inferno, lightning, xBlock, casts,
     face: f.face, bodyTilt: Math.atan2(f.shoulderR.y - f.shoulderL.y, f.shoulderR.x - f.shoulderL.x),
   };
 }
@@ -765,8 +787,9 @@ export function chargePose(tr: HandState, side: Side, shoulder: Vec2, head: Vec2
  * body steady); a full charge lasts chargeKeepS after it leaves the pose.
  */
 function updateCharge(tr: Track, side: Side, shoulder: Vec2, head: Vec2, t: number, bodyMoving: boolean): void {
-  const fist = tr.openness < TUNING.clearlyOpen;
-  const held = !bodyMoving && Math.hypot(tr.vel.x, tr.vel.y) < TUNING.chargeMaxSpeed && chargePose(tr, side, shoulder, head) !== null;
+  // (a finger gun is lightning, not a fist charging a punch)
+  const fist = tr.openness < TUNING.clearlyOpen && !tr.fingerGun;
+  const held = fist && !bodyMoving && Math.hypot(tr.vel.x, tr.vel.y) < TUNING.chargeMaxSpeed && chargePose(tr, side, shoulder, head) !== null;
   if (held) {
     tr.chamberSince ??= t;
     // a full charge stays full; otherwise it fills while held
@@ -804,6 +827,62 @@ function sizeGrowth(tr: Track, window: number): number {
 /** The hand opened only just now: it was still a fist within the last openedRecentlyS (not slowly relaxing open). */
 function justOpened(t: Track, now: number): boolean {
   return t.hist.some(h => h.t >= now - TUNING.openedRecentlyS && h.open < TUNING.fistBelow);
+}
+
+/**
+ * Lightning: a half circle with one hand in a finger gun, one with the other, then point one at the
+ * enemies to strike (pushes the cast). Returns how far along it is.
+ */
+function updateLightning(s: InterpretState, t: number, blocked: boolean, casts: Cast[]): { stage: 0 | 1 | 2; hand: Side | null } {
+  const L = s.lightning;
+  const reset = () => { L.arcs = []; L.readyAt = null; L.pointSince = null; };
+  if (blocked) reset();
+  if (L.arcs.length === 1 && t - L.arcs[0].t > TUNING.arcGapS) reset();
+  if (L.readyAt !== null && t - L.readyAt > TUNING.lightningReadyS) reset();
+  if (L.readyAt === null) {
+    for (const side of SIDES) {
+      const tr = s[side];
+      if (!tr?.fingerGun || !drewHalfCircle(tr, Math.max(t - TUNING.arcWindowS, L.lastArcT))) continue;
+      L.lastArcT = t;
+      // the second must come from the other hand; the same hand again starts over
+      if (L.arcs.length === 1 && L.arcs[0].hand !== side) { L.arcs.push({ hand: side, t }); L.readyAt = t; }
+      else L.arcs = [{ hand: side, t }];
+      break;
+    }
+  } else if (t - L.readyAt >= TUNING.lightningMinReadyS) {
+    // ready: point a finger gun at the enemies
+    const pointing = SIDES.map(side => s[side]).find(tr => tr?.fingerGun && tr.point && tr.point.z >= TUNING.lightningPointZ);
+    if (!pointing) L.pointSince = null;
+    else {
+      L.pointSince ??= t;
+      if (t - L.pointSince >= TUNING.lightningPointHoldS) {
+        const p = pointing.point!, across = Math.hypot(p.x, p.y);
+        casts.push({ kind: 'lightning', at: { ...pointing.pos }, dir: across > 0.05 ? { x: p.x / across, y: p.y / across } : { x: 0, y: -1 } });
+        reset();
+      }
+    }
+  }
+  return { stage: L.readyAt !== null ? 2 : L.arcs.length === 1 ? 1 : 0, hand: L.arcs.at(-1)?.hand ?? null };
+}
+
+/** Did this hand, in a finger gun all the way since `from`, just draw a half circle (see TUNING.arcWindowS)? */
+function drewHalfCircle(tr: Track, from: number): boolean {
+  const pts: { x: number; y: number }[] = [];
+  for (let i = tr.hist.length - 1; i >= 0 && tr.hist[i].t > from && tr.hist[i].gun; i--) {
+    const h = tr.hist[i], last = pts.at(-1);
+    if (!last || Math.hypot(h.x - last.x, h.y - last.y) >= TUNING.arcStep) pts.push({ x: h.x, y: h.y });
+  }
+  if (pts.length < 4) return false;
+  let path = 0, turn = 0, prev: number | null = null;
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y;
+    path += Math.hypot(dx, dy);
+    const heading = Math.atan2(dy, dx);
+    if (prev !== null) turn += Math.atan2(Math.sin(heading - prev), Math.cos(heading - prev));
+    prev = heading;
+  }
+  const chord = Math.hypot(pts[0].x - pts.at(-1)!.x, pts[0].y - pts.at(-1)!.y);
+  return path >= TUNING.arcMinPath && Math.abs(turn) >= TUNING.arcMinTurn && chord >= TUNING.arcMinChord;
 }
 
 /** Queue a palm push from this hand (it confirms after palmConfirmS). */
@@ -938,7 +1017,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     track.reachBase = track.reach;
     if (track.reach !== null) track.reachSince = t;
     if (track.body3 && track.reach !== null) track.body3.z = track.reach;
-    track.hist.push({ t, x: pos.x, y: pos.y, speed: 0, size, ext, reach: track.reach, bx: track.body3?.x ?? null, open: track.openness });
+    track.hist.push({ t, x: pos.x, y: pos.y, speed: 0, size, ext, reach: track.reach, bx: track.body3?.x ?? null, open: track.openness, gun: !!track.fingerGun });
     return { track, opened: false };
   }
   // Opening or closing the hand switches how its distance is measured, which jumps the reading:
@@ -991,12 +1070,14 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     tr.point = h.point ? turnToward(tr.point ?? null, h.point, k) : undefined;
     tr.facing = lerp(tr.facing, h.facing, k);
     tr.palm = h.normal ? turnToward(tr.palm, palmOf(h.normal, side), k) : null;
-    if (!tr.open && tr.openness > TUNING.openAbove) { tr.open = true; opened = true; }
+    // the finger gun is its own pose: not an open palm (no push, shield or cast), nor a punching fist
+    if (tr.fingerGun) tr.open = false;
+    else if (!tr.open && tr.openness > TUNING.openAbove) { tr.open = true; opened = true; }
     else if (tr.open && tr.openness < TUNING.fistBelow) tr.open = false;
   }
   tr.lastSeen = t;
-  tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension, reach: reach !== null ? tr.reach : null, bx: reach !== null && b3 ? tr.body3!.x : null, open: tr.openness });
-  const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS, TUNING.quickWindowS, TUNING.palmPushWindowS, TUNING.slamWindowS);
+  tr.hist.push({ t, x: tr.pos.x, y: tr.pos.y, speed: Math.hypot(tr.vel.x, tr.vel.y), size, ext: tr.extension, reach: reach !== null ? tr.reach : null, bx: reach !== null && b3 ? tr.body3!.x : null, open: tr.openness, gun: !!tr.fingerGun });
+  const keepS = Math.max(TUNING.punchWindowS, TUNING.castWindowS, TUNING.quickWindowS, TUNING.palmPushWindowS, TUNING.slamWindowS, TUNING.arcWindowS);
   while (tr.hist.length && t - tr.hist[0].t > keepS) tr.hist.shift();
   return { track: tr, opened };
 }

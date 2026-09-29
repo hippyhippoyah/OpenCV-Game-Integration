@@ -73,6 +73,65 @@ describe('interpret', () => {
     expect(out.flatMap(o => [...o.punches, ...o.palms, ...o.casts])).toHaveLength(0);
   });
 
+  describe('lightning', () => {
+    const GUN = [1.7, 1.85, 0.9, 1.0], UP = { x: 0, y: -1, z: 0 }, AT_SCREEN = { x: 0, y: -0.3, z: 0.95 };
+    const L_REST: HandSpec = { ...GUARD_L, side: 'l' }, R_REST: HandSpec = { ...GUARD_R, side: 'r' };
+    /** A half circle over `n` frames (shoulder widths): centre, radius, from angle a0 through π. */
+    const arc = (cx: number, cy: number, r: number, a0: number, n: number, dir: 1 | -1) =>
+      repeat(n, i => { const a = a0 + (dir * Math.PI * (i + 1)) / n; return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }; });
+    const gun = (p: { x: number; y: number }, side: 'l' | 'r', point = UP): HandSpec => ({ ...p, side, open: 0.8, fingers: GUN, point });
+    /** Right hand arcs, then the left, then the right points at the screen for `pointFrames`. */
+    const azula = (pointFrames = 15, gapFrames = 3): Pair[] => [
+      ...repeat(5, () => [L_REST, gun(GUARD_R, 'r')]),
+      ...arc(0.35, 0, 0.55, Math.PI / 2, 12, -1).map(p => [L_REST, gun(p, 'r')]),
+      ...repeat(gapFrames, () => [gun(GUARD_L, 'l'), gun({ x: 0.35, y: -0.25 }, 'r')]),
+      ...arc(-0.35, 0, 0.55, Math.PI / 2, 12, 1).map(p => [gun(p, 'l'), gun({ x: 0.35, y: -0.25 }, 'r')]),
+      ...repeat(pointFrames, () => [gun({ x: -0.35, y: -0.25 }, 'l'), gun({ x: 0.3, y: 0 }, 'r', AT_SCREEN)]),
+    ];
+    const bolts = (out: Intent[]) => out.flatMap(o => o.casts.filter(c => c.kind === 'lightning'));
+
+    it('a half circle with each hand in a finger gun, then pointing one at the screen, strikes once', () => {
+      const out = play(azula());
+      expect(out.some(o => o.lightning?.stage === 1)).toBe(true);
+      expect(out.some(o => o.lightning?.stage === 2)).toBe(true);
+      expect(bolts(out)).toHaveLength(1);
+      expect(out.at(-1)!.lightning!.stage).toBe(0);
+      // no fire from the finger guns along the way
+      expect(out.flatMap(o => [...o.punches, ...o.palms])).toHaveLength(0);
+      expect(out.some(o => o.shield)).toBe(false);
+    });
+
+    it('one half circle alone, or both with the same hand, is not enough', () => {
+      const one = play([
+        ...repeat(5, () => [L_REST, gun(GUARD_R, 'r')]),
+        ...arc(0.35, 0, 0.55, Math.PI / 2, 12, -1).map(p => [L_REST, gun(p, 'r')]),
+        ...repeat(10, () => [L_REST, gun({ x: 0.3, y: 0 }, 'r', AT_SCREEN)]),
+      ]);
+      expect(bolts(one)).toHaveLength(0);
+    });
+
+    it('moving a finger gun in a straight line is not a half circle', () => {
+      const out = play([
+        ...repeat(5, () => [L_REST, gun(GUARD_R, 'r')]),
+        ...repeat(12, i => [L_REST, gun({ x: 0.3 - i * 0.05, y: 0.1 }, 'r')]),
+      ]);
+      expect(out.every(o => o.lightning?.stage === 0)).toBe(true);
+    });
+
+    it('the same half circles with fists do nothing', () => {
+      const fist = (p: { x: number; y: number }, side: 'l' | 'r'): HandSpec => ({ ...p, side });
+      const out = play([
+        ...arc(0.35, 0, 0.55, Math.PI / 2, 12, -1).map(p => [L_REST, fist(p, 'r')]),
+        ...arc(-0.35, 0, 0.55, Math.PI / 2, 12, 1).map(p => [fist(p, 'l'), R_REST]),
+      ]);
+      expect(out.every(o => o.lightning?.stage === 0)).toBe(true);
+    });
+
+    it('waiting too long after the first half circle starts over', () => {
+      expect(bolts(play(azula(15, 70)))).toHaveLength(0);
+    });
+  });
+
   it('fires one punch from the hand that opens at the end of a fast move, where it opened', () => {
     TUNING.punchTrigger = 'open';
     const to = { x: -0.1, y: -0.6 };

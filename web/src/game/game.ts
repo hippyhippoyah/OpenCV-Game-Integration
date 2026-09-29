@@ -46,6 +46,14 @@ export const TUNE = {
    */
   infernoS: 5, infernoTickS: 0.5, infernoDamage: 1, infernoCooldownS: 20,
   /**
+   * Lightning: strikes the enemy nearest where the finger gun points for lightningDamage, then jumps
+   * to up to lightningChain more within lightningChainRange (world x) of the last, lightningChainDamage
+   * each. It passes Daro's stone wall. It costs breathLightning and recharges for lightningCooldownS.
+   */
+  lightningDamage: 6, lightningChain: 2, lightningChainDamage: 3, lightningChainRange: 60, lightningCooldownS: 10, breathLightning: 30,
+  /** How far along the pointing direction (view units) the lightning aims from the hand. */
+  lightningReach: 45,
+  /**
    * The blue inferno has three steps: hands together over the head (they burn blue), slammed down —
    * a line of blue fire bursts up along the ground straight ahead from the hands (slamLineHalfW to
    * each side, all the way down the field) and burns there for slamLineS, burning whatever stands
@@ -150,7 +158,7 @@ export type ComboName = 'charged' | 'flurry' | 'counter' | 'oneTwo' | 'volley' |
 
 /** Every move the player can have; the campaign unlocks them one scroll at a time. */
 export type MoveName = 'punch' | 'flurry' | 'shield' | 'palm' | 'charge' | 'wall' | 'finisher'
-  | 'xBlock' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker' | 'inferno';
+  | 'xBlock' | 'counter' | 'oneTwo' | 'volley' | 'wallBreaker' | 'inferno' | 'lightning';
 
 type PositionedType = 'brazier' | 'blocked' | 'playerHit' | 'dodged' | 'hitEnemy' | 'killEnemy' | 'clash' | 'wall' | 'ultimate' | 'cut' | 'wallPush' | 'slab' | 'fizzle' | 'inferno' | 'slam';
 export type GameEvent =
@@ -161,6 +169,8 @@ export type GameEvent =
   /** A move that didn't go off, and what it needs (e.g. the wall push needs a wall). */
   | { type: 'hint'; text: string }
   | { type: 'gameOver' }
+  /** Lightning from the pointing hand (view space) to each enemy struck, in order (world); `end` when it hit nothing. */
+  | { type: 'lightning'; from: Vec2; hits: { x: number; y: number; z: number }[]; end: { x: number; y: number; z: number } | null }
 
 
 export type Rand = () => number;
@@ -238,6 +248,9 @@ export class Game {
   ultimateIn = 0;
   /** Blue inferno: seconds until it's ready again, and seconds the ground has left to burn. */
   infernoIn = 0;
+  /** Lightning: seconds until it can strike again, and how far along drawing it you are (0, 1 or 2 half circles). */
+  lightningIn = 0;
+  lightningStage: 0 | 1 | 2 = 0;
   groundFire = 0;
   /** Blue inferno: how long the hands have been held together over the head, 0 → 1 (1 = slam them down). */
   infernoPrep = 0;
@@ -367,16 +380,18 @@ export class Game {
     this.palmCool = { l: Math.max(0, this.palmCool.l - dt), r: Math.max(0, this.palmCool.r - dt) };
     this.ultimateIn = Math.max(0, this.ultimateIn - dt);
     this.infernoIn = Math.max(0, this.infernoIn - dt);
+    this.lightningIn = Math.max(0, this.lightningIn - dt);
     this.infernoSpreadIn = Math.max(0, this.infernoSpreadIn - dt);
     const rested = this.time - this.breathSpentT >= TUNE.breathRestS;
     this.breath = Math.min(TUNE.breathMax, this.breath + (rested ? TUNE.breathRestRegen : TUNE.breathRegen) * dt);
     this.updateShield(intent.shield && this.has('shield'));
     this.gather = this.has('finisher') ? intent.gather ?? 0 : 0;
     this.infernoPrep = this.has('inferno') ? intent.inferno ?? 0 : 0;
+    this.lightningStage = this.has('lightning') ? intent.lightning?.stage ?? 0 : 0;
     if (this.state !== 'play') return;
     if (this.has('punch')) for (const p of intent.punches) this.punch(this.has('charge') ? p : { ...p, charged: false });
     for (const c of intent.casts) {
-      const needs: MoveName = c.kind === 'wall' ? 'wall' : c.kind === 'push' ? 'wallBreaker' : c.kind === 'inferno' || c.kind === 'slam' ? 'inferno' : 'finisher';
+      const needs: MoveName = c.kind === 'wall' ? 'wall' : c.kind === 'push' ? 'wallBreaker' : c.kind === 'inferno' || c.kind === 'slam' ? 'inferno' : c.kind === 'lightning' ? 'lightning' : 'finisher';
       if (this.has(needs)) this.cast(c);
     }
     if (this.has('palm')) for (const p of intent.palms ?? []) this.palm(p);
@@ -661,7 +676,7 @@ export class Game {
   }
 
   /** Burn an enemy with a pillar (or a rolling wall, `shot: 'wall'`). */
-  private burn(e: Enemy, damage = TUNE.palmDamage, shot: 'pillar' | 'wall' | 'inferno' = 'pillar'): void {
+  private burn(e: Enemy, damage = TUNE.palmDamage, shot: 'pillar' | 'wall' | 'inferno' | 'lightning' = 'pillar'): void {
     const dealt = e.boss ? bossDamage(e, shot, damage) : damage;
     e.hp -= dealt;
     e.flash = 1;
@@ -731,6 +746,10 @@ export class Game {
       this.fireLine = { x, life: TUNE.slamLineS };
       this.lineTick = 0;
       this.emit('slam', x, FLOOR_Y, TUNE.launchZ);
+      return;
+    }
+    if (c.kind === 'lightning') {
+      this.strikeLightning(c);
       return;
     }
     if (c.kind === 'inferno') {
@@ -803,6 +822,35 @@ export class Game {
   }
 
   /** The living enemy that appears closest to `aim` on screen, if within assist range. */
+  /** Lightning from the pointing hand: the enemy nearest where it points, then a chain on to others close by. */
+  private strikeLightning(c: Cast): void {
+    if (this.lightningIn > 0) {
+      this.events.push({ type: 'hint', text: `LIGHTNING RECHARGING — ${Math.ceil(this.lightningIn)}s` });
+      return;
+    }
+    if (!this.spend(TUNE.breathLightning, c.at)) return;
+    this.lightningIn = TUNE.lightningCooldownS;
+    const dir = c.dir ?? { x: 0, y: -1 }, aim = { x: c.at.x + dir.x * TUNE.lightningReach, y: c.at.y + dir.y * TUNE.lightningReach };
+    const alive = this.enemies.filter(e => e.hp > 0 && e.appear >= 1);
+    const onScreen = (e: Enemy) => { const s = depthScale(e.z); return Math.hypot((e.x - this.cam.x) * s - aim.x, (e.y - this.cam.y) * s - aim.y); };
+    // lightning finds a target: the one pointed at, or else the nearest to where it points
+    const first = this.pickTarget(aim) ?? (alive.length ? alive.reduce((a, b) => (onScreen(b) < onScreen(a) ? b : a)) : null);
+    const hits: Enemy[] = [];
+    if (first) {
+      hits.push(first);
+      for (let i = 0; i < TUNE.lightningChain; i++) {
+        const last = hits.at(-1)!;
+        const next = alive.filter(e => !hits.includes(e) && Math.abs(e.x - last.x) <= TUNE.lightningChainRange)
+          .sort((a, b) => Math.hypot(a.x - last.x, a.z - last.z) - Math.hypot(b.x - last.x, b.z - last.z))[0];
+        if (!next) break;
+        hits.push(next);
+      }
+    }
+    hits.forEach((e, i) => this.burn(e, i === 0 ? TUNE.lightningDamage : TUNE.lightningChainDamage, 'lightning'));
+    const end = first ? null : { x: this.cam.x + aim.x / depthScale(TUNE.aimDepth), y: Math.min(FLOOR_Y - 4, this.cam.y + aim.y / depthScale(TUNE.aimDepth)), z: TUNE.aimDepth };
+    this.events.push({ type: 'lightning', from: { ...c.at }, hits: hits.map(e => ({ x: e.x, y: e.y - 14, z: e.z })), end });
+  }
+
   private pickTarget(aim: Vec2): Enemy | null {
     let best: Enemy | null = null, bestD = TUNE.assistRadius;
     for (const e of this.enemies) {
