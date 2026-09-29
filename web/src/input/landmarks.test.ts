@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fingerReach, fingerStraightness, isFingerGun, openness, palmFacing, palmNormal, palmOf, toFrame, type Landmark } from './landmarks';
+import { fingerReach, fingerStraightness, isFingerGun, openness, pointDir, palmFacing, palmNormal, palmOf, toFrame, type Landmark } from './landmarks';
 
 const pose = (): Landmark[] => Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 1 }));
 
@@ -243,6 +243,20 @@ describe('each finger, and the finger gun', () => {
     expect(isFingerGun([1.68, 1.86, 0.9, 0.99])).toBe(true);
     expect(isFingerGun([1.66, 1.81, 1.76, 1.7])).toBe(false); // an open hand
     expect(isFingerGun([0.77, 0.76, 0.65, 0.75])).toBe(false); // a fist
+  });
+
+  it('says which way the two fingers point: up, sideways (mirrored), or at the camera', () => {
+    const at = (tip: { x: number; y: number; z: number }) => {
+      const lm: Landmark[] = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
+      for (const i of [8, 12]) lm[i] = { x: 0.5 + tip.x, y: 0.5 + tip.y, z: tip.z };
+      const d = pointDir(lm)!;
+      return { x: Math.round(d.x) || 0, y: Math.round(d.y) || 0, z: Math.round(d.z) || 0 };
+    };
+    expect(at({ x: 0, y: -0.1, z: 0 })).toEqual({ x: 0, y: -1, z: 0 });
+    // the picture's right is the mirrored view's left
+    expect(at({ x: 0.1, y: 0, z: 0 })).toEqual({ x: -1, y: 0, z: 0 });
+    // MediaPipe's z grows away from the camera: fingertips nearer the camera point at it
+    expect(at({ x: 0, y: 0, z: -0.1 })).toEqual({ x: 0, y: 0, z: 1 });
   });
 
   it("doesn't flicker on the edge: once on, it takes a clearer change to turn off", () => {

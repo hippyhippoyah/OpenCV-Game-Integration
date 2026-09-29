@@ -19,6 +19,8 @@ export interface HandState {
   fingers?: number[];
   /** Index and middle pointed, ring and pinky curled: the finger gun (lightning). */
   fingerGun?: boolean;
+  /** Which way the index and middle fingers point, smoothed (x right, y down, z toward the camera). */
+  point?: Vec3;
   /** 1 = palm faces the camera, 0 = edge-on (palms facing each other). */
   facing: number;
   /**
@@ -414,7 +416,7 @@ const smooth = (prev: Vec2 | null, next: Vec2, k: number): Vec2 =>
 
 const snapshot = (t: Track | null): HandState | null =>
   t && {
-    pos: { ...t.pos }, vel: { ...t.vel }, openness: t.openness, open: t.open, fingers: t.fingers && [...t.fingers], fingerGun: t.fingerGun, facing: t.facing, palm: t.palm && { ...t.palm },
+    pos: { ...t.pos }, vel: { ...t.vel }, openness: t.openness, open: t.open, fingers: t.fingers && [...t.fingers], fingerGun: t.fingerGun, point: t.point && { ...t.point }, facing: t.facing, palm: t.palm && { ...t.palm },
     source: t.source, inView: t.inView, elbow: t.elbow && { ...t.elbow }, extension: t.extension,
     punchReady: t.armed, punchRise: t.reach === null ? null : reachRise(t, TUNING.quickWindowS),
     reach: t.reach, reachBase: t.reachBase, reachNoise: t.reach === null ? null : t.reachNoise,
@@ -986,6 +988,7 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
       tr.fingers = undefined;
       tr.fingerGun = undefined;
     }
+    tr.point = h.point ? turnToward(tr.point ?? null, h.point, k) : undefined;
     tr.facing = lerp(tr.facing, h.facing, k);
     tr.palm = h.normal ? turnToward(tr.palm, palmOf(h.normal, side), k) : null;
     if (!tr.open && tr.openness > TUNING.openAbove) { tr.open = true; opened = true; }

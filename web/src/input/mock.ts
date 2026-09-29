@@ -162,7 +162,10 @@ export class MockTracker implements Tracker {
       const normal = palmDir && palmOf(palmDir, side);
       // L: the right hand makes a finger gun (index and middle out, ring and pinky curled)
       const fingers = side === 'r' && this.keys.has('l') ? [1.7, 1.85, 0.9, 1.0] : undefined;
-      if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open: fingers ? 0.5 : open, fingers, facing, normal, side, body3, depth: MOCK_DISTANCE - reachM });
+      // …pointing at the mouse (up when the mouse is right above the hand)
+      const to = { x: aim.x - pos.x, y: aim.y - pos.y }, n = Math.hypot(to.x, to.y) || 1;
+      const point = fingers ? { x: (to.x / n) * 0.9, y: (to.y / n) * 0.9, z: 0.44 } : undefined;
+      if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open: fingers ? 0.5 : open, fingers, point, facing, normal, side, body3, depth: MOCK_DISTANCE - reachM });
     }
     return {
       t, head,

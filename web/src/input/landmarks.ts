@@ -98,6 +98,19 @@ export function palmNormal(lm: Landmark[], aspect = 4 / 3): Vec3 | null {
   return len > 1e-9 ? { x: -nx / len, y: ny / len, z: -nz / len } : null;
 }
 
+/**
+ * Which way the index and middle fingers point (knuckles → tips), as a unit vector in the mirrored
+ * view: x right on screen, y down, z toward the camera. From the picture landmarks (z on x's scale).
+ */
+export function pointDir(lm: Landmark[], aspect = 4 / 3): Vec3 | null {
+  const k = [lm[INDEX_KNUCKLE], lm[MIDDLE_KNUCKLE]], t = [lm[8], lm[12]];
+  const avg = (ps: Landmark[], f: (p: Landmark) => number) => (f(ps[0]) + f(ps[1])) / 2;
+  const dx = -(avg(t, p => p.x) - avg(k, p => p.x)) * aspect, dy = avg(t, p => p.y) - avg(k, p => p.y);
+  const dz = -(avg(t, p => p.z ?? 0) - avg(k, p => p.z ?? 0)) * aspect;
+  const len = Math.hypot(dx, dy, dz);
+  return len > 1e-9 ? { x: dx / len, y: dy / len, z: dz / len } : null;
+}
+
 /** The way a hand's palm faces, from its right-hand-convention normal and which hand it is. */
 export function palmOf(normal: Vec3, side: Side): Vec3 {
   return side === 'r' ? { ...normal } : { x: -normal.x, y: -normal.y, z: -normal.z };
@@ -313,6 +326,7 @@ function handObs(lm: Landmark[], world: Landmark[], depth: { body: { distance: n
     fingers: fingerReach(world),
     facing: palmFacing(world),
     normal: palmNormal(lm, aspect),
+    point: pointDir(lm, aspect),
     body3,
     depth: handDepth,
   };

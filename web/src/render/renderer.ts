@@ -950,6 +950,8 @@ export class Renderer {
     palm: Vec3 | null = null,
     /** Index and middle pointed, ring and pinky curled: the finger gun (lightning). */
     gun = false,
+    /** Which way the finger gun points (x right, y down, z toward the camera); straight up if unknown. */
+    point: Vec3 | null = null,
   ): void {
     const k = 1.5 * this.u * scale, g = grow;
     c.lineCap = 'round';
@@ -969,10 +971,16 @@ export class Renderer {
       for (const i of [2, 3]) {
         c.beginPath(); c.arc(h.x + side * (i - 1.5) * 1.55 * k, h.y - 2.5 * k, 1 * k + g, 0, 7); c.fill();
       }
-      // the two fingers pressed together, pointing straight up
+      // the two fingers pressed together, pointing the way yours do: turned on screen, and
+      // foreshortened (with the fingertips showing) as they point toward or away from the camera
+      const p = point ?? { x: 0, y: -1, z: 0 }, across = Math.hypot(p.x, p.y);
+      const ux = across > 0.05 ? p.x / across : 0, uy = across > 0.05 ? p.y / across : -1;
+      const len = 6.2 * k * Math.max(0.2, across), base = { x: h.x - side * 1 * k, y: h.y - 2.2 * k };
       for (const i of [0, 1]) {
-        const bx = h.x + side * (-1.7 + i * 1.35) * k;
-        line(bx, h.y - 2.2 * k, bx, h.y - 8.4 * k, 1.6 * k);
+        // side by side, across the pointing direction
+        const off = (i - 0.5) * 1.35 * k, bx = base.x - uy * off * side, by = base.y + ux * off * side;
+        line(bx, by, bx + ux * len, by + uy * len, 1.6 * k);
+        if (across < 0.6) { c.beginPath(); c.arc(bx + ux * len, by + uy * len, 1.05 * k + g, 0, 7); c.fill(); }
       }
       line(h.x - side * 3.2 * k, h.y + 0.4 * k, h.x - side * 3.4 * k, h.y - 2.4 * k, 1.8 * k);
       return;
@@ -1035,7 +1043,7 @@ export class Renderer {
     // idle hands keep only a faint warm rim so you can see them; burning hands glow
     for (const { h, sign, burn } of hands) {
       c.strokeStyle = c.fillStyle = `rgba(255,130,60,${(0.12 + 0.3 * burn) * flicker})`;
-      this.handShape(c, this.viewToScreen(this.shownAt(h)), sign, 0.9 * u, h.open, h.elbow && this.viewToScreen(this.shownAt(h, h.elbow)), this.shownScale(h), h.palm, !!h.fingerGun);
+      this.handShape(c, this.viewToScreen(this.shownAt(h)), sign, 0.9 * u, h.open, h.elbow && this.viewToScreen(this.shownAt(h, h.elbow)), this.shownScale(h), h.palm, !!h.fingerGun, h.point ?? null);
     }
     const hl = this.handLayer.getContext('2d')!;
     hl.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -1043,7 +1051,7 @@ export class Renderer {
     hl.clearRect(0, 0, this.W, this.H);
     hl.strokeStyle = hl.fillStyle = g.inv > 0 && Math.sin(this.t * 40) > 0 ? '#3a1216' : '#150f19';
     for (const { h, sign } of hands) {
-      this.handShape(hl, this.viewToScreen(this.shownAt(h)), sign, 0, h.open, h.elbow && this.viewToScreen(this.shownAt(h, h.elbow)), this.shownScale(h), h.palm, !!h.fingerGun);
+      this.handShape(hl, this.viewToScreen(this.shownAt(h)), sign, 0, h.open, h.elbow && this.viewToScreen(this.shownAt(h, h.elbow)), this.shownScale(h), h.palm, !!h.fingerGun, h.point ?? null);
     }
     hl.globalCompositeOperation = 'source-atop';
     for (const { h, burn } of hands) {

@@ -41,6 +41,8 @@ export interface HandObs {
    * a left hand's palm faces the opposite way. Undefined when not measured (mock hands may leave it out).
    */
   normal?: Vec3 | null;
+  /** Which way the index and middle fingers point (x right, y down, z toward the camera); missing from mock hands. */
+  point?: Vec3 | null;
   /** The arm this hand belongs to (nearest pose wrist), when a body is visible. */
   side?: Side;
   /**
