@@ -159,10 +159,11 @@ export const TUNING = {
    * - up by the ear: the fist at head level — no lower than earBelowHead under the head (the face
    *   the tracker sees) — above a guard at the chin; jabs and uppercuts pass through up there, but
    *   aren't held. (The pose's elbow reading was too wobbly to use.)
+   * After a charged punch the fist has to be held in the pose again to charge the next one.
    * The fist must be held nearly still (screen speed under chargeMaxSpeed).
    */
   chargeHoldS: 0.5, chargeKeepS: 1.5, chargeMaxSpeed: 35,
-  hipBelow: 28, hipBelowMax: 60, elbowFlare: 8, hipMaxExtension: 0.5, earBelowHead: 4,
+  hipBelow: 28, hipBelowMax: 75, elbowFlare: 8, hipMaxExtension: 0.5, earBelowHead: 4,
   /**
    * Live punch and push sensitivity ([ and ] in game): thresholds are divided by this. Tuned and tested
    * at 1; the default is set higher by preference (more misses caught, some more misfires).
@@ -170,6 +171,12 @@ export const TUNING = {
   punchSensitivity: 1.4,
   /** Fist punches: a hand only stops a punch (or counts as opening for a shield) once it is clearly open. */
   clearlyOpen: 0.8,
+  /**
+   * A punch waiting to confirm is dropped if the other hand opens then (both hands opening is a
+   * shield) — but only if it was still a fist (under fistBelow) within openedRecentlyS: a hand
+   * resting open, or slowly relaxing open, doesn't cancel the other's punches.
+   */
+  openedRecentlyS: 0.4,
   /**
    * The wobble comes from the camera and grows with distance², so it is modelled as
    * noiseCoef × (distance to the body)². noiseCoef starts at noiseCoefStart and learns this camera's
@@ -261,6 +268,14 @@ export const TUNING = {
    * (dropping the hands) is never punching.
    */
   aboveHead: 13, highFistRise: 0.4,
+  /**
+   * A fist charged up by the ear is meant to punch from up there: it needs only chargedHighRise
+   * of jolt, as long as it also looks chargedHighGrow× bigger than it did within chargedGrowS (it
+   * really came at the camera). On the recordings charged punches from the ear came forward
+   * 26–46 cm and grew 1.5–2.6×; face-overlap jitter with the fists just held up read 20–34 cm but
+   * grew at most 1.3×. An uncharged fist up there still needs highFistRise.
+   */
+  chargedHighRise: 0.22, chargedHighGrow: 1.4, chargedGrowS: 0.3,
   /**
    * A punch comes from a fist: closing an open hand makes its distance reading climb 15–25 cm
    * while it doesn't move at all — just like a jolt. So a hand that was open (openness at least
@@ -569,7 +584,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         if (tr.extension < TUNING.extendRearmBelow) tr.armed = true;
         fire = tr.armed && tr.extension >= TUNING.extendFireAbove && extensionRise(tr) >= TUNING.punchExtendRise;
       }
-      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView, tr.reach !== null ? reachRise(tr, TUNING.quickWindowS) : 0) && !startedOpen(tr, TUNING.startedOpenS) && s.infernoSince === null && !s.infernoReady) {
+      if (fire && tr.openness < TUNING.clearlyOpen && tr.pos.y < TUNING.raisedAboveY && !droppingOrHigh(tr, headView, tr.reach !== null ? reachRise(tr, TUNING.quickWindowS) : 0, tr.charge >= 1) && !startedOpen(tr, TUNING.startedOpenS) && s.infernoSince === null && !s.infernoReady) {
         tr.armed = false;
         tr.lastPunchT = f.t;
         // (only a punch that fires starts a new peak: a jolt held back by a check above keeps building)
@@ -577,6 +592,7 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
         s.pending.push({ hand: side, at: { ...tr.pos }, shoulder: { ...shoulders[side] }, dir: null, t: f.t, charged: tr.charge >= 1 });
         tr.charge = 0;
         tr.chargedAt = null;
+        tr.chamberSince = null;
         continue;
       }
       // One open palm shoved forward, the other hand a fist or an open palm held still: a pillar.
@@ -598,7 +614,9 @@ export function interpret(f: TrackingFrame, cal: Calibration, s: InterpretState)
     const tr = s[p.hand];
     // a fist that reads half-open mid-punch still counts; only clearly open hands mean shield
     const opens = (t: Track | null) => !!t && (extendMode ? t.openness >= TUNING.clearlyOpen : t.open);
-    if (!tr || opens(s[other(p.hand)])) return false;
+    // the other hand opening now means shield; one already resting open doesn't cancel the punch
+    const o = s[other(p.hand)];
+    if (!tr || (opens(o) && justOpened(o!, f.t))) return false;
     if (extendMode && opens(tr)) {
       // the fist opened as it went out: that's a palm push
       if (f.t >= tr.palmReadyAt && !s.palmPending.some(q => q.hand === p.hand)) startPush(s, p.hand, p.t, p.shoulder);
@@ -762,8 +780,24 @@ function updateCharge(tr: Track, side: Side, shoulder: Vec2, head: Vec2, t: numb
  * the hands, or a slam), or it's up over the top of the head (its depth jumps about up there,
  * overlapping the face) and came forward less than a real punch from there does (`rise`, m).
  */
-function droppingOrHigh(tr: Track, head: Vec2, rise: number): boolean {
-  return (tr.vel.y > TUNING.slamSpeed && tr.vel.y > 2 * Math.abs(tr.vel.x)) || (tr.pos.y < head.y - TUNING.aboveHead && rise < TUNING.highFistRise);
+function droppingOrHigh(tr: Track, head: Vec2, rise: number, charged: boolean): boolean {
+  if (tr.vel.y > TUNING.slamSpeed && tr.vel.y > 2 * Math.abs(tr.vel.x)) return true;
+  if (tr.pos.y >= head.y - TUNING.aboveHead) return false;
+  // up high: a big clean jolt — or, charged, a smaller one that the fist also visibly grows with
+  return charged ? rise < TUNING.chargedHighRise || sizeGrowth(tr, TUNING.chargedGrowS) < TUNING.chargedHighGrow : rise < TUNING.highFistRise;
+}
+
+/** How many times bigger the hand looks now than at its smallest within the last `window` s (1 = no change). */
+function sizeGrowth(tr: Track, window: number): number {
+  const now = tr.hist.at(-1);
+  if (!now || now.size === null) return 1;
+  const sizes = tr.hist.filter(h => h.t >= now.t - window && h.size !== null).map(h => h.size!);
+  return now.size / Math.min(...sizes);
+}
+
+/** The hand opened only just now: it was still a fist within the last openedRecentlyS (not slowly relaxing open). */
+function justOpened(t: Track, now: number): boolean {
+  return t.hist.some(h => h.t >= now - TUNING.openedRecentlyS && h.open < TUNING.fistBelow);
 }
 
 /** Queue a palm push from this hand (it confirms after palmConfirmS). */

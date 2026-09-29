@@ -496,3 +496,23 @@ for a right hand and the back's for a left, so the arm each hand is matched to d
   and the mouse & keys card are trimmed.
 - **E on the campaign map** jumps straight to the next thing that stops you — a scroll you don't
   have or an arena you haven't cleared — never past it, passing what no longer stops you.
+
+## Charging that works (2026-09-28)
+
+Replaying a recording of charge attempts from the ear found three things eating them:
+
+- **The other hand resting open cancelled punches.** A punch waiting to confirm was dropped
+  whenever the other hand was open (meant for opening both hands into a shield). Now only a hand
+  that was still a fist within the last 0.4 s cancels it; one resting or slowly relaxing open doesn't.
+- **Fists up by the ear needed a 40 cm jolt** (the rule against face-overlap jitter above the
+  head). A charged fist up there now needs 22 cm, plus the fist looking at least 1.4× bigger than
+  it did 0.3 s before (it really came at the camera): real charged punches grew 1.5–2.6×, jitter
+  with the fists just held up at most 1.3×.
+- **A fired charge refilled at once** if the fist stayed in the pose; now it has to be held again.
+
+The hip pose now reaches down to 75 view units below the shoulder (was 60): a real hip chamber sits
+around 50–66, so held at a normal height it flickered in and out of the pose and never filled.
+Relaxed hanging arms (69–80, arm straight) are still told apart by the straight arm.
+
+On the recordings: the latest ear-charge clip went from 1 charged punch to 4 (3 → 7 punches), the
+older high-fist clip 5 → 6; the clips of fists raised without punching stayed at 2 and 0.

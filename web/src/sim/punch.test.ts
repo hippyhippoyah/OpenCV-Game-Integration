@@ -174,6 +174,8 @@ describe('X block on a simulated webcam', () => {
 describe('charged punches on a simulated webcam', () => {
   /** A fist down at the hip (elbow flared back), and raised up by the ear at head level. */
   const HIP: Reach = { out: 0.04, up: -0.36, fwd: -0.04 };
+  /** Lower, as far down as a real hip chamber sits: the elbow bent back, the fist at the waist. */
+  const LOW_HIP: Reach = { out: 0.04, up: -0.48, fwd: -0.04 };
   const EAR: Reach = { out: -0.06, up: 0.22, fwd: 0.04 };
   /**
    * The simulated guard holds the fists at head level on screen; a real guard sits lower (7–26 view
@@ -194,7 +196,7 @@ describe('charged punches on a simulated webcam', () => {
   const charges = (out: Intent[]) => out.flatMap(o => o.punches.map(p => !!p.charged));
   const everCharged = (out: Intent[]) => out.some(o => (o.hands.l?.charge ?? 0) >= 1 || (o.hands.r?.charge ?? 0) >= 1);
 
-  for (const [name, pose] of [['at the hip', HIP], ['cocked by the ear', EAR]] as const) {
+  for (const [name, pose] of [['at the hip', HIP], ['low at the hip', LOW_HIP], ['cocked by the ear', EAR]] as const) {
     it(`a fist held ${name} charges the next punch`, () => {
       eachCase((distance, seed) => {
         const out = perform(chargeThenJab(distance, pose, 0.8), 3.8, { seed });
@@ -208,6 +210,16 @@ describe('charged punches on a simulated webcam', () => {
       });
     });
   }
+
+  it('a punch still counts with the other hand resting open', () => {
+    eachCase((distance, seed) => {
+      const out = perform(t => {
+        const r = t < 1.8 ? GUARD : t < 1.96 ? lerpReach(GUARD, JAB, (t - 1.8) / 0.16) : t < 2.15 ? JAB : lerpReach(JAB, GUARD, (t - 2.15) / 0.2);
+        return guardState(distance, { l: { reach: GUARD, open: true }, r: { reach: r } });
+      }, 3, { seed });
+      expect(out.flatMap(o => o.punches.map(p => p.hand)), `${distance} m seed ${seed}`).toEqual(['r']);
+    });
+  });
 
   it('both fists at the hips charge both', () => {
     eachCase((distance, seed) => {
