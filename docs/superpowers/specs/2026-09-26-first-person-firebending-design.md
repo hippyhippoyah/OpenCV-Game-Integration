@@ -517,25 +517,21 @@ Relaxed hanging arms (69–80, arm straight) are still told apart by the straigh
 On the recordings: the latest ear-charge clip went from 1 charged punch to 4 (3 → 7 punches), the
 older high-fist clip 5 → 6; the clips of fists raised without punching stayed at 2 and 0.
 
-## Lightning (2026-09-28)
+## Lightning: the conduit (2026-09-28)
 
-Like Azula's: draw a half circle with one hand in a finger gun (index and middle out, ring and
-pinky curled), then one with the other hand within 2 s, then point a finger gun at the enemies.
+A first version (a half circle with each finger gun, then point) detected badly: fast sweeps blur
+the finger reading and reset the arc, and "pointing at the camera" is a noisy reading. It became
+the conduit, built only from readings that hold up:
 
-- **The finger gun** is read per finger from how far each fingertip reaches (tip→wrist over
-  knuckle→wrist: ~1.7 out, 0.8–1.2 for the gun's curled fingers, under 1 in a fist). It is its own
-  pose: not an open hand (no palm push, shield or cast) and not a fist (no punches, no charging).
-  On screen your hand takes the finger-gun shape and turns the way your fingers point.
-- **A half circle**: within 1.2 s, in a finger gun all the way, the hand travels ≥45 view units, its
-  heading turns ≥2 rad the same way round, and it ends ≥18 from where it started. The same hand
-  twice starts over; the other hand makes it ready.
-- **Ready** for 3 s: after 0.2 s, a finger gun pointed toward the screen (forward part ≥0.5) for
-  0.1 s strikes.
-- **The strike** hits instantly: the enemy nearest where the fingers point for 6, then jumps to up
-  to 2 more within 60 (world x) of the last for 3 each. It arcs over Daro's stone wall. Costs 30
-  breath, recharges 10 s. Taught in the tutorial and usable in training; not in the campaign or
-  raids yet (like the Blue Inferno).
-- **Feel**: finger guns leave a crackling trail of lightning as they move, fingertips spark (more
-  with each half circle), a snap as each half circle completes, a fizzing crackle while charged,
-  then a forked bolt through everyone hit with a blue-white flash, a crack and rolling thunder.
-- Mouse & keys: L finger gun (points at the mouse), Z plays the whole move.
+- **Call it**: both hands in finger guns (index and middle out, ring and pinky curled) held
+  together over the head for 1.2 s. It crackles more and more, thin bolts reach down from the sky,
+  then one strikes the fingers (flash, thunder): charged. Let go sooner and it doesn't come.
+- **No clash with the Blue Inferno**: the same place overhead with fists or open hands is the
+  inferno; finger guns there are only ever lightning.
+- **Aim and release** (3 s): bring either finger gun down; the lower one aims like a punch (where it
+  is on screen), and the enemy it would hit is ringed in crackling light with the time left. A
+  thrust of it (a punch's jolt) releases the bolt; when time runs out it goes off by itself.
+- **The strike** hits instantly: 6 to the target, then jumps to up to 2 more within 60 (world x)
+  for 3 each; arcs over Daro's stone wall; 30 breath, 10 s recharge. Tutorial and training only.
+- **The finger gun** is its own pose (no palm push, shield, punch or charging) and is drawn as one,
+  turned the way the fingers point. Mouse & keys: L finger gun, Z plays the whole move.

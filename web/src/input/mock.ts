@@ -13,8 +13,8 @@ const GUARD: Record<Side, Vec2> = { l: { x: -12, y: 22 }, r: { x: 12, y: 22 } };
 const FORWARD: Vec3 = { x: 0, y: 0, z: 1 };
 /** How the finger gun reads (fingertip reach: index, middle, ring, pinky). */
 const FINGER_GUN_READING = [1.7, 1.85, 0.9, 1.0];
-/** Lightning (Z): each half circle's length, and the whole move. */
-const ARC_S = 0.6, LIGHTNING_S = 2.2;
+/** Lightning (Z): how long the finger guns are held up to call it, and the whole move. */
+const CALL_S = 1.5, LIGHTNING_S = 2.4;
 const EXTEND_S = 0.12, OPEN_HOLD_S = 0.25, SHIELD_HALF_WIDTH = 18;
 /** Two-hand casts: open hands move for CAST_MOVE_S, then stay open for CAST_HOLD_S. */
 const CAST_MOVE_S = 0.25, CAST_HOLD_S = 0.3, GATHER_S = 0.6;
@@ -59,7 +59,7 @@ export class MockTracker implements Tracker {
   setKey(key: string, down: boolean): void { if (down) this.keys.add(key); else this.keys.delete(key); }
   punch(side: Side): void { this.requested.push(side); }
   cast(kind: CastKind): void { this.castReq = kind; }
-  /** Z: lightning, played out — a half circle with the right finger gun, one with the left, then the right points at the screen. */
+  /** Z: lightning, played out — both finger guns held up together to call it, then the right comes down to the mouse and thrusts. */
   lightning(): void { this.lightningReq = true; }
   private lightningReq = false;
   private lightningAt: number | null = null;
@@ -159,19 +159,17 @@ export class MockTracker implements Tracker {
       const to = { x: aim.x - pos.x, y: aim.y - pos.y }, n = Math.hypot(to.x, to.y) || 1;
       let point = fingers ? { x: (to.x / n) * 0.9, y: (to.y / n) * 0.9, z: 0.44 } : undefined;
       if (this.lightningAt !== null) {
-        // each hand in a finger gun sweeps a half circle out and up, the right first; then the right
-        // points at the screen
-        const e = t - this.lightningAt, start = side === 'r' ? 0 : ARC_S + 0.05;
-        if (e >= start) {
-          const k = clamp((e - start) / ARC_S, 0, 1), a = Math.PI / 2 - Math.PI * k, sign = side === 'l' ? -1 : 1;
-          pos = { x: sign * (20 + 22 * Math.cos(a)), y: 18 + 22 * Math.sin(a) };
-          open = 0;
-          fingers = FINGER_GUN_READING;
-          point = { x: 0, y: -1, z: 0 };
-          if (side === 'r' && e >= 2 * ARC_S + 0.15) {
-            pos = { x: 14, y: 8 };
-            point = { x: 0, y: -0.3, z: 0.95 };
-          }
+        // both finger guns held together over the head until it strikes them; then the right comes
+        // down to aim at the mouse and thrusts
+        const e = t - this.lightningAt, sign = side === 'l' ? -1 : 1;
+        fingers = FINGER_GUN_READING;
+        open = 0;
+        point = { x: 0, y: -1, z: 0 };
+        pos = { x: sign * 6, y: -22 };
+        if (side === 'r' && e >= CALL_S) {
+          const k = clamp((e - CALL_S) / 0.3, 0, 1), at = aim.y > 0 ? aim : { x: 14, y: 10 };
+          pos = { x: lerp(6, at.x, k), y: lerp(-22, at.y, k) };
+          if (e >= CALL_S + 0.5) reachM = GUARD_REACH_M + (PUNCH_REACH_M - GUARD_REACH_M) * clamp((e - CALL_S - 0.5) / EXTEND_S, 0, 1);
         }
       }
       const away = side === 'r' && this.keys.has('o');

@@ -7,7 +7,7 @@ import type { GameEvent } from '../game/game';
  * sounds the same twice. The audio context starts on the first key press or click (browsers
  * don't allow sound before that).
  */
-export type UiSound = 'hover' | 'select' | 'back' | 'tick' | 'go' | 'scroll' | 'flame' | 'charged' | 'gathered' | 'blueReady' | 'reset' | 'arc';
+export type UiSound = 'hover' | 'select' | 'back' | 'tick' | 'go' | 'scroll' | 'flame' | 'charged' | 'gathered' | 'blueReady' | 'reset';
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 /** Nudge a value by up to ±k (a fraction). */
@@ -122,7 +122,7 @@ export class Sfx {
    * crackling while it's up; the finisher's gather and the blue inferno's charge warming up — a
    * swell that rises in pitch and loudness as each fills. Pass null (menus, pauses) to fade all out.
    */
-  ambient(g: { shield: { on: boolean }; gather: number; infernoPrep: number; ultimateIn: number; infernoIn: number; lightningStage: number } | null): void {
+  ambient(g: { shield: { on: boolean }; gather: number; infernoPrep: number; ultimateIn: number; infernoIn: number; lightningCalling: number; lightningCharged: boolean } | null): void {
     const c = this.ctx;
     if (!c || c.state !== 'running') return;
     const shield = g?.shield.on ? 1 : 0, p = g?.gather ?? 0, q = g?.infernoPrep ?? 0;
@@ -130,8 +130,8 @@ export class Sfx {
     const pk = g && g.ultimateIn > 0 ? 0.35 : 1, qk = g && g.infernoIn > 0 ? 0.35 : 1;
     this.loop(c, 'shield', { type: 'lowpass', freq: rnd(900, 1300), noise: shield * rnd(0.35, 0.7), wave: 'sine', tone: 70, toneGain: shield * 0.06 });
     this.loop(c, 'warm', { type: 'bandpass', freq: 300 + 900 * p, noise: p > 0 ? pk * (0.25 + 0.9 * p) * rnd(0.8, 1) : 0, wave: 'sine', tone: 110 + 220 * p, toneGain: p > 0 ? pk * (0.05 + 0.14 * p) : 0 });
-    // lightning being drawn: a fizzing crackle, louder with each half circle
-    const L = (g?.lightningStage ?? 0) / 2;
+    // lightning being called down: a fizzing crackle, building; charged, it crackles hard
+    const L = g?.lightningCharged ? 1 : (g?.lightningCalling ?? 0) * 0.7;
     this.loop(c, 'crackle', { type: 'highpass', freq: rnd(2500, 5000), noise: L > 0 ? (0.15 + 0.5 * L) * (Math.random() < 0.3 ? 1.6 : rnd(0.3, 0.8)) : 0, wave: 'sawtooth', tone: 60, toneGain: L > 0 ? 0.02 + 0.03 * L : 0 });
     this.loop(c, 'blue', { type: 'bandpass', freq: 600 + 1800 * q, noise: q > 0 ? qk * (0.2 + 0.8 * q) * rnd(0.8, 1) : 0, wave: 'triangle', tone: 220 + 440 * q, toneGain: q > 0 ? qk * (0.04 + 0.12 * q) : 0 });
   }
@@ -172,6 +172,7 @@ export class Sfx {
       case 'punch': this.punch(e.side === 'l' ? -0.35 : 0.35); break;
       case 'brazier': this.brazier(pan); break;
       case 'lightning': this.lightning(); break;
+      case 'skyStrike': this.lightning(true); break;
       case 'combo': this.combo(e.name, pan); break;
       case 'pillar': this.pillar(pan); break;
       case 'wall': this.wall(pan); break;
@@ -205,9 +206,9 @@ export class Sfx {
     this.tone(c, { dur: 0.1, wave: 'sine', f0: vary(150, 0.2), f1: 55, gain: 0.7, pan: p });
   }
 
-  /** Lightning strikes: a split-second crack, then thunder rolling after it. */
-  private lightning(): void {
-    const c = this.ready('lightning', 0.2);
+  /** Lightning strikes (or strikes your fingers from the sky): a split-second crack, then thunder rolling after it. */
+  private lightning(sky = false): void {
+    const c = this.ready(sky ? 'skyStrike' : 'lightning', 0.2);
     if (!c) return;
     this.burst(c, { dur: 0.25, type: 'highpass', f0: 3000, f1: 1200, gain: 2.2, attack: 0.002, crackle: 1 });
     this.burst(c, { dur: 0.5, type: 'bandpass', f0: 1800, f1: 400, q: 0.7, gain: 1.4, attack: 0.004, crackle: 0.9 });
@@ -391,11 +392,6 @@ export class Sfx {
       case 'gathered': this.tone(c, { dur: 0.6, wave: 'sine', f0: 220, f1: 440, gain: 0.2, attack: 0.1 }); this.burst(c, { dur: 0.6, type: 'lowpass', f0: 300, f1: 1400, gain: 0.3, attack: 0.1, crackle: 0.5 }); break;
       case 'blueReady': this.tone(c, { dur: 0.8, wave: 'triangle', f0: 440, f1: 880, gain: 0.14, attack: 0.1 }); this.burst(c, { dur: 0.7, type: 'bandpass', f0: 800, f1: 3000, gain: 0.6, attack: 0.1, crackle: 0.7 }); break;
       case 'reset': this.chime(c, [440, 330, 220], 0.08, 0.1); break;
-      // a half circle of lightning drawn: a sharp electric snap
-      case 'arc':
-        this.burst(c, { dur: 0.35, type: 'highpass', f0: vary(2500, 0.2), f1: 6000, gain: 0.9, attack: 0.005, crackle: 0.9 });
-        this.tone(c, { dur: 0.3, wave: 'sawtooth', f0: vary(880, 0.1), f1: 1760, gain: 0.06, attack: 0.01 });
-        break;
     }
   }
 

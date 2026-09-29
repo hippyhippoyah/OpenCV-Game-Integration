@@ -41,11 +41,12 @@ describe('MockTracker', () => {
     });
   }
 
-  it('Z plays out lightning: a half circle with each finger gun, then pointing strikes once', () => {
+  it('Z plays out lightning: both finger guns up call it, then the right comes down and thrusts', () => {
     const m = new MockTracker(identity);
-    const out = run(m, 200, i => { if (i === 30) m.lightning(); });
-    expect(out.some(o => o.lightning?.stage === 1)).toBe(true);
-    expect(out.some(o => o.lightning?.stage === 2)).toBe(true);
+    m.setMouse(10, 10);
+    const out = run(m, 200, i => { if (i === 40) m.lightning(); });
+    expect(out.some(o => (o.lightning?.calling ?? 0) > 0)).toBe(true);
+    expect(out.some(o => o.lightning?.charged)).toBe(true);
     expect(out.flatMap(o => o.casts.filter(c => c.kind === 'lightning'))).toHaveLength(1);
     expect(out.flatMap(o => [...o.punches, ...o.palms])).toHaveLength(0);
   });

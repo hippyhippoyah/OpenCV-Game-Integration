@@ -92,6 +92,8 @@ export class Renderer {
   private trails: Record<Side, { x: number; y: number; t: number }[]> = { l: [], r: [] };
   private boltFlash = 0;
   private bolts: { from: Vec2; hits: { x: number; y: number; z: number }[]; end: { x: number; y: number; z: number } | null; life: number }[] = [];
+  /** Lightning coming down from the sky to the raised fingers: where it starts along the top (0…1 of the width), and how long it's left. */
+  private skyBolts: { x: number; life: number; max: number; big: boolean }[] = [];
   /** Seconds of fire left in each hand after it attacks (hands only burn while doing something). */
   private flare: Record<Side, number> = { l: 0, r: 0 };
 
@@ -232,6 +234,12 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.25);
         break;
       // felt, not startling: a small shake and a soft red edge
+      case 'skyStrike':
+        // it answers: a great bolt from the sky onto your fingers
+        this.skyBolts.push({ x: 0.3 + Math.random() * 0.4, life: 0.4, max: 0.4, big: true });
+        this.boltFlash = 1;
+        this.shake = Math.max(this.shake, 0.3);
+        break;
       case 'lightning':
         this.bolts.push({ from: e.from, hits: e.hits, end: e.end, life: BOLT_S });
         this.boltFlash = 1;
@@ -263,8 +271,11 @@ export class Renderer {
     for (const side of ['l', 'r'] as const) {
       const h = g?.hands[side];
       this.trails[side] = this.trails[side].filter(p => this.t - p.t < TRAIL_S);
-      if (h?.inView && h.fingerGun) this.trails[side].push({ ...this.fingertip(h), t: this.t });
+      if (h?.inView && h.fingerGun && g && (g.lightningCalling > 0 || g.lightningCharged)) this.trails[side].push({ ...this.fingertip(h), t: this.t });
     }
+    this.skyBolts = this.skyBolts.filter(b => (b.life -= dt) > 0);
+    // calling it down: now and then a thin bolt reaches from the sky toward your fingers
+    if (g && g.lightningCalling > 0 && Math.random() < g.lightningCalling * 5 * dt) this.skyBolts.push({ x: Math.random(), life: 0.12, max: 0.12, big: false });
     this.flare = { l: Math.max(0, this.flare.l - dt), r: Math.max(0, this.flare.r - dt) };
 
 
@@ -1193,12 +1204,13 @@ export class Renderer {
   }
 
   /**
-   * Lightning: each finger gun's fingertips crackle (more as the half circles are drawn) and leave
-   * a trail of lightning where they move; a strike is a forked bolt from the hand through everyone
-   * it hits, with a blue-white glare.
+   * Lightning: while it's called, the raised finger guns crackle more and more and thin bolts reach
+   * down from the sky; then one strikes the fingers. Charged, the finger guns crackle hard and leave
+   * a trail of lightning, and the aimed-at enemy is ringed with the time left; a strike is a forked
+   * bolt from the hand through everyone it hits, with a blue-white glare.
    */
   private drawLightning(g: Game): void {
-    const c = this.ctx, u = this.u, stage = g.lightningStage;
+    const c = this.ctx, u = this.u, power = g.lightningCharged ? 2 : g.lightningCalling * 1.5;
     c.save();
     c.globalCompositeOperation = 'lighter';
     c.lineCap = 'round';
@@ -1222,17 +1234,41 @@ export class Renderer {
           c.beginPath(); c.moveTo(path[i - 1].x, path[i - 1].y); c.lineTo(path[i].x, path[i].y); c.stroke();
         }
       }
-      if (!h?.inView || !h.fingerGun) continue;
-      // crackling at the fingertips: a few short sparks, more and longer once charged
-      const tip = this.fingertip(h), n = 2 + stage * 3, reach = (5 + stage * 5) * u;
+      if (!h?.inView || !h.fingerGun || power <= 0) continue;
+      // crackling at the fingertips: a few short sparks as it's called, many and long once charged
+      const tip = this.fingertip(h), n = Math.round(2 + power * 3), reach = (5 + power * 5) * u;
       const glow = c.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, reach * 1.4);
-      glow.addColorStop(0, `rgba(170,210,255,${0.35 + 0.2 * stage})`); glow.addColorStop(1, 'rgba(60,110,255,0)');
+      glow.addColorStop(0, `rgba(170,210,255,${0.35 + 0.2 * power})`); glow.addColorStop(1, 'rgba(60,110,255,0)');
       c.fillStyle = glow;
       c.fillRect(tip.x - reach * 1.4, tip.y - reach * 1.4, reach * 2.8, reach * 2.8);
       for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2, r = reach * (0.4 + Math.random() * 0.6);
         this.bolt(tip, { x: tip.x + Math.cos(a) * r, y: tip.y + Math.sin(a) * r }, 1.6 * u, 3, [[2 * u, 'rgba(110,160,255,.35)'], [0.7 * u, 'rgba(235,245,255,.9)']]);
       }
+    }
+    // from the sky down to the raised fingers (between both fingertips)
+    const { l, r } = g.hands;
+    if (this.skyBolts.length && l?.inView && r?.inView) {
+      const a = this.fingertip(l), b = this.fingertip(r), to = { x: (a.x + b.x) / 2, y: Math.min(a.y, b.y) };
+      for (const sb of this.skyBolts) {
+        const k = sb.life / sb.max, from = { x: this.W * sb.x, y: -this.M };
+        if (sb.big) this.bolt(from, to, 26 * u, 16, [[16 * u, `rgba(70,120,255,${0.3 * k})`], [6 * u, `rgba(160,205,255,${0.7 * k})`], [2.2 * u, `rgba(255,255,255,${k})`]]);
+        // a thin one only reaches part of the way down
+        else this.bolt(from, { x: lerp(from.x, to.x, 0.7), y: lerp(from.y, to.y, 0.55) }, 14 * u, 9, [[3 * u, `rgba(110,160,255,${0.3 * k})`], [1 * u, `rgba(225,240,255,${0.8 * k})`]]);
+      }
+    }
+    // charged: the enemy the lower finger gun aims at is ringed in crackling light, with the time left going round
+    const aimHand = g.lightningCharged && g.lightningAim ? g.hands[g.lightningAim] : null;
+    const target = aimHand ? g.lightningTarget(aimHand.pos) : null;
+    if (target) {
+      const p = this.project(target.x, target.y - 14, target.z), R = (7 + 12 * p.s) * u;
+      for (let i = 0; i < 8; i++) {
+        const a0 = (i / 8) * Math.PI * 2 + this.t * 3, a1 = a0 + Math.PI / 4;
+        this.bolt({ x: p.x + Math.cos(a0) * R, y: p.y + Math.sin(a0) * R }, { x: p.x + Math.cos(a1) * R, y: p.y + Math.sin(a1) * R }, 1.5 * u, 3, [[3 * u, 'rgba(110,160,255,.35)'], [1 * u, 'rgba(230,242,255,.9)']]);
+      }
+      c.strokeStyle = 'rgba(200,225,255,.8)';
+      c.lineWidth = 1.2 * u;
+      c.beginPath(); c.arc(p.x, p.y, R * 1.35, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * g.lightningLeft) / TUNING.lightningAimS); c.stroke();
     }
     // strikes: from the hand to each enemy hit in turn, forking as it goes
     for (const b of this.bolts) {

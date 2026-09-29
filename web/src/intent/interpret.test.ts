@@ -74,61 +74,52 @@ describe('interpret', () => {
   });
 
   describe('lightning', () => {
-    const GUN = [1.7, 1.85, 0.9, 1.0], UP = { x: 0, y: -1, z: 0 }, AT_SCREEN = { x: 0, y: -0.3, z: 0.95 };
+    const GUN = [1.7, 1.85, 0.9, 1.0];
     const L_REST: HandSpec = { ...GUARD_L, side: 'l' }, R_REST: HandSpec = { ...GUARD_R, side: 'r' };
-    /** A half circle over `n` frames (shoulder widths): centre, radius, from angle a0 through π. */
-    const arc = (cx: number, cy: number, r: number, a0: number, n: number, dir: 1 | -1) =>
-      repeat(n, i => { const a = a0 + (dir * Math.PI * (i + 1)) / n; return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }; });
-    const gun = (p: { x: number; y: number }, side: 'l' | 'r', point = UP): HandSpec => ({ ...p, side, open: 0.8, fingers: GUN, point });
-    /** Right hand arcs, then the left, then the right points at the screen for `pointFrames`. */
-    const azula = (pointFrames = 15, gapFrames = 3): Pair[] => [
-      ...repeat(5, () => [L_REST, gun(GUARD_R, 'r')]),
-      ...arc(0.35, 0, 0.55, Math.PI / 2, 12, -1).map(p => [L_REST, gun(p, 'r')]),
-      ...repeat(gapFrames, () => [gun(GUARD_L, 'l'), gun({ x: 0.35, y: -0.25 }, 'r')]),
-      ...arc(-0.35, 0, 0.55, Math.PI / 2, 12, 1).map(p => [gun(p, 'l'), gun({ x: 0.35, y: -0.25 }, 'r')]),
-      ...repeat(pointFrames, () => [gun({ x: -0.35, y: -0.25 }, 'l'), gun({ x: 0.3, y: 0 }, 'r', AT_SCREEN)]),
-    ];
+    const gun = (x: number, y: number, side: 'l' | 'r'): HandSpec => ({ x, y, side, open: 0.8, fingers: GUN });
+    /** Both finger guns up over the head, together. */
+    const UP_L = gun(-0.12, -1.3, 'l'), UP_R = gun(0.12, -1.3, 'r');
     const bolts = (out: Intent[]) => out.flatMap(o => o.casts.filter(c => c.kind === 'lightning'));
+    /** Hold both finger guns up for `hold` frames, then bring the right one down to aim for `aim` frames. */
+    // (a thrust needs the 3D reach reading these frames don't have: the mouse & keys test covers it)
+    const conduit = (hold: number, aim: number): Pair[] => [
+      ...repeat(5, () => [L_REST, R_REST]),
+      ...repeat(hold, () => [UP_L, UP_R]),
+      ...repeat(aim, () => [UP_L, gun(0.35, 0.1, 'r')]),
+    ];
 
-    it('a half circle with each hand in a finger gun, then pointing one at the screen, strikes once', () => {
-      const out = play(azula());
-      expect(out.some(o => o.lightning?.stage === 1)).toBe(true);
-      expect(out.some(o => o.lightning?.stage === 2)).toBe(true);
-      expect(bolts(out)).toHaveLength(1);
-      expect(out.at(-1)!.lightning!.stage).toBe(0);
-      // no fire from the finger guns along the way
-      expect(out.flatMap(o => [...o.punches, ...o.palms])).toHaveLength(0);
-      expect(out.some(o => o.shield)).toBe(false);
+    it('both finger guns held up together call it down: it strikes the fingers, then charged', () => {
+      const out = play(conduit(45, 5));
+      expect(out.some(o => (o.lightning?.calling ?? 0) > 0 && (o.lightning?.calling ?? 0) < 1)).toBe(true);
+      expect(out.at(-1)!.lightning!.charged).toBe(true);
+      expect(out.at(-1)!.lightning!.aim).toBe('r');
+      expect(bolts(out)).toHaveLength(0);
     });
 
-    it('one half circle alone, or both with the same hand, is not enough', () => {
-      const one = play([
-        ...repeat(5, () => [L_REST, gun(GUARD_R, 'r')]),
-        ...arc(0.35, 0, 0.55, Math.PI / 2, 12, -1).map(p => [L_REST, gun(p, 'r')]),
-        ...repeat(10, () => [L_REST, gun({ x: 0.3, y: 0 }, 'r', AT_SCREEN)]),
-      ]);
-      expect(bolts(one)).toHaveLength(0);
+    it('let go too soon and it does not come', () => {
+      const out = play(conduit(20, 10));
+      expect(out.some(o => o.lightning?.charged)).toBe(false);
     });
 
-    it('moving a finger gun in a straight line is not a half circle', () => {
-      const out = play([
-        ...repeat(5, () => [L_REST, gun(GUARD_R, 'r')]),
-        ...repeat(12, i => [L_REST, gun({ x: 0.3 - i * 0.05, y: 0.1 }, 'r')]),
-      ]);
-      expect(out.every(o => o.lightning?.stage === 0)).toBe(true);
+    it('charged, it goes off by itself when the time to aim runs out, where the lower hand aims', () => {
+      const out = play(conduit(45, 3 * FPS + 10));
+      const b = bolts(out);
+      expect(b).toHaveLength(1);
+      expect(b[0].at.x).toBeCloseTo(view({ x: 0.35, y: 0.1 }).x, 0);
+      expect(out.at(-1)!.lightning!.charged).toBe(false);
     });
 
-    it('the same half circles with fists do nothing', () => {
-      const fist = (p: { x: number; y: number }, side: 'l' | 'r'): HandSpec => ({ ...p, side });
-      const out = play([
-        ...arc(0.35, 0, 0.55, Math.PI / 2, 12, -1).map(p => [L_REST, fist(p, 'r')]),
-        ...arc(-0.35, 0, 0.55, Math.PI / 2, 12, 1).map(p => [fist(p, 'l'), R_REST]),
-      ]);
-      expect(out.every(o => o.lightning?.stage === 0)).toBe(true);
+    it('fists or open hands up there are the blue inferno, not lightning; finger guns never the inferno', () => {
+      const fists = play([...repeat(45, () => [{ x: -0.12, y: -1.3, side: 'l' as const }, { x: 0.12, y: -1.3, side: 'r' as const }])]);
+      expect(fists.some(o => o.lightning?.charged || (o.lightning?.calling ?? 0) > 0)).toBe(false);
+      expect(fists.at(-1)!.inferno).toBe(1);
+      const guns = play(conduit(45, 1));
+      expect(guns.some(o => (o.inferno ?? 0) > 0)).toBe(false);
     });
 
-    it('waiting too long after the first half circle starts over', () => {
-      expect(bolts(play(azula(15, 70)))).toHaveLength(0);
+    it('one finger gun up alone calls nothing', () => {
+      const out = play([...repeat(45, () => [L_REST, UP_R])]);
+      expect(out.every(o => !o.lightning?.charged && (o.lightning?.calling ?? 0) === 0)).toBe(true);
     });
   });
 

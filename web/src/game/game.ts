@@ -169,6 +169,8 @@ export type GameEvent =
   /** A move that didn't go off, and what it needs (e.g. the wall push needs a wall). */
   | { type: 'hint'; text: string }
   | { type: 'gameOver' }
+  /** Lightning called down from the sky strikes your raised fingers: it's charged. */
+  | { type: 'skyStrike' }
   /** Lightning from the pointing hand (view space) to each enemy struck, in order (world); `end` when it hit nothing. */
   | { type: 'lightning'; from: Vec2; hits: { x: number; y: number; z: number }[]; end: { x: number; y: number; z: number } | null }
 
@@ -248,9 +250,15 @@ export class Game {
   ultimateIn = 0;
   /** Blue inferno: seconds until it's ready again, and seconds the ground has left to burn. */
   infernoIn = 0;
-  /** Lightning: seconds until it can strike again, and how far along drawing it you are (0, 1 or 2 half circles). */
+  /**
+   * Lightning: seconds until it can strike again; how far along calling it down you are (0 → 1);
+   * charged (it struck your fingers), with seconds left to aim and the hand aiming.
+   */
   lightningIn = 0;
-  lightningStage: 0 | 1 | 2 = 0;
+  lightningCalling = 0;
+  lightningCharged = false;
+  lightningLeft = 0;
+  lightningAim: Side | null = null;
   groundFire = 0;
   /** Blue inferno: how long the hands have been held together over the head, 0 → 1 (1 = slam them down). */
   infernoPrep = 0;
@@ -387,7 +395,13 @@ export class Game {
     this.updateShield(intent.shield && this.has('shield'));
     this.gather = this.has('finisher') ? intent.gather ?? 0 : 0;
     this.infernoPrep = this.has('inferno') ? intent.inferno ?? 0 : 0;
-    this.lightningStage = this.has('lightning') ? intent.lightning?.stage ?? 0 : 0;
+    // lightning, once you have it and it has recharged: calling it, then it strikes your fingers
+    const L = this.has('lightning') && this.lightningIn <= 0 ? intent.lightning : undefined, was = this.lightningCharged;
+    this.lightningCalling = L?.calling ?? 0;
+    this.lightningCharged = !!L?.charged;
+    this.lightningLeft = L?.left ?? 0;
+    this.lightningAim = L?.aim ?? null;
+    if (this.lightningCharged && !was) this.events.push({ type: 'skyStrike' });
     if (this.state !== 'play') return;
     if (this.has('punch')) for (const p of intent.punches) this.punch(this.has('charge') ? p : { ...p, charged: false });
     for (const c of intent.casts) {
@@ -822,6 +836,13 @@ export class Game {
   }
 
   /** The living enemy that appears closest to `aim` on screen, if within assist range. */
+  /** What lightning released from view point `at` would strike first (for the aim reticle). */
+  lightningTarget(at: Vec2): Enemy | null {
+    const alive = this.enemies.filter(e => e.hp > 0 && e.appear >= 1);
+    const onScreen = (e: Enemy) => { const s = depthScale(e.z); return Math.hypot((e.x - this.cam.x) * s - at.x, (e.y - this.cam.y) * s - at.y); };
+    return this.pickTarget(at) ?? (alive.length ? alive.reduce((a, b) => (onScreen(b) < onScreen(a) ? b : a)) : null);
+  }
+
   /** Lightning from the pointing hand: the enemy nearest where it points, then a chain on to others close by. */
   private strikeLightning(c: Cast): void {
     if (this.lightningIn > 0) {
@@ -830,11 +851,11 @@ export class Game {
     }
     if (!this.spend(TUNE.breathLightning, c.at)) return;
     this.lightningIn = TUNE.lightningCooldownS;
-    const dir = c.dir ?? { x: 0, y: -1 }, aim = { x: c.at.x + dir.x * TUNE.lightningReach, y: c.at.y + dir.y * TUNE.lightningReach };
+    // where the hand is on screen, like a punch (bent along a pointing direction, if given)
+    const aim = c.dir ? { x: c.at.x + c.dir.x * TUNE.lightningReach, y: c.at.y + c.dir.y * TUNE.lightningReach } : { ...c.at };
     const alive = this.enemies.filter(e => e.hp > 0 && e.appear >= 1);
-    const onScreen = (e: Enemy) => { const s = depthScale(e.z); return Math.hypot((e.x - this.cam.x) * s - aim.x, (e.y - this.cam.y) * s - aim.y); };
-    // lightning finds a target: the one pointed at, or else the nearest to where it points
-    const first = this.pickTarget(aim) ?? (alive.length ? alive.reduce((a, b) => (onScreen(b) < onScreen(a) ? b : a)) : null);
+    // lightning finds a target: the one aimed at, or else the nearest to where it's aimed
+    const first = this.lightningTarget(aim);
     const hits: Enemy[] = [];
     if (first) {
       hits.push(first);
