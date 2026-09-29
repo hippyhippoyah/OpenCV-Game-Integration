@@ -982,6 +982,9 @@ function updateTrack(tr: Track | null, input: HandInput, t: number, dt: number, 
     if (h.fingers) {
       tr.fingers = tr.fingers ? tr.fingers.map((v, i) => lerp(v, h.fingers![i], k)) : [...h.fingers];
       tr.fingerGun = isFingerGun(tr.fingers, tr.fingerGun);
+    } else {
+      tr.fingers = undefined;
+      tr.fingerGun = undefined;
     }
     tr.facing = lerp(tr.facing, h.facing, k);
     tr.palm = h.normal ? turnToward(tr.palm, palmOf(h.normal, side), k) : null;

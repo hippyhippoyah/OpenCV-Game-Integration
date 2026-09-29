@@ -160,7 +160,9 @@ export class MockTracker implements Tracker {
       const body3 = { x: (pos.x / TUNING.handScaleX) * MOCK_SHOULDERS_M, y: ((pos.y - TUNING.handOffsetY) / TUNING.handScaleY) * MOCK_SHOULDERS_M, z: reachM };
       // (a hand's measured normal is its palm's direction as if it were a right hand)
       const normal = palmDir && palmOf(palmDir, side);
-      if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open, facing, normal, side, body3, depth: MOCK_DISTANCE - reachM });
+      // L: the right hand makes a finger gun (index and middle out, ring and pinky curled)
+      const fingers = side === 'r' && this.keys.has('l') ? [1.7, 1.85, 0.9, 1.0] : undefined;
+      if (!away) hands.push({ center: palm, size: HAND_SIZE * (1 + grow), open: fingers ? 0.5 : open, fingers, facing, normal, side, body3, depth: MOCK_DISTANCE - reachM });
     }
     return {
       t, head,
