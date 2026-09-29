@@ -1,4 +1,5 @@
 import type { AttackKind, ComboName, Game, GameEvent } from './game';
+import { lessonOn } from '../config';
 
 /** Where a lesson's enemies stand, and what they do. Missing ones (knocked down) come back. */
 interface Cast { tag: string; kind: 'dummy' | 'spirit' | 'earth'; x: number; z: number; only?: AttackKind; cd?: number; pace?: number }
@@ -137,6 +138,9 @@ export const LESSONS: Lesson[] = [
   },
 ];
 
+/** The lessons for moves that are switched on (see FEATURES). */
+export const activeLessons = (): Lesson[] => LESSONS.filter(l => lessonOn(l.id));
+
 /** Seconds to celebrate a finished lesson before moving on to the next. */
 export const LESSON_PAUSE_S = 2;
 
@@ -150,7 +154,7 @@ export class Tutorial {
   finished = false;
   private marks = new Set<string>();
 
-  constructor(private g: Game, start = 0, readonly lessons: Lesson[] = LESSONS) {
+  constructor(private g: Game, start = 0, readonly lessons: Lesson[] = activeLessons()) {
     g.scripted();
     this.go(start);
   }

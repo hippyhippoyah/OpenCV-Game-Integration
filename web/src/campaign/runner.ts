@@ -2,6 +2,7 @@ import type { Game, GameEvent, MoveName } from '../game/game';
 import { LESSONS, Tutorial } from '../game/tutorial';
 import { EPILOGUE, movesFor, SCROLLS, STOPS } from './chapter1';
 import type { Progress, ScrollId } from './progress';
+import { FEATURES, lessonOn } from '../config';
 import { FightRunner } from './scripts';
 import { pauses, Rail, type Pause } from '../explore/path';
 
@@ -168,8 +169,9 @@ export class CampaignRunner {
   }
 
   private startStop(): void {
-    const s = STOPS[this.stop];
-    if (s.practice.length) this.beginPractice(s.practice);
+    // (lessons for switched-off moves are skipped)
+    const ids = STOPS[this.stop].practice.filter(lessonOn);
+    if (ids.length) this.beginPractice(ids);
     else this.startFight();
   }
 
@@ -218,7 +220,9 @@ export class CampaignRunner {
   private win(): void {
     const s = STOPS[this.stop], g = this.game!, reasons = ['Finished'];
     if (g.hp >= 70) reasons.push('Took little damage');
-    if (this.usedNew || s.newMove === null) reasons.push(s.newMove ? 'Used your new move' : 'Beat the boss');
+    // (a switched-off new move can't be used, so it isn't asked for)
+    const newOff = s.newMove === 'charge' && !FEATURES.chargedPunch;
+    if (this.usedNew || s.newMove === null || newOff) reasons.push(s.newMove && !newOff ? 'Used your new move' : s.newMove ? 'Finished strong' : 'Beat the boss');
     this.result = { stop: this.stop, flames: reasons.length, reasons };
     this.state = 'result';
   }

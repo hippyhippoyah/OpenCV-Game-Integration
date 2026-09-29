@@ -1,6 +1,6 @@
 import { STOPS } from '../campaign/chapter1';
 import type { Progress } from '../campaign/progress';
-import { LESSONS } from '../game/tutorial';
+import { activeLessons } from '../game/tutorial';
 import type { UiSound } from '../audio/sfx';
 import { embersAvailable, templeOpen } from '../campaign/temple';
 import { FEATURES } from '../config';
@@ -188,7 +188,7 @@ export class Menu {
         head('Learn', 'Tutorial');
         para('Every move, one lesson at a time, with nothing that can hurt you. Start from the top, or jump to a lesson:');
         const chips = el('div', 'lessons');
-        LESSONS.forEach((l, i) => {
+        activeLessons().forEach((l, i) => {
           const b = el('button', '', `${i + 1}. ${l.title}`);
           b.addEventListener('click', e => { e.stopPropagation(); this.h.onPlay('tutorial', i); });
           chips.append(b);

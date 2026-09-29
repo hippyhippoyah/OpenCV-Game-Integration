@@ -3,6 +3,7 @@ import type { Calibration } from './calibration';
 import { clamp, dist, lerp, type Vec2, type Vec3 } from '../math';
 import { OneEuro } from './oneEuro';
 import { FOCAL_H, isFingerGun, palmOf } from '../input/landmarks';
+import { FEATURES } from '../config';
 
 /**
  * View space: world units relative to the eyes, x right, y down.
@@ -787,6 +788,7 @@ export function chargePose(tr: HandState, side: Side, shoulder: Vec2, head: Vec2
  * body steady); a full charge lasts chargeKeepS after it leaves the pose.
  */
 function updateCharge(tr: Track, side: Side, shoulder: Vec2, head: Vec2, t: number, bodyMoving: boolean): void {
+  if (!FEATURES.chargedPunch) { tr.charge = 0; tr.chargedAt = null; tr.chamberSince = null; return; }
   // (a finger gun is lightning, not a fist charging a punch)
   const fist = tr.openness < TUNING.clearlyOpen && !tr.fingerGun;
   const held = fist && !bodyMoving && Math.hypot(tr.vel.x, tr.vel.y) < TUNING.chargeMaxSpeed && chargePose(tr, side, shoulder, head) !== null;

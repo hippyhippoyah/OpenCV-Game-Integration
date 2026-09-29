@@ -4,6 +4,7 @@ import { mulberry32 } from '../math';
 import { Progress } from './progress';
 import { CampaignRunner } from './runner';
 import { STOPS } from './chapter1';
+import { FEATURES } from '../config';
 
 const make = () => { const g = new Game(mulberry32(1), 70, true); return g; };
 const fresh = () => new CampaignRunner(Progress.load(null), make);
@@ -78,6 +79,19 @@ describe('CampaignRunner', () => {
     r.retry();
     expect(r.state).toBe('fight');
     expect(r.game!.hp).toBeGreaterThan(0);
+  });
+
+  it('with charged punches switched off, the Stone Garden skips that lesson and still gives three flames', () => {
+    FEATURES.chargedPunch = false;
+    const p = Progress.load(null);
+    for (const st of STOPS.slice(0, 3)) { p.completeStop(st.id, 1); if (st.scroll) p.addScroll(st.scroll); }
+    p.addScroll(STOPS[3].scroll!);
+    const r = new CampaignRunner(p, make);
+    r.replay(3);
+    r.interact();
+    expect(until(r, 'fight')).toBe('fight'); // no practice: straight to the fight
+    winFight(r);
+    expect(r.result!.flames).toBe(3);
   });
 
   it('skip jumps straight to the next pause', () => {
