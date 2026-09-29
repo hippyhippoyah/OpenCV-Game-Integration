@@ -11,7 +11,7 @@ import { Tutorial } from './game/tutorial';
 import { CameraError, CameraTracker } from './input/camera';
 import { bindMockControls, MOCK_CALIBRATION, MockTracker } from './input/mock';
 import type { Tracker, TrackingFrame } from './input/types';
-import { Calibrator, type Calibration } from './intent/calibration';
+import { Calibrator, GOOD_DISTANCE_M, setupChecks, type Calibration } from './intent/calibration';
 import { initialState, interpret, TUNING, type Cast, type Intent, type InterpretState, type Palm, type Punch } from './intent/interpret';
 import { DebugView } from './render/debug';
 import { Hud } from './render/hud';
@@ -175,6 +175,8 @@ function leavePlay(): void {
   raid = null;
   temple.hide();
   hideRaidUi();
+  // (the campaign map hides the game canvas while you're on it: bring it back for the menu and every other mode)
+  show('game');
   campPaused = false;
   pendingPlay = null;
   campUI?.hideAll();
@@ -300,6 +302,11 @@ function onFrame(f: TrackingFrame): void {
   lastFrame = f;
   if (phase === 'calibrating') {
     $('calibFill').style.width = `${Math.round(calibrator.add(f) * 100)}%`;
+    const check = setupChecks(f);
+    $('calSeen').classList.toggle('ok', check.seen);
+    $('calHands').classList.toggle('ok', check.handsAtChest);
+    $('calDist').classList.toggle('ok', check.distance === 'ok');
+    $('calDist').textContent = check.distance === 'close' ? 'Step back a little' : check.distance === 'far' ? 'Come a little closer' : 'Good distance';
     const result = calibrator.result();
     if (result) {
       calibration = camCalibration = result;
@@ -421,7 +428,7 @@ function handoffCheck(): HandoffCheck {
   if (!f || !i?.present) return { seen: false, handsUp: false, distance: 'unknown' };
   const up = (h: typeof i.hands.l) => !!h && h.inView && h.pos.y < 40;
   const d = f.body ? (1.05 * f.body.span3) / f.body.span2 : null;
-  return { seen: true, handsUp: up(i.hands.l) && up(i.hands.r), distance: d === null ? 'unknown' : d < 0.9 ? 'close' : d > 2.2 ? 'far' : 'ok' };
+  return { seen: true, handsUp: up(i.hands.l) && up(i.hands.r), distance: d === null ? 'unknown' : d < GOOD_DISTANCE_M.min ? 'close' : d > GOOD_DISTANCE_M.max ? 'far' : 'ok' };
 }
 
 function headLabel(i: Intent | null): string {

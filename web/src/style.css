@@ -122,10 +122,11 @@ body.tutorial #pill { display: none; }
 .camp .ren b { color: var(--accent-2); font-family: Cinzel, serif; }
 .camp .bossbar { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); width: min(520px, calc(100vw - 32px)); text-align: center; font-family: Cinzel, serif; color: #ffd0a0; }
 .camp .bossbar i { background: linear-gradient(90deg, #7a4a2a, #c08040); }
-.camp .checks { list-style: none; padding: 0; margin: 10px 0; }
-.camp .checks li { padding: 4px 0; color: var(--muted); }
-.camp .checks li.ok { color: #9ef0b4; }
-.camp .checks li.ok::before { content: '✓ '; }
+.checks { list-style: none; padding: 0; margin: 10px 0; }
+.checks li { padding: 4px 0; color: var(--muted); }
+.checks li.ok { color: #9ef0b4; }
+.checks li.ok::before { content: '✓ '; }
+.card.setup .checks { display: inline-block; text-align: left; margin: 0 0 14px; }
 .camp .count { position: fixed; inset: 0; display: grid; place-items: center; font-family: Cinzel, serif; font-weight: 700; font-size: 140px; color: #fff4e4; pointer-events: none;
   /* readable over the pale map: a dark pool behind it, a dark edge, and a fiery glow */
   background: radial-gradient(circle at 50% 50%, rgba(12,6,4,.78) 0, rgba(12,6,4,.5) 140px, rgba(12,6,4,0) 320px);
