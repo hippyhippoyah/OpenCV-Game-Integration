@@ -51,8 +51,6 @@ export const TUNE = {
    * each. It passes Daro's stone wall. It costs breathLightning and recharges for lightningCooldownS.
    */
   lightningDamage: 6, lightningChain: 2, lightningChainDamage: 3, lightningChainRange: 60, lightningCooldownS: 10, breathLightning: 30,
-  /** How far along the pointing direction (view units) the lightning aims from the hand. */
-  lightningReach: 45,
   /**
    * The blue inferno has three steps: hands together over the head (they burn blue), slammed down —
    * a line of blue fire bursts up along the ground straight ahead from the hands (slamLineHalfW to
@@ -851,8 +849,8 @@ export class Game {
     }
     if (!this.spend(TUNE.breathLightning, c.at)) return;
     this.lightningIn = TUNE.lightningCooldownS;
-    // where the hand is on screen, like a punch (bent along a pointing direction, if given)
-    const aim = c.dir ? { x: c.at.x + c.dir.x * TUNE.lightningReach, y: c.at.y + c.dir.y * TUNE.lightningReach } : { ...c.at };
+    // where the hand is on screen, like a punch
+    const aim = { ...c.at };
     const alive = this.enemies.filter(e => e.hp > 0 && e.appear >= 1);
     // lightning finds a target: the one aimed at, or else the nearest to where it's aimed
     const first = this.lightningTarget(aim);

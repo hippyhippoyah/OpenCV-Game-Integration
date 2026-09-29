@@ -615,7 +615,7 @@ describe('Game', () => {
   });
 
   describe('lightning', () => {
-    const bolt = (x: number, dir = { x: 0, y: -1 }) => intent({ casts: [{ kind: 'lightning', at: { x, y: 20 }, dir }] });
+    const bolt = (x: number) => intent({ casts: [{ kind: 'lightning', at: { x, y: 5 } }] });
     const spirits = (g: Game) => [
       g.addEnemy({ kind: 'spirit', x: -30, z: 8, hp: 20, cd: Infinity }),
       g.addEnemy({ kind: 'spirit', x: 0, z: 8, hp: 20, cd: Infinity }),

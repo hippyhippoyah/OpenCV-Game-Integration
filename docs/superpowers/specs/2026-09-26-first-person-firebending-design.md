@@ -535,3 +535,20 @@ the conduit, built only from readings that hold up:
   for 3 each; arcs over Daro's stone wall; 30 breath, 10 s recharge. Tutorial and training only.
 - **The finger gun** is its own pose (no palm push, shield, punch or charging) and is drawn as one,
   turned the way the fingers point. Mouse & keys: L finger gun, Z plays the whole move.
+
+## Switches, locked modes, and punches while moving (2026-09-28)
+
+- **Feature switches** live in `web/src/config.ts` (`FEATURES`): the Temple and charged punches are
+  off for now (too inconsistent). Off, the Temple is hidden from the menu; charged punches never
+  charge, their lesson is skipped in the tutorial and campaign practice, and the Stone Garden's
+  third flame doesn't ask for them. Tests run with every feature on (`src/test/setup.ts`), plus
+  tests of the switched-off behaviour.
+- **Locked modes** in the main menu: Chapter 2, Play (RPG) and Multiplayer, dimmed with a lock and
+  a "coming soon" panel; they can't be started.
+- **Lightning's recharge** has its own icon (a white bolt) beside the finisher and inferno.
+- **Punches while the body moves**: bobbing and weaving with the fists up, close to the camera,
+  fired 14 punches in 10 s with none thrown. The extra forward movement needed while the head moves
+  now starts from a head speed of 50 (was 70) at 0.0025 m per unit/s (was 0.0015): 9 instead of 14,
+  for 3 of ~59 real punches on the older recordings. Fist growth, arm straightening, fist height
+  and jolt size all overlap between the two, so it can't be removed entirely without losing real
+  punches; the Punch sensitivity setting lowers it further.

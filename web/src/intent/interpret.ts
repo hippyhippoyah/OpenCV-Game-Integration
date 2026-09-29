@@ -92,10 +92,8 @@ export type CastKind = 'wall' | 'ultimate' | 'push' | 'slam' | 'inferno' | 'ligh
  */
 export interface Cast {
   kind: CastKind;
-  /** View-space point between the hands when it was cast (lightning: the pointing hand). */
+  /** View-space point between the hands when it was cast (lightning: the hand that released it). */
   at: Vec2;
-  /** Lightning: which way the fingers point across the screen (unit, view space). */
-  dir?: Vec2;
 }
 
 export interface Intent {
@@ -156,8 +154,11 @@ export const TUNING = {
    * It uses the fastest the head moved in the last leanMemoryS, so it holds through the turnaround
    * at the end of a sway — the moment the leaning-side fist sits furthest forward.
    * Punches thrown from a steady stance measured under ~65 on a real camera; fast leans 125–140.
+   * Bobbing and weaving with the fists up (head speed 20–95 the whole time, close to the camera) fired
+   * 14 punches with none thrown; from 50 at 0.0025 m per unit/s that's 9, for 3 of ~59 real punches
+   * lost. Those two overlap too much to separate fully (real ones travel ~28 cm, these ~16).
    */
-  leanFreeSpeed: 70, leanPenalty: 0.0015, headSpeedRate: 15, leanMemoryS: 0.5,
+  leanFreeSpeed: 50, leanPenalty: 0.0025, headSpeedRate: 15, leanMemoryS: 0.5,
   /**
    * An unmistakably sharp jolt — sharpJolt m forward within sharpWindowS — is a punch even while
    * the body moves (swaying on a real camera moved a fist at most ~6 cm in 0.1 s).

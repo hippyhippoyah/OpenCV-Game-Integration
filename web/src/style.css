@@ -203,6 +203,13 @@ kbd + kbd { margin-left: 3px; }
 .menuList .item.on b { color: #fff4e4; text-shadow: 0 0 22px rgba(255,140,60,.55); }
 .menuList .item.on span { opacity: .9; color: var(--accent-2); }
 .menuList .item.on::before { background: var(--accent); box-shadow: 0 0 12px rgba(255,140,60,.9); }
+/* not playable yet: smaller, dimmed, with a lock */
+.menuList .item.locked { padding: 4px 0 4px 22px; opacity: .55; }
+.menuList .item.locked b { font-size: clamp(17px, 1.7vw, 22px); }
+.menuList .item.locked b::after { content: ' 🔒'; font-size: .7em; filter: grayscale(1); }
+.menuList .item.locked span { font-size: 10px; }
+.menuList .item.locked.on { transform: translateX(6px); opacity: .8; }
+.menuList .item.locked.on::before { background: rgba(255,255,255,.35); box-shadow: none; }
 .menuDetail { position: absolute; right: 7vw; top: 50%; transform: translateY(-50%); width: min(440px, 40vw); padding: 26px 28px;
   background: rgba(16,10,14,.72); border: 1px solid var(--line); border-radius: 18px; backdrop-filter: blur(8px); box-shadow: 0 20px 60px rgba(0,0,0,.45); }
 .menuDetail .kicker, .setup .kicker { font-size: 11px; letter-spacing: .3em; text-transform: uppercase; color: var(--accent); }

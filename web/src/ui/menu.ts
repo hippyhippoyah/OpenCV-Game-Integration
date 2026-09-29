@@ -7,16 +7,20 @@ import { FEATURES } from '../config';
 import { clampSensitivity, SENSITIVITY_MAX, SENSITIVITY_MIN, type InputKind, type Settings } from './settings';
 
 export type PlayMode = 'campaign' | 'tutorial' | 'training';
-type ItemId = PlayMode | 'temple' | 'settings';
+type ItemId = PlayMode | 'temple' | 'settings' | 'chapter2' | 'rpg' | 'multiplayer';
 export type Screen = 'title' | 'menu' | 'settings';
 
-interface Item { id: ItemId; title: string; blurb: string }
+/** `locked`: shown as coming soon, can't be played yet. */
+interface Item { id: ItemId; title: string; blurb: string; locked?: boolean }
 
 const ITEMS: Item[] = [
   { id: 'campaign', title: 'Campaign', blurb: 'Chapter 1 · The Ember Path' },
   { id: 'temple', title: 'Temple', blurb: 'Build it up · hold off raids' },
   { id: 'tutorial', title: 'Tutorial', blurb: 'Learn every move' },
   { id: 'training', title: 'Training', blurb: 'Dummies that never fight back' },
+  { id: 'chapter2', title: 'Chapter 2', blurb: 'Locked · coming soon', locked: true },
+  { id: 'rpg', title: 'Play (RPG)', blurb: 'Locked · coming soon', locked: true },
+  { id: 'multiplayer', title: 'Multiplayer', blurb: 'Locked · coming soon', locked: true },
   { id: 'settings', title: 'Settings', blurb: 'Input, sensitivity, progress' },
 ];
 
@@ -128,7 +132,7 @@ export class Menu {
   private renderList(): void {
     const list = $('menuList');
     list.replaceChildren(...this.items.map((it, i) => {
-      const b = el('button', 'item');
+      const b = el('button', it.locked ? 'item locked' : 'item');
       b.dataset.id = it.id;
       b.append(el('b', '', it.title), el('span', '', it.blurb));
       b.addEventListener('mouseenter', () => this.select(i));
@@ -150,11 +154,12 @@ export class Menu {
   }
 
   private activate(i: number): void {
-    const id = this.items[i].id;
+    const { id, locked } = this.items[i];
+    if (locked) { this.h.sound('back'); return; }
     this.h.sound('select');
     if (id === 'settings') this.showSettings();
     else if (id === 'temple') this.h.onTemple();
-    else this.h.onPlay(id);
+    else this.h.onPlay(id as PlayMode);
   }
 
   private renderDetail(id: ItemId): void {
@@ -200,6 +205,18 @@ export class Menu {
         head('Practice', 'Training');
         para('A quiet yard of straw dummies that never fight back. Try any move, combo or ultimate as often as you like.');
         d.append(el('div', 'cta', 'Enter — start'));
+        break;
+      case 'chapter2':
+        head('Locked', 'Chapter 2');
+        para('Kuzan marches on the Ember Temple. The story goes on — coming soon.');
+        break;
+      case 'rpg':
+        head('Locked', 'Play (RPG)');
+        para('Your own bender: level up your moves and head out into the world. Coming soon.');
+        break;
+      case 'multiplayer':
+        head('Locked', 'Multiplayer');
+        para('Bend against a friend. Coming soon.');
         break;
       case 'settings':
         head('Options', 'Settings');
